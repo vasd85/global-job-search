@@ -1,0 +1,25 @@
+{
+  "name": "@gjs/ats-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./extractors": "./src/extractors/index.ts",
+    "./discovery": "./src/discovery/index.ts",
+    "./normalizer": "./src/normalizer/index.ts",
+    "./utils": "./src/utils/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "echo 'TODO: add linter'"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "pino": "^9.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "@types/node": "^22.0.0"
+  }
+}

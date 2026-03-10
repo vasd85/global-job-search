@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "global-job-search-web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@gjs/web", "dev"],
+      "port": 3000
+    }
+  ]
+}
