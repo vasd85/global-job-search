@@ -98,12 +98,30 @@ fix(ats-core): handle empty Greenhouse job list
 chore(db): add index on jobs.posted_at
 ```
 
+**Commit message format (agent must use this exact pattern):**
+
+```bash
+git commit -F - <<'EOF'
+feat(web): short description here
+
+Optional longer body explaining why.
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+EOF
+```
+
+Use `git commit -F -` with a heredoc — **not** `git commit -m "$(cat <<'EOF'...)"`.
+The `$()` subshell form can leave `index.lock` unreleased when Cursor's background
+`gitWorker` process grabs the index concurrently between the subshell exit and the
+parent `git commit` invocation.
+
 **Rules for the agent:**
 - One commit = one logical change
 - Do not group unrelated changes into a single commit
 - Always run `pnpm typecheck && pnpm lint` before committing
 - Never use `git add .` — add files explicitly
 - Do not commit: `.env*`, `node_modules/`, `*.tsbuildinfo`, `.next/`
+- If `index.lock` error occurs: verify no real git process is running (`ps aux | grep git`), then remove the stale lock file
 
 ### Pull Requests
 

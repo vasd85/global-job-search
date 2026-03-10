@@ -10,7 +10,6 @@ import {
   createEmptyDiagnostics,
   sha256,
   type AllJob,
-  type AtsVendor,
   type ExtractionContext,
   type ExtractionResult,
 } from "@gjs/ats-core";
