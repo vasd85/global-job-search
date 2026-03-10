@@ -125,6 +125,12 @@ parent `git commit` invocation.
 
 ### Pull Requests
 
+Requires `gh` CLI to be installed and authenticated:
+```bash
+brew install gh   # if not installed
+gh auth login     # once, opens browser for OAuth
+```
+
 - Each task → a separate PR into `main`
 - Create PRs via `gh pr create` with a title and description
 - The PR description must include: what changed, why, and how to test it
