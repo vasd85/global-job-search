@@ -68,3 +68,61 @@ Pipeline config (`qa-jobs-scrapper/pipeline.config.json`) sets `search_root` —
 ### ES Modules
 
 All packages use `"type": "module"` with ES2022/ESNext TypeScript. Imports must use explicit `.js` extensions even for `.ts` source files.
+
+## Git Workflow
+
+### Branches
+
+- `main` — stable branch, direct commits are forbidden
+- Every change starts from a new branch: `git checkout -b <type>/<short-description>`
+- Branch types: `feature/`, `fix/`, `refactor/`, `chore/`
+- Examples: `feature/job-filters`, `fix/api-pagination`
+
+### Commits
+
+Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/):
+
+```
+<type>(<scope>): <description>
+
+[optional body]
+```
+
+Types: `feat`, `fix`, `refactor`, `chore`, `docs`, `test`
+Scope (optional): `web`, `ats-core`, `db`, `api`
+
+Examples:
+```
+feat(web): add salary filter to job search
+fix(ats-core): handle empty Greenhouse job list
+chore(db): add index on jobs.posted_at
+```
+
+**Rules for the agent:**
+- One commit = one logical change
+- Do not group unrelated changes into a single commit
+- Always run `pnpm typecheck && pnpm lint` before committing
+- Never use `git add .` — add files explicitly
+- Do not commit: `.env*`, `node_modules/`, `*.tsbuildinfo`, `.next/`
+
+### Pull Requests
+
+- Each task → a separate PR into `main`
+- Create PRs via `gh pr create` with a title and description
+- The PR description must include: what changed, why, and how to test it
+- Before creating a PR, ensure the branch is up to date: `git pull origin main --rebase`
+
+### Forbidden operations
+
+The agent must **never** perform these without explicit user confirmation:
+- `git push --force` / `git push --force-with-lease`
+- `git reset --hard`
+- `git rebase` onto `main`
+- Direct `git push origin main`
+- Deleting branches: `git branch -D`
+
+### Working with the remote repository
+
+- Remote: `git@github.com:vasd85/global-job-search.git`
+- Transport: SSH (key from the macOS system agent, no token required)
+- Before starting work: run `git pull origin main` to synchronize
