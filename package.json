@@ -10,6 +10,7 @@
     "dev": "pnpm --filter @gjs/web dev",
     "build": "pnpm --filter @gjs/web build",
     "lint": "pnpm -r lint",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "test": "vitest run"
   }
 }
