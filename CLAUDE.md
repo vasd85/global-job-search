@@ -8,9 +8,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 global-job-search/
 ├── apps/web/              # Next.js web UI for browsing/matching jobs
 ├── packages/ats-core/     # Shared ATS extraction/discovery library (@gjs/ats-core)
-├── qa-jobs-scrapper/      # CLI scraping pipeline (has its own CLAUDE.md)
 ├── drizzle/               # DB migration files
-└── seed/                  # DB seeding utilities
+├── seed/                  # DB seeding utilities
+└── qa-jobs-scrapper/      # ⛔ Legacy — read-only reference (see below)
 ```
 
 Package manager: **pnpm@10.30.1** with workspaces. Node ≥22 required.
@@ -30,11 +30,8 @@ pnpm typecheck              # TypeScript check across workspace
 pnpm drizzle-kit generate   # Generate migrations from schema changes
 pnpm drizzle-kit migrate    # Apply migrations
 
-# Scraper pipeline (run from qa-jobs-scrapper/)
-pnpm run pipeline -- run      # Start new pipeline run
-pnpm run pipeline -- resume   # Resume from manual checkpoint
-pnpm run pipeline -- status   # Inspect run state
-pnpm test                     # Vitest tests (qa-jobs-scrapper only)
+# Tests (run from repo root)
+pnpm test                     # Vitest workspace (apps/web + packages/ats-core)
 ```
 
 ## Architecture
@@ -52,22 +49,65 @@ Environment: `DATABASE_URL` and `ANTHROPIC_API_KEY` (see `.env.example`).
 
 ### Shared Library (`packages/ats-core`)
 
-Exports reusable ATS vendor logic consumed by both the web app and scraper:
+Exports reusable ATS vendor logic consumed by the web app:
 - `extractors` — Vendor-specific job data extraction
 - `discovery` — Career URL detection and ATS vendor identification
 - `normalizer` / `utils` — Shared normalization helpers
 
-### Scraper Pipeline (`qa-jobs-scrapper`)
+### Legacy: `qa-jobs-scrapper/`
 
-A staged CLI pipeline with manual GPT checkpoints. See `qa-jobs-scrapper/CLAUDE.md` for full details.
-
-Supports 11 ATS vendors: Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Workday, Teamtailor, Personio, BambooHR, Breezy, Custom.
-
-Pipeline config (`qa-jobs-scrapper/pipeline.config.json`) sets `search_root` — the directory where all run artifacts are stored.
+**Read-only reference.** This is the original scraping pipeline (pre-monorepo).
+It is not part of the active workspace, not included in CI, and should not be
+modified. Use it only as a source of logic and patterns when building new
+features in `apps/web` or `packages/ats-core`. Do not run its commands, do not
+write tests for it, do not include it in commits.
 
 ### ES Modules
 
-All packages use `"type": "module"` with ES2022/ESNext TypeScript. Imports must use explicit `.js` extensions even for `.ts` source files.
+All packages use `"type": "module"` with ES2022/ESNext TypeScript. Both `tsconfig.base.json` and `apps/web/tsconfig.json` use `moduleResolution: "bundler"`, so **do not add `.js` extensions** to import paths — the bundler resolves them automatically.
+
+## AI-assisted workflow
+
+This project is a portfolio for AI-assisted development. All review and
+quality checks happen locally via Claude Code before pushing.
+
+### Local review pipeline
+
+After implementing or modifying code, run checks in this order:
+
+1. `pnpm typecheck && pnpm lint && pnpm test` — automated checks must pass.
+2. **`code-reviewer`** agent — reviews the diff for correctness, security,
+   and adherence to `REVIEW.md`. Run before committing.
+3. Fix any findings, then commit.
+4. **`test-writer`** agent — use when new logic is added or existing logic
+   changes and test coverage is missing. Run before or after committing.
+5. Push only when the changeset is complete and all checks pass.
+
+### Subagents
+
+- `code-reviewer` (`.claude/agents/code-reviewer.md`)
+  - Use after implementing or modifying features to review recent changes.
+  - Focus on logic, TypeScript quality, security, and adherence to
+    project conventions and `REVIEW.md`.
+
+- `test-writer` (`.claude/agents/test-writer.md`)
+  - Use when new logic is added or existing logic changes and there are
+    no or few tests.
+  - Generate or extend Vitest tests in `apps/web` and `packages/ats-core`
+    following existing patterns.
+
+### Agent teams (optional, for complex changes)
+
+For large or high-risk changes (multi-file refactors, new subsystems,
+security-sensitive work), you can optionally spawn an agent team for a
+deeper review:
+
+- One teammate focused on code quality, architecture, and TypeScript types.
+- One teammate focused on security, edge cases, and failure modes.
+- Optionally, one teammate focused on tests and missing coverage.
+
+For routine changes the local `code-reviewer` agent is sufficient.
+
 
 ## Git Workflow
 
@@ -106,7 +146,7 @@ feat(web): short description here
 
 Optional longer body explaining why.
 
-Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+Co-Authored-By: Claude
 EOF
 ```
 
@@ -122,6 +162,17 @@ parent `git commit` invocation.
 - Never use `git add .` — add files explicitly
 - Do not commit: `.env*`, `node_modules/`, `*.tsbuildinfo`, `.next/`
 - If `index.lock` error occurs: verify no real git process is running (`ps aux | grep git`), then remove the stale lock file
+
+### Pushing to remote
+
+Every `git push` to a PR branch triggers CI (typecheck, lint, build, test).
+
+- **Push = "ready to merge"**. Do not push intermediate WIP states.
+- Work locally: commit as often as needed, but push only when the changeset
+  is complete, locally reviewed, and all checks pass.
+- Use `git commit --amend` or interactive rebase locally to clean up history
+  **before** pushing — never force-push to a branch that already has a PR
+  without explicit user confirmation.
 
 ### Pull Requests
 
