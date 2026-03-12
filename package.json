@@ -11,6 +11,9 @@
     "build": "pnpm --filter @gjs/web build",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
-    "test": "vitest run"
+    "test": "vitest run --passWithNoTests"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
   }
 }
