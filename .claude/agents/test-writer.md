@@ -109,6 +109,67 @@ dependency's output and focus on the current module's unique logic.
 ~150–300 lines, not 600+. If the file is growing beyond that, you are
 likely testing the wrong layer.
 
+### DB mocks must model real semantics, not just "not fail"
+
+When mocking Drizzle ORM or any database layer:
+
+1. **Model the operation's real semantics.** A mock for
+   `insert().values().onConflictDoNothing()` must distinguish between
+   "inserted new row" and "conflict — did nothing". If the source code
+   counts `inserted++` after every call regardless of conflict, the mock
+   should let you test that a duplicate entry does NOT increment the
+   counter (or flag that the code fails to distinguish).
+
+2. **Assert WHAT was written, not just THAT a write happened.** Never
+   settle for `expect(updateFn).toHaveBeenCalled()`. Always verify
+   the arguments:
+   ```ts
+   // ❌ Weak — only proves "something was written"
+   expect(updateFn).toHaveBeenCalled();
+
+   // ✅ Strong — proves the correct data was written
+   expect(setArgs).toEqual(expect.objectContaining({
+     lastPollStatus: "error",
+     lastPollError: "Connection timeout",
+   }));
+   ```
+
+3. **Track `.set()` / `.values()` arguments** in the mock so tests can
+   inspect what was persisted:
+   ```ts
+   const setCalls: Record<string, unknown>[] = [];
+   const mockUpdate = vi.fn().mockReturnValue({
+     set: vi.fn((data) => {
+       setCalls.push(data);
+       return { where: vi.fn().mockResolvedValue(undefined) };
+     }),
+   });
+   ```
+
+4. **Test the module's core contract first.** Before testing any edge
+   case, ask: "What is the ONE thing this function exists to do?" Write
+   that test first. Examples:
+   - `seedCompanies` → "skips duplicates by (vendor, slug)"
+   - `syncCompanyJobs` → "inserts new jobs, updates changed, closes stale"
+   - `pollCompany` → "returns correct status with persisted metadata"
+
+### Test effects, not mechanisms
+
+Do NOT verify which internal helper was called. Verify what the caller
+observes:
+
+```ts
+// ❌ Implementation-bound: breaks if hash function changes
+expect(mockSha256).toHaveBeenCalledWith("Some description");
+
+// ✅ Contract-based: proves content-change detection works
+// Feed two polls with different descriptions → assert jobsUpdated = 1
+```
+
+If a function uses `sha256` internally, test that "changed description →
+job marked updated" and "same description → job NOT marked updated".
+This survives refactoring from SHA256 to SHA512 or any other mechanism.
+
 ### Table-driven tests to reduce duplication
 
 - When 3+ test cases share identical structure (same assertion pattern,
