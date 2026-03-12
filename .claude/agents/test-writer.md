@@ -68,6 +68,47 @@ domain validation, or pattern recognition:
 - For every positive pattern match, include at least one crafted
   near-miss that should **not** match.
 
+### Respect module boundaries — test only the layer under test
+
+Before writing ANY test, answer: **"What is this module's own job?"**
+Only test logic that lives inside the module. Do NOT re-test behavior
+that belongs to a dependency — those dependencies have their own test
+files.
+
+**Example — ATS extractors (`extractors/*.ts`):**
+
+An extractor's job is thin:
+1. Build the correct API URL from the careers URL / board token.
+2. Call `fetchJson` with the right parameters.
+3. Map raw API fields into `BuildJobArgs.raw` (the wiring).
+4. Handle API-level errors (null data, missing fields).
+
+An extractor does NOT own:
+- How `buildJob()` normalizes titles, computes `job_uid`, or resolves
+  URLs — that is `normalizer/job-normalizer.ts` (already tested there).
+- How `dedupeJobs()` scores and deduplicates — also `job-normalizer.ts`.
+- How `parseAshbyBoard()` / `parseGreenhouseBoardToken()` parse URLs —
+  that is `discovery/identifiers.ts` (already tested there).
+
+So an extractor test should:
+- ✅ Assert that `fetchJson` was called with the expected URL and context.
+- ✅ Assert field mapping: given API response `{ title: "X", location: "Y" }`,
+  the output job has `title === "X"` and `location_raw === "Y"`.
+- ✅ Assert fallback chains specific to this extractor's mapping (e.g.,
+  `departmentName ?? department ?? team`).
+- ✅ Assert error handling when `fetchJson` returns null/error.
+- ❌ Do NOT assert `job_uid` determinism (that's `buildJob`'s contract).
+- ❌ Do NOT assert deduplication behavior (that's `dedupeJobs`'s contract).
+- ❌ Do NOT re-test URL parsing of the board token (that's `identifiers.ts`).
+
+**General rule:** If another module's test suite already covers a
+behavior, do not duplicate that coverage. Instead, mock or accept the
+dependency's output and focus on the current module's unique logic.
+
+**Size guideline:** A test file for a thin wrapper/mapper should be
+~150–300 lines, not 600+. If the file is growing beyond that, you are
+likely testing the wrong layer.
+
 ### Table-driven tests to reduce duplication
 
 - When 3+ test cases share identical structure (same assertion pattern,
@@ -132,6 +173,30 @@ If `pnpm typecheck` fails on Vitest globals (`describe`, `test`, `expect`,
 - **Discovery / URL matching modules require adversarial negative tests**
   (see "Adversarial negative testing" above). This is non-negotiable for
   any function that identifies ATS vendors from URLs or hostnames.
+
+### Extractors specifically (`extractors/*.ts`)
+
+Extractors are thin wiring layers. Their tests must focus on:
+1. **API URL construction** — the extractor builds the right endpoint URL.
+2. **Context forwarding** — `fetchJson` receives correct timeouts, retries,
+   diagnostics.
+3. **Field mapping** — raw API response fields are correctly mapped to
+   `BuildJobArgs.raw`. Use `test.each` for fallback chains:
+   ```ts
+   test.each([
+     [{ departmentName: "Eng" }, "Eng"],
+     [{ department: "Sales" }, "Sales"],
+     [{ team: "Design" }, "Design"],
+     [{}, null],
+   ])("department fallback: %o → %s", (input, expected) => { ... });
+   ```
+4. **Error paths** — null data, API errors, empty job lists.
+
+Do NOT test in extractor files:
+- `job_uid` computation or determinism (belongs to `job-normalizer.test.ts`)
+- Deduplication scoring (belongs to `job-normalizer.test.ts`)
+- Board token / URL parsing (belongs to `identifiers.test.ts`)
+- URL normalization, trailing-slash stripping (belongs to `url.test.ts`)
 
 ## Output format
 
