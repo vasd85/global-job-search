@@ -170,6 +170,11 @@ If a function uses `sha256` internally, test that "changed description →
 job marked updated" and "same description → job NOT marked updated".
 This survives refactoring from SHA256 to SHA512 or any other mechanism.
 
+**Query builder corollary:** `expect(mockWhere).toHaveBeenCalledTimes(2)`
+is the same anti-pattern applied to DB queries. It proves "a query ran"
+but not "the correct filter was applied". Capture and assert the
+arguments (see "Assert query arguments" under API route handlers).
+
 ### Table-driven tests to reduce duplication
 
 - When 3+ test cases share identical structure (same assertion pattern,
@@ -223,6 +228,60 @@ If `pnpm typecheck` fails on Vitest globals (`describe`, `test`, `expect`,
 - Exercise the handler functions with realistic request objects.
 - Assert on status codes, response bodies, and important headers.
 - Include tests for invalid input and error branches where relevant.
+
+### Assert query arguments, not just query chain calls
+
+When a route builds dynamic query conditions (filters, WHERE clauses),
+tests **must** verify WHAT was passed to query builders, not just THAT
+they were called. Otherwise, breaking any filter keeps tests green.
+
+**Strategy — mock Drizzle condition builders to return identifiable tokens:**
+
+```ts
+// Mock drizzle-orm so condition builders return recognizable strings
+vi.mock("drizzle-orm", () => ({
+  eq:        vi.fn((col, val) => `eq(${col},${val})`),
+  ilike:     vi.fn((col, val) => `ilike(${col},${val})`),
+  and:       vi.fn((...args: unknown[]) => args),
+  or:        vi.fn((...args: unknown[]) => `or(${args.join(",")})`),
+  isNotNull: vi.fn((col) => `isNotNull(${col})`),
+  desc:      vi.fn((col) => `desc(${col})`),
+  sql:       { raw: vi.fn((s: string) => s) },
+}));
+```
+
+Then capture the `where()` call arguments and assert on them:
+
+```ts
+// ❌ Weak — only proves "a query ran", not "the correct filter was applied"
+expect(mockWhere).toHaveBeenCalledTimes(2);
+
+// ✅ Strong — proves that vendor=greenhouse produced the right condition
+const whereArg = mockWhere.mock.calls[0][0];
+expect(whereArg).toContain('eq(atsVendor,greenhouse)');
+```
+
+**What to test in a filter-heavy route:**
+- ✅ Each filter parameter produces the correct condition builder call
+  (`eq`, `ilike`, `isNotNull`) with the correct column and value.
+- ✅ Multiple filters are combined correctly (all appear in `and(...)`).
+- ✅ Missing/omitted filters do NOT produce conditions (no spurious
+  `eq(column, undefined)`).
+- ✅ Default conditions are always present (e.g., `status='open'`).
+
+**What NOT to test:**
+- ❌ That the internal chain sequence is `select→from→innerJoin→where→orderBy`
+  — that's framework wiring, not your route's contract.
+
+### Every test name must be earned by its assertions
+
+If a test is named "passes the id param through to the query chain",
+the assertions **must** verify the `id` value appears in the query
+arguments. A test that only checks `limit(1)` does NOT earn that name.
+
+Before writing a test, state the contract it defends. If your assertions
+don't prove that contract, either strengthen the assertions or rename
+the test to match what it actually checks.
 
 ## For `@gjs/ats-core`
 
