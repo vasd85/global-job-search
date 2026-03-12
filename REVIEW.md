@@ -7,7 +7,20 @@ rules on top of general correctness checks.
 ## Always check
 
 - **TypeScript strictness**
-  - Avoid `any` and overly-broad types unless clearly justified.
+  - **`any` (automated):** Explicit `any` and unsafe operations on untyped
+    values are enforced by ESLint (`@typescript-eslint/no-explicit-any`,
+    `no-unsafe-assignment`, `no-unsafe-call`, `no-unsafe-member-access`,
+    `no-unsafe-return`). The linter fails on violations — no manual review
+    needed for these.
+  - **Exceptions:** A local `// eslint-disable-next-line` is allowed only
+    with a comment explaining *why* `any` is necessary. Example:
+    ```ts
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- third-party lib returns untyped JSON
+    const raw = externalLib.parse(input) as any;
+    ```
+  - **Overly-broad types (manual review):** Generic types like `object`,
+    `Record<string, unknown>`, or `unknown[]` used where a precise type is
+    feasible remain a code-review concern.
   - Keep shared types in sync between `packages/ats-core` and `apps/web`.
 
 - **ES modules and imports**

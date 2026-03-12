@@ -73,7 +73,7 @@ export function JobSearch() {
         qs.set("offset", String(params.offset));
 
         const res = await fetch(`/api/jobs?${qs}`);
-        const json: JobsResponse = await res.json();
+        const json = (await res.json()) as JobsResponse;
         setData(json);
       } finally {
         setLoading(false);
