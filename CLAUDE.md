@@ -68,8 +68,7 @@ All packages use `"type": "module"` with ES2022/ESNext TypeScript. Both `tsconfi
 
 ## AI-assisted workflow
 
-This project is a portfolio for AI-assisted development. All review and
-quality checks happen locally via Claude Code before pushing.
+All review and quality checks happen locally via Claude Code before pushing.
 
 ### Local review pipeline
 
@@ -96,17 +95,9 @@ After implementing or modifying code, run checks in this order:
   - Generate or extend Vitest tests in `apps/web` and `packages/ats-core`
     following existing patterns.
 
-### Agent teams (optional, for complex changes)
+### Agent teams (optional)
 
-For large or high-risk changes (multi-file refactors, new subsystems,
-security-sensitive work), you can optionally spawn an agent team for a
-deeper review:
-
-- One teammate focused on code quality, architecture, and TypeScript types.
-- One teammate focused on security, edge cases, and failure modes.
-- Optionally, one teammate focused on tests and missing coverage.
-
-For routine changes the local `code-reviewer` agent is sufficient.
+Future option: add only when needed for complex changes.
 
 
 ## Git Workflow
@@ -138,29 +129,15 @@ fix(ats-core): handle empty Greenhouse job list
 chore(db): add index on jobs.posted_at
 ```
 
-**Commit message format (agent must use this exact pattern):**
-
-```bash
-git commit -F - <<'EOF'
-feat(web): short description here
-
-Optional longer body explaining why.
-
-Co-Authored-By: Claude
-EOF
-```
-
-Use `git commit -F -` with a heredoc — **not** `git commit -m "$(cat <<'EOF'...)"`.
-The `$()` subshell form can leave `index.lock` unreleased when Cursor's background
-`gitWorker` process grabs the index concurrently between the subshell exit and the
-parent `git commit` invocation.
+Use `git commit -F /tmp/msg.txt` with a temp file — **not** `git commit -m "$(cat <<'EOF'...)"` and not `git commit -F - <<'EOF'`.
+Cursor's background `gitWorker` process grabs `index.lock` intermittently; the
+`$()` subshell and stdin heredoc forms are both vulnerable to this race. Writing
+the message to a temp file and passing it via `-F` is the most reliable pattern.
 
 **Rules for the agent:**
 - One commit = one logical change
 - Do not group unrelated changes into a single commit
 - Always run `pnpm typecheck && pnpm lint` before committing
-- Never use `git add .` — add files explicitly
-- Do not commit: `.env*`, `node_modules/`, `*.tsbuildinfo`, `.next/`
 - If `index.lock` error occurs: verify no real git process is running (`ps aux | grep git`), then remove the stale lock file
 
 ### Pushing to remote
