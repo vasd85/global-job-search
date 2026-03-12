@@ -2,11 +2,16 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { runIngestion } from "@/lib/ingestion/run-ingestion";
 
+interface IngestionBody {
+  companyIds?: string[];
+  concurrency?: number;
+}
+
 export async function POST(request: Request) {
   try {
-    const body = await request.json().catch(() => ({}));
-    const companyIds = body.companyIds as string[] | undefined;
-    const concurrency = (body.concurrency as number) ?? 5;
+    const body = (await request.json().catch(() => ({}))) as IngestionBody;
+    const companyIds = body.companyIds;
+    const concurrency = body.concurrency ?? 5;
 
     const result = await runIngestion(db, {
       concurrency,

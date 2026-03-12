@@ -2,7 +2,7 @@
   "name": "global-job-search",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@10.30.1",
+  "packageManager": "pnpm@10.32.1",
   "engines": {
     "node": ">=22"
   },
@@ -10,6 +10,10 @@
     "dev": "pnpm --filter @gjs/web dev",
     "build": "pnpm --filter @gjs/web build",
     "lint": "pnpm -r lint",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "test": "vitest run --passWithNoTests"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
   }
 }

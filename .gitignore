@@ -42,6 +42,7 @@ apps/web/next-env.d.ts
 
 # Claude Code local settings
 .claude/settings.local.json
+.claude/worktrees/
 
 # Scraper pipeline (local only)
 qa-jobs-scrapper/
