@@ -3,6 +3,8 @@ import { companies } from "@/lib/db/schema";
 import { desc } from "drizzle-orm";
 import Link from "next/link";
 
+export const dynamic = "force-dynamic";
+
 const VENDOR_COLORS: Record<string, string> = {
   greenhouse:
     "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
