@@ -8,7 +8,7 @@ import type { AllJob } from "../types";
 // ---------------------------------------------------------------------------
 
 /** Returns a minimal valid BuildJobArgs that buildJob() will accept. */
-function makeArgs(overrides: Partial<BuildJobArgs> & { raw?: Partial<BuildJobArgs["raw"]> } = {}): BuildJobArgs {
+function makeArgs(overrides: Omit<Partial<BuildJobArgs>, "raw"> & { raw?: Partial<BuildJobArgs["raw"]> } = {}): BuildJobArgs {
   const { raw: rawOverrides, ...rest } = overrides;
   return {
     sourceType: "html",
