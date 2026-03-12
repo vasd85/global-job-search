@@ -175,6 +175,88 @@ is the same anti-pattern applied to DB queries. It proves "a query ran"
 but not "the correct filter was applied". Capture and assert the
 arguments (see "Assert query arguments" under API route handlers).
 
+### Every test name must be earned by its assertions
+
+This applies to **all** test files (components, routes, utils — everything).
+
+If a test is named "shows loading indicator before data arrives", the
+assertions **must** query the DOM for the loading element. A test that
+only checks `fetch` call count does NOT earn that name.
+
+Before writing a test, state the contract it defends in plain English.
+If your assertions don't prove that contract, either:
+- Strengthen assertions to match the name, OR
+- Rename the test to honestly describe what it checks.
+
+```ts
+// ❌ Name promises UI check, but assertions only verify fetch timing
+test("shows loading indicator before debounce fires", async () => {
+  render(<JobSearch />);
+  expect(fetch).not.toHaveBeenCalled();       // ← proves fetch timing
+  await act(() => vi.advanceTimersByTimeAsync(350));
+  expect(fetch).toHaveBeenCalledTimes(1);     // ← proves fetch timing
+  // Where is the loading indicator assertion?
+});
+
+// ✅ Name matches assertions
+test("shows loading indicator before debounce fires", async () => {
+  render(<JobSearch />);
+  expect(screen.getByRole("status")).toBeInTheDocument();  // ← proves UI
+  await act(() => vi.advanceTimersByTimeAsync(350));
+  await waitFor(() =>
+    expect(screen.queryByRole("status")).not.toBeInTheDocument()
+  );
+});
+```
+
+### Deterministic test data
+
+Tests must produce identical results regardless of timezone, locale,
+or execution time:
+
+- **Dates:** Never use midnight UTC (`T00:00:00Z`) for values that will
+  be formatted with `toLocaleDateString()` or similar. Midnight UTC
+  becomes the previous day in any negative-offset timezone (US, Brazil,
+  etc.). Use midday: `T12:00:00Z`.
+  ```ts
+  // ❌ Flaky — "Jul 15" in UTC+0, "Jul 14" in UTC-5
+  makeJob({ firstSeenAt: "2025-07-15T00:00:00Z" });
+
+  // ✅ Safe — "Jul 15" everywhere from UTC-11 to UTC+12
+  makeJob({ firstSeenAt: "2025-07-15T12:00:00Z" });
+  ```
+- **Locale-dependent strings:** If the code uses locale formatting
+  (dates, numbers), either mock the locale in the test or assert with
+  a regex that accepts both `Jul 15` and `15 Jul`.
+- **`Date.now()` / `new Date()`:** Always use `vi.setSystemTime()` or
+  pass explicit timestamps. Never rely on "current time" in assertions.
+
+### Always test async failure paths
+
+For **any** function or component that calls `fetch`, a database, or
+an external service, write at least one test for the failure case:
+
+- `fetch` rejects (network error)
+- `fetch` returns non-OK status (500, 404)
+- Response body is not valid JSON
+
+If the code **does not handle** the error (no `catch`, no error UI),
+write the test that **proves the broken behavior** and add a `// TODO:`
+comment:
+
+```ts
+// TODO: Component has no catch block — fetch rejection propagates as
+// unhandled promise rejection. Should show an error banner to the user.
+test("fetch rejection does not crash the component", async () => {
+  vi.mocked(fetch).mockRejectedValueOnce(new Error("Network error"));
+  render(<JobSearch />);
+  // Currently: unhandled rejection. After fix: expect error UI.
+});
+```
+
+This ensures the gap is documented and discoverable, not silently
+skipped.
+
 ### Table-driven tests to reduce duplication
 
 - When 3+ test cases share identical structure (same assertion pattern,
@@ -222,6 +304,55 @@ If `pnpm typecheck` fails on Vitest globals (`describe`, `test`, `expect`,
   - Interact with `userEvent` where appropriate.
 - Avoid directly accessing component internals; test rendered output and
   behaviors from the user perspective.
+
+### What to test in a component
+
+Focus on **user-visible outcomes**, not internal wiring:
+
+- ✅ **UI states:** loading indicator appears/disappears, error message
+  shows on failure, empty state renders when no data.
+- ✅ **User interactions → visible effects:** typing in search → correct
+  API call + results render; clicking pagination → new page shows.
+- ✅ **Async failure paths:** fetch rejects → component doesn't crash
+  (see "Always test async failure paths" above). This is mandatory.
+- ✅ **Conditional rendering:** optional fields omitted when null,
+  fallback values used when primary is missing.
+- ❌ Do NOT test debounce timer internals (exact ms values, number of
+  re-renders). Test the outcome: "rapid typing → single fetch with
+  final value".
+- ❌ Do NOT test that `useCallback` or `useEffect` were called. Test
+  what the user sees.
+
+### Use `test.each` for interaction variations
+
+When a component has multiple filters, inputs, or conditional fields
+that follow the same test pattern, use `test.each`:
+
+```ts
+// ❌ 5 nearly-identical test blocks for 5 filters — bloated, hard to maintain
+test("search filter triggers fetch", async () => { ... });
+test("workplaceType filter triggers fetch", async () => { ... });
+test("vendor filter triggers fetch", async () => { ... });
+
+// ✅ Compact — one block covers all filters
+test.each([
+  ["search",        "input",  "engineer",  "search=engineer"],
+  ["workplaceType", "select", "remote",    "workplaceType=remote"],
+  ["vendor",        "select", "greenhouse","vendor=greenhouse"],
+])("%s=%s triggers fetch with %s in query", async (name, type, value, expected) => {
+  // interact with the control, assert fetch URL contains expected param
+});
+```
+
+Also use `test.each` for nullable/optional field rendering in cards.
+
+### Size guideline for component tests
+
+A test file for a **single complex component** (with state, fetch,
+pagination) should be ~200–400 lines. If it exceeds 500 lines:
+- Extract shared helpers into a separate test-utils file.
+- Split sub-components (e.g., `JobCard`) into their own test files.
+- Check if `test.each` can replace repeated blocks.
 
 ## For API route handlers
 
@@ -272,16 +403,6 @@ expect(whereArg).toContain('eq(atsVendor,greenhouse)');
 **What NOT to test:**
 - ❌ That the internal chain sequence is `select→from→innerJoin→where→orderBy`
   — that's framework wiring, not your route's contract.
-
-### Every test name must be earned by its assertions
-
-If a test is named "passes the id param through to the query chain",
-the assertions **must** verify the `id` value appears in the query
-arguments. A test that only checks `limit(1)` does NOT earn that name.
-
-Before writing a test, state the contract it defends. If your assertions
-don't prove that contract, either strengthen the assertions or rename
-the test to match what it actually checks.
 
 ## For `@gjs/ats-core`
 
