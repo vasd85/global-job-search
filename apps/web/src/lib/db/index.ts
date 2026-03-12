@@ -18,8 +18,11 @@ function createDb(): Db {
 export const db: Db = new Proxy({} as Db, {
   get(_, prop) {
     _db ??= createDb();
-    const val = Reflect.get(_db, prop, _db);
-    return typeof val === "function" ? val.bind(_db) : val;
+    const val: unknown = Reflect.get(_db, prop, _db);
+    if (typeof val === "function") {
+      return (val as (...args: unknown[]) => unknown).bind(_db);
+    }
+    return val;
   },
 });
 
