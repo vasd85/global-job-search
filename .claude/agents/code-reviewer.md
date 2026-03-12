@@ -5,7 +5,7 @@ description: >
   for correctness, security, and maintainability. Use immediately after
   writing or modifying code, and before opening a PR.
 tools: Read, Grep, Glob, Bash
-model: sonnet
+model: opus
 permissionMode: default
 ---
 

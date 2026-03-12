@@ -4,7 +4,7 @@ description: >
   Specialized test writer for this monorepo. Adds and improves tests for new
   and changed code using Vitest and existing project conventions.
 tools: Read, Write, Edit, Bash, Grep, Glob
-model: sonnet
+model: opus
 permissionMode: default
 ---
 
