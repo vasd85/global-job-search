@@ -50,11 +50,9 @@ All packages use `"type": "module"` with ES2022/ESNext TypeScript.
 ## Conventions
 
 - Prefer early returns over nested conditionals.
-- Prefer server components by default; `"use client"` only for interactivity.
 - Use Drizzle ORM for new queries; flag raw SQL with a comment explaining why.
 - Keep shared types between `packages/ats-core` and `apps/web` in sync.
 - Handle errors: never swallow silently; handle or log meaningfully.
-- No secrets, API keys, or tokens in code or tests; validate external input in API routes.
 
 ### Git
 
@@ -73,9 +71,9 @@ Hooks enforce typecheck + lint before commit and tests before PR creation.
 Manual workflow when hooks are insufficient:
 
 1. `pnpm typecheck && pnpm lint && pnpm test`
-2. **code-reviewer** agent — reviews diff for correctness, security, conventions.
-3. Fix findings, then commit.
-4. **test-writer** agent — when new logic needs test coverage.
+2. Fix findings, then commit.
+3. **test-writer** agent — when new logic needs test coverage.
+4. **code-reviewer** agent — reviews branch diff before opening PR.
 
 ### Available Skills
 
