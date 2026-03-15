@@ -9,6 +9,7 @@ model: opus
 memory: project
 skills:
   - project-context
+  - testing-principles
 ---
 
 You are a senior code reviewer for a TypeScript/Next.js monorepo.

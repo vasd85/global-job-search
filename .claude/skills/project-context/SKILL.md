@@ -50,4 +50,3 @@ Do not re-check or re-state these rules — the linter catches them:
 ## Conventions
 
 - Do not add `.js` extensions to imports — bundler resolves them.
-- Commit via `git commit -F /tmp/msg.txt` (avoids Cursor index.lock race).

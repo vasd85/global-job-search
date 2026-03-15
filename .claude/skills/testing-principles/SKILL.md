@@ -1,8 +1,13 @@
-# Testing Conventions
+---
+name: testing-principles
+description: >-
+  Core testing principles and project-specific test patterns for the
+  global-job-search monorepo. Preloaded into test-writer and code-reviewer
+  subagents.
+user-invocable: false
+---
 
-These principles apply to all test code in this monorepo.
-The `test-writer` agent (`.claude/agents/test-writer.md`) embeds these
-principles directly. When updating rules here, also update the agent file.
+# Testing Principles
 
 ## Core Principles
 
@@ -47,3 +52,29 @@ principles directly. When updating rules here, also update the agent file.
     Assert `.set()` / `.values()` arguments, not just call counts.
     `expect(mock).toHaveBeenCalled()` only proves "something ran" — prove
     the correct data was written.
+
+## Project-Specific Patterns
+
+### ATS extractors (`packages/ats-core/src/extractors/`)
+
+Extractors are thin wiring. Test:
+- API URL construction from careers URL / board token
+- Field mapping: raw API response → `BuildJobArgs.raw`
+- Fallback chains (e.g., `departmentName ?? department ?? team`)
+- Error paths: null data, API errors, empty job lists
+- Do NOT test `job_uid`, dedup, URL parsing — those are normalizer/discovery tests.
+
+Size: ~150–300 lines per extractor test file.
+
+### API route handlers (`apps/web/src/app/api/`)
+
+- Mock Drizzle condition builders (`eq`, `ilike`, `isNotNull`) to return
+  identifiable tokens, then assert those tokens appear in `where()` args.
+- Assert WHAT filter was applied, not just THAT a query ran.
+- Test each filter param independently + combined filters.
+
+### React components (`apps/web/src/components/`)
+
+- React Testing Library: `render(...)`, `screen.getBy*`, `userEvent`.
+- Use `test.each` for filter/field variations.
+- Size: ~200–400 lines for a complex component.
