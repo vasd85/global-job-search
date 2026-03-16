@@ -68,13 +68,15 @@ All packages use `"type": "module"` with ES2022/ESNext TypeScript.
 ## Quality Pipeline
 
 Hooks enforce typecheck + lint before commit and tests before PR creation.
-Manual workflow when hooks are insufficient:
+Before opening a PR, always run both agents in order:
 
 1. `pnpm typecheck && pnpm lint && pnpm test`
 2. Fix findings, then commit.
-3. **test-writer** agent — when new logic needs test coverage.
-4. **code-reviewer** agent — reviews branch diff before opening PR.
+3. **test-writer** agent — covers all new and changed code with tests.
+4. **code-reviewer** agent — reviews branch diff for logic bugs and correctness.
+5. Fix findings from both agents, commit, then open PR.
 
 ### Available Skills
 
+- `/pre-pr` — full quality pipeline: typecheck, lint, tests, test-writer, code-reviewer, then PR.
 - `/architect` — implementation plans for multi-file changes or architectural decisions.

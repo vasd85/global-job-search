@@ -1,5 +1,5 @@
 #!/bin/bash
-# PreToolUse hook for Bash — runs tests before PR creation.
+# PreToolUse hook for Bash — runs typecheck + tests before PR creation.
 # Matches: gh pr create
 
 INPUT=$(cat)
@@ -11,6 +11,11 @@ if ! echo "$COMMAND" | grep -qE '^\s*gh\s+pr\s+create\b'; then
 fi
 
 cd "$CLAUDE_PROJECT_DIR" || exit 0
+
+if ! pnpm typecheck 2>&1; then
+  echo "Blocked: typecheck must pass before creating a PR. Run 'pnpm typecheck' and fix errors." >&2
+  exit 2
+fi
 
 if ! pnpm test 2>&1; then
   echo "Blocked: tests must pass before creating a PR. Run 'pnpm test' and fix failures." >&2
