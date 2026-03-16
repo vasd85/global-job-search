@@ -79,4 +79,4 @@ Before opening a PR, always run both agents in order:
 ### Available Skills
 
 - `/pre-pr` — full quality pipeline: typecheck, lint, tests, test-writer, code-reviewer, then PR.
-- `/architect` — implementation plans for multi-file changes or architectural decisions.
+- `/architect` — implementation plans, architectural decisions, and evolution roadmaps for complex changes.
