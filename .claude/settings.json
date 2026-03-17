@@ -22,8 +22,39 @@
       "Bash(git add .)",
       "Bash(git add . *)",
       "Bash(git add -A*)",
-      "Bash(git add --all*)"
+      "Bash(git add --all*)",
+      "Bash(git commit -m *)",
+      "Bash(git commit -m\"*)",
+      "Bash(git commit -m'*)",
+      "Bash(git commit -am *)",
+      "Bash(git commit -am\"*)",
+      "Bash(git commit -am'*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/protect-files.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/git-commit-guard.sh"
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/pre-pr-checks.sh"
+          }
+        ]
+      }
     ]
   }
 }
-

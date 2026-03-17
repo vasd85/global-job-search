@@ -1,8 +1,11 @@
 # Code Review Guidelines
 
 This document defines project-specific review rules for the **global-job-search**
-monorepo. Claude Code and automated reviewers should treat these as additive
-rules on top of general correctness checks.
+monorepo. It serves as the canonical human-readable review policy.
+
+> **Note:** The `code-reviewer` agent (`.claude/agents/code-reviewer.md`)
+> embeds these criteria directly in its prompt. When updating rules here,
+> also update the agent file to keep them in sync.
 
 ## Always check
 
@@ -22,11 +25,6 @@ rules on top of general correctness checks.
     `Record<string, unknown>`, or `unknown[]` used where a precise type is
     feasible remain a code-review concern.
   - Keep shared types in sync between `packages/ats-core` and `apps/web`.
-
-- **ES modules and imports**
-  - Use ES modules consistently.
-  - Do not add `.js` extensions to import paths — the project uses
-    `moduleResolution: "bundler"` and all code is processed by a bundler.
 
 - **Error handling and robustness**
   - Handle failures from external services and database operations.
