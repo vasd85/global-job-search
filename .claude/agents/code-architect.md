@@ -1,6 +1,6 @@
 ---
-name: architect
-description: >
+name: code-architect
+description: >-
   Designs implementation plans, architectural decisions, and evolution
   roadmaps. Use before starting complex implementations that touch
   multiple files, require design choices, or need strategic planning.

@@ -8,7 +8,7 @@ description: >-
 
 # Code Architect
 
-Launch the **architect** subagent to design an implementation plan.
+Launch the **code-architect** subagent to design an implementation plan.
 
 Pass the full context of the task — the subagent runs in isolation and
 does not see the current conversation. Include in the prompt:
