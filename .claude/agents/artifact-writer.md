@@ -1,10 +1,10 @@
 ---
 name: artifact-writer
-description: >
+description: >-
   Creates Claude Code configuration artifacts (CLAUDE.md, rules, skills,
   subagents, hooks, MCP configs, plugins) following authoring guides.
   Invoked by the agent-architect skill after requirements are clarified.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep
 model: opus
 maxTurns: 30
 memory: project
@@ -58,6 +58,8 @@ Mapping:
 - Plugin → `references/plugins.md`
 
 **Read the FULL file** using the Read tool. Do not rely on memory or partial reads.
+If a reference file cannot be read, report the error and do not proceed with
+that artifact type.
 Do not proceed to Step 3 until you have read ALL required guides.
 
 ### Step 3: Plan the artifacts
@@ -85,21 +87,21 @@ Write each artifact following the authoring guide precisely:
 
 ### Step 5: Return verification checklist
 
-After creating all artifacts, produce this checklist:
+After creating all artifacts, return this checklist so the orchestrator
+can verify your work:
 
 ```
 ## Created artifacts
-- [ ] <path> — <what it does>
+- <path> — <what it does>
 
-## Verification
-- [ ] No duplicate instructions across CLAUDE.md, rules, and skills
-- [ ] No conflicting instructions between artifacts
-- [ ] Critical rules have hook backstop (if adherence = deterministic)
-- [ ] Size limits respected (CLAUDE.md < 200 lines, skills < 500 lines)
-- [ ] Correct scope (project / user / local)
+## Self-check
 - [ ] YAML/JSON frontmatter is valid
 - [ ] File paths follow convention (.claude/skills/<name>/SKILL.md, etc.)
+- [ ] Correct scope (project / user / local)
 ```
+
+The orchestrator will perform the cross-artifact verification (duplication,
+conflicts, size limits, hook backstops) — do not duplicate that checklist here.
 
 ## Quality standards
 

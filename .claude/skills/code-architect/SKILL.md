@@ -1,12 +1,12 @@
 ---
-name: architect
-description: >
+name: code-architect
+description: >-
   Designs implementation plans for multi-file changes, new features, or
   architectural decisions. Use before starting complex implementations
   that touch multiple files or require design choices.
 ---
 
-# Architect
+# Code Architect
 
 Launch the **architect** subagent to design an implementation plan.
 
