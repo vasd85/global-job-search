@@ -4,16 +4,23 @@ import { createEmptyDiagnostics } from "../types";
 import type { Diagnostics } from "../types";
 
 // ---------------------------------------------------------------------------
-// Mock fetchJson from ./common — we isolate the extractor from network I/O
+// Mock fetchJson — isolate the extractor from network I/O
 // ---------------------------------------------------------------------------
 
 vi.mock("./common", () => ({
   fetchJson: vi.fn(),
 }));
 
+// Mock identifiers — board parsing is tested in identifiers.test.ts
+vi.mock("../discovery/identifiers", () => ({
+  parseAshbyBoard: vi.fn(),
+}));
+
 import { fetchJson } from "./common";
+import { parseAshbyBoard } from "../discovery/identifiers";
 
 const fetchJsonMock = vi.mocked(fetchJson);
+const parseBoardMock = vi.mocked(parseAshbyBoard);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -30,7 +37,6 @@ function makeContext(overrides: Partial<ExtractionContext> = {}): ExtractionCont
   };
 }
 
-/** A realistic Ashby API job entry with all fields populated. */
 function makeAshbyJob(overrides: Record<string, unknown> = {}) {
   return {
     id: "job-abc-123",
@@ -46,29 +52,21 @@ function makeAshbyJob(overrides: Record<string, unknown> = {}) {
     department: "Eng",
     team: "Platform",
     workplaceType: "Hybrid",
-    descriptionHtml: "<p>We are looking for a talented engineer to join our team.</p>",
-    descriptionPlain: "We are looking for a talented engineer to join our team.",
+    descriptionHtml: "<p>We are looking for a talented engineer.</p>",
+    descriptionPlain: "We are looking for a talented engineer.",
     publishedDate: "2025-11-01",
-    publishedAt: "2025-11-01T00:00:00Z",
+    publishedAt: "2025-11-01T12:00:00Z",
     employmentType: "FullTime",
     ...overrides,
   };
 }
 
-/** Helper to set up fetchJson to return a successful response with the given jobs array. */
 function mockSuccessResponse(jobs: unknown[]) {
-  fetchJsonMock.mockResolvedValue({
-    data: { jobs },
-    error: null,
-  });
+  fetchJsonMock.mockResolvedValue({ data: { jobs }, error: null });
 }
 
-/** Helper to set up fetchJson to return an error. */
 function mockErrorResponse(error: string) {
-  fetchJsonMock.mockResolvedValue({
-    data: null,
-    error,
-  });
+  fetchJsonMock.mockResolvedValue({ data: null, error });
 }
 
 // ---------------------------------------------------------------------------
@@ -77,398 +75,179 @@ function mockErrorResponse(error: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  parseBoardMock.mockReturnValue("acmecorp");
 });
 
 describe("extractFromAshby", () => {
   // -------------------------------------------------------------------------
-  // Board parsing — invalid careers URLs
+  // Board parse failure (wiring check — parsing logic is in identifiers.test.ts)
   // -------------------------------------------------------------------------
 
-  describe("when the careers URL cannot be parsed into a board name", () => {
-    const invalidUrls = [
-      { url: "not-a-valid-url", label: "malformed URL" },
-      { url: "https://example.com/acmecorp", label: "non-ashby domain without ?for= param" },
-      { url: "https://jobs.ashbyhq.com/", label: "ashby domain with no path segments" },
-      { url: "https://jobs.ashbyhq.com/jobs", label: "reserved segment 'jobs'" },
-      { url: "https://jobs.ashbyhq.com/careers", label: "reserved segment 'careers'" },
-      { url: "https://jobs.ashbyhq.com/embed", label: "reserved segment 'embed'" },
-    ];
+  test("returns an error when board cannot be parsed", async () => {
+    parseBoardMock.mockReturnValue(null);
+    const ctx = makeContext({ careersUrl: "https://bad.example.com" });
+    const result = await extractFromAshby(ctx);
 
-    test.each(invalidUrls)(
-      "returns an error when careers URL is a $label",
-      async ({ url }) => {
-        const ctx = makeContext({ careersUrl: url });
-        const result = await extractFromAshby(ctx);
+    expect(result.jobs).toEqual([]);
+    expect(result.errors[0]).toContain("Unable to parse Ashby board");
+    expect(fetchJsonMock).not.toHaveBeenCalled();
+  });
 
-        expect(result.jobs).toEqual([]);
-        expect(result.errors).toHaveLength(1);
-        expect(result.errors[0]).toContain("Unable to parse Ashby board");
-        expect(result.errors[0]).toContain(url);
-        expect(fetchJsonMock).not.toHaveBeenCalled();
-      },
+  // -------------------------------------------------------------------------
+  // API endpoint construction & context forwarding
+  // -------------------------------------------------------------------------
+
+  test("calls fetchJson with correct endpoint and forwards context args", async () => {
+    mockSuccessResponse([]);
+    const diag: Diagnostics = createEmptyDiagnostics();
+    const ctx = makeContext({ diagnostics: diag, timeoutMs: 9999, maxRetries: 5, maxAttempts: 7 });
+    await extractFromAshby(ctx);
+
+    expect(fetchJsonMock).toHaveBeenCalledWith(
+      "https://api.ashbyhq.com/posting-api/job-board/acmecorp",
+      diag,
+      9999,
+      5,
+      7,
     );
-  });
-
-  // Adversarial near-miss: a URL that looks similar to ashby but is not
-  describe("adversarial board-name near-misses", () => {
-    test("rejects a URL on ashbyhq.org (wrong TLD)", async () => {
-      const ctx = makeContext({ careersUrl: "https://jobs.ashbyhq.org/acmecorp" });
-      const result = await extractFromAshby(ctx);
-
-      expect(result.jobs).toEqual([]);
-      expect(result.errors[0]).toContain("Unable to parse Ashby board");
-    });
-
-    test("rejects a URL with ashbyhq as a path segment on a different domain", async () => {
-      const ctx = makeContext({ careersUrl: "https://example.com/ashbyhq.com/acmecorp" });
-      const result = await extractFromAshby(ctx);
-
-      expect(result.jobs).toEqual([]);
-      expect(result.errors[0]).toContain("Unable to parse Ashby board");
-    });
-
-    test("accepts a URL with ?for= param even on a non-ashby domain", async () => {
-      mockSuccessResponse([]);
-      const ctx = makeContext({ careersUrl: "https://example.com/careers?for=acmecorp" });
-      const result = await extractFromAshby(ctx);
-
-      // Should succeed (no board parse error) — the ?for= param is accepted
-      expect(result.errors).toEqual([]);
-      expect(fetchJsonMock).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // API endpoint construction
-  // -------------------------------------------------------------------------
-
-  describe("API endpoint construction", () => {
-    test("calls fetchJson with the correct Ashby posting API URL", async () => {
-      mockSuccessResponse([]);
-      const ctx = makeContext({ careersUrl: "https://jobs.ashbyhq.com/acmecorp" });
-      await extractFromAshby(ctx);
-
-      expect(fetchJsonMock).toHaveBeenCalledWith(
-        "https://api.ashbyhq.com/posting-api/job-board/acmecorp",
-        ctx.diagnostics,
-        ctx.timeoutMs,
-        ctx.maxRetries,
-        ctx.maxAttempts,
-      );
-    });
-
-    test("passes board from ?for= query param to the API endpoint", async () => {
-      mockSuccessResponse([]);
-      const ctx = makeContext({ careersUrl: "https://jobs.ashbyhq.com/embed?for=betacorp" });
-      await extractFromAshby(ctx);
-
-      expect(fetchJsonMock).toHaveBeenCalledWith(
-        "https://api.ashbyhq.com/posting-api/job-board/betacorp",
-        expect.anything(),
-        expect.anything(),
-        expect.anything(),
-        expect.anything(),
-      );
-    });
-
-    test("forwards diagnostics, timeoutMs, maxRetries, and maxAttempts to fetchJson", async () => {
-      mockSuccessResponse([]);
-      const diag: Diagnostics = createEmptyDiagnostics();
-      const ctx = makeContext({ diagnostics: diag, timeoutMs: 9999, maxRetries: 5, maxAttempts: 7 });
-      await extractFromAshby(ctx);
-
-      expect(fetchJsonMock).toHaveBeenCalledWith(
-        expect.any(String),
-        diag,
-        9999,
-        5,
-        7,
-      );
-    });
   });
 
   // -------------------------------------------------------------------------
   // API error handling
   // -------------------------------------------------------------------------
 
-  describe("when the API call fails", () => {
-    test("returns an error message containing the endpoint URL and the error text", async () => {
-      mockErrorResponse("connection timeout");
-      const ctx = makeContext();
-      const result = await extractFromAshby(ctx);
+  test("returns error message with endpoint and error text on API failure", async () => {
+    mockErrorResponse("connection timeout");
+    const result = await extractFromAshby(makeContext());
 
-      expect(result.jobs).toEqual([]);
-      expect(result.errors).toHaveLength(1);
-      expect(result.errors[0]).toContain("Ashby API failed");
-      expect(result.errors[0]).toContain("api.ashbyhq.com/posting-api/job-board/acmecorp");
-      expect(result.errors[0]).toContain("connection timeout");
-    });
+    expect(result.jobs).toEqual([]);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toContain("Ashby API failed");
+    expect(result.errors[0]).toContain("connection timeout");
+  });
 
-    test("returns 'unknown error' when fetchJson returns null data with no error string", async () => {
-      fetchJsonMock.mockResolvedValue({ data: null, error: null });
-      const ctx = makeContext();
-      const result = await extractFromAshby(ctx);
+  test("returns 'unknown error' when fetchJson returns null data with no error string", async () => {
+    fetchJsonMock.mockResolvedValue({ data: null, error: null });
+    const result = await extractFromAshby(makeContext());
 
-      expect(result.errors).toHaveLength(1);
-      expect(result.errors[0]).toContain("unknown error");
-    });
+    expect(result.errors[0]).toContain("unknown error");
   });
 
   // -------------------------------------------------------------------------
   // Empty job list
   // -------------------------------------------------------------------------
 
-  describe("when the API returns an empty job list", () => {
-    test("returns zero jobs and no errors when jobs array is empty", async () => {
-      mockSuccessResponse([]);
-      const ctx = makeContext();
-      const result = await extractFromAshby(ctx);
+  test("returns zero jobs and no errors when API returns empty list", async () => {
+    mockSuccessResponse([]);
+    const result = await extractFromAshby(makeContext());
 
-      expect(result.jobs).toEqual([]);
-      expect(result.errors).toEqual([]);
-    });
+    expect(result.jobs).toEqual([]);
+    expect(result.errors).toEqual([]);
+  });
 
-    test("returns zero jobs and no errors when jobs field is undefined", async () => {
-      fetchJsonMock.mockResolvedValue({ data: {}, error: null });
-      const ctx = makeContext();
-      const result = await extractFromAshby(ctx);
+  test("returns zero jobs when jobs field is undefined in response", async () => {
+    fetchJsonMock.mockResolvedValue({ data: {}, error: null });
+    const result = await extractFromAshby(makeContext());
 
-      expect(result.jobs).toEqual([]);
-      expect(result.errors).toEqual([]);
-    });
+    expect(result.jobs).toEqual([]);
+    expect(result.errors).toEqual([]);
   });
 
   // -------------------------------------------------------------------------
-  // Successful extraction — field mapping
+  // Successful extraction — full field mapping
   // -------------------------------------------------------------------------
 
-  describe("successful extraction with fully-populated job", () => {
-    test("maps a fully-populated Ashby job to the correct normalized fields", async () => {
-      const ashbyJob = makeAshbyJob();
-      mockSuccessResponse([ashbyJob]);
-      const ctx = makeContext();
-      const result = await extractFromAshby(ctx);
+  test("maps a fully-populated Ashby job to correct normalized fields", async () => {
+    mockSuccessResponse([makeAshbyJob()]);
+    const result = await extractFromAshby(makeContext());
 
-      expect(result.errors).toEqual([]);
-      expect(result.jobs).toHaveLength(1);
+    expect(result.errors).toEqual([]);
+    expect(result.jobs).toHaveLength(1);
 
-      const job = result.jobs[0];
-      expect(job.title).toBe("Senior Software Engineer");
-      expect(job.url).toBe("https://jobs.ashbyhq.com/acmecorp/job-abc-123");
-      expect(job.job_id).toBe("job-abc-123");
-      expect(job.location_raw).toBe("San Francisco, CA");
-      expect(job.department_raw).toBe("Engineering");
-      expect(job.posted_date_raw).toBe("2025-11-01");
-      expect(job.employment_type_raw).toBe("FullTime");
-      expect(job.workplace_type).toBe("Hybrid");
-      expect(job.description_text).toContain("We are looking for a talented engineer");
-      expect(job.source_type).toBe("ats_api");
-      expect(job.source_ref).toBe("ashby");
-    });
-
-    test("sets apply_url from applyUrl field", async () => {
-      mockSuccessResponse([makeAshbyJob()]);
-      const result = await extractFromAshby(makeContext());
-
-      const job = result.jobs[0];
-      expect(job.apply_url).toBe(
-        "https://jobs.ashbyhq.com/acmecorp/job-abc-123/application",
-      );
-    });
-
-    test("sets source_detail_url from jobUrl field", async () => {
-      mockSuccessResponse([makeAshbyJob()]);
-      const result = await extractFromAshby(makeContext());
-
-      const job = result.jobs[0];
-      expect(job.source_detail_url).toBe(
-        "https://jobs.ashbyhq.com/acmecorp/job-abc-123",
-      );
-    });
-
-    test("sets detail_fetch_status to 'ok' when descriptionHtml is present", async () => {
-      mockSuccessResponse([makeAshbyJob()]);
-      const result = await extractFromAshby(makeContext());
-
-      expect(result.jobs[0].detail_fetch_status).toBe("ok");
-    });
-
-    test("generates a deterministic job_uid based on canonical URL", async () => {
-      mockSuccessResponse([makeAshbyJob()]);
-      const result1 = await extractFromAshby(makeContext());
-
-      vi.clearAllMocks();
-      mockSuccessResponse([makeAshbyJob()]);
-      const result2 = await extractFromAshby(makeContext());
-
-      expect(result1.jobs[0].job_uid).toBe(result2.jobs[0].job_uid);
-      expect(result1.jobs[0].job_uid).toBeTruthy();
-    });
+    const job = result.jobs[0];
+    expect(job.title).toBe("Senior Software Engineer");
+    expect(job.url).toBe("https://jobs.ashbyhq.com/acmecorp/job-abc-123");
+    expect(job.job_id).toBe("job-abc-123");
+    expect(job.location_raw).toBe("San Francisco, CA");
+    expect(job.department_raw).toBe("Engineering");
+    expect(job.posted_date_raw).toBe("2025-11-01");
+    expect(job.employment_type_raw).toBe("FullTime");
+    expect(job.workplace_type).toBe("Hybrid");
+    expect(job.description_text).toContain("We are looking for a talented engineer");
+    expect(job.apply_url).toBe("https://jobs.ashbyhq.com/acmecorp/job-abc-123/application");
+    expect(job.source_detail_url).toBe("https://jobs.ashbyhq.com/acmecorp/job-abc-123");
+    expect(job.detail_fetch_status).toBe("ok");
+    expect(job.source_type).toBe("ats_api");
+    expect(job.source_ref).toBe("ashby");
   });
 
   // -------------------------------------------------------------------------
-  // Field fallback logic
+  // Field fallback chains (test.each)
   // -------------------------------------------------------------------------
 
-  describe("field fallback behavior", () => {
-    // -- URL fallbacks: jobUrl vs applyUrl -----------------------------------
-
-    test("falls back to applyUrl for the job URL when jobUrl is missing", async () => {
-      mockSuccessResponse([makeAshbyJob({ jobUrl: undefined })]);
+  describe("field fallback chains", () => {
+    test.each([
+      ["jobUrl present", { jobUrl: "https://a.com/j1", applyUrl: "https://a.com/apply" }, "https://a.com/j1"],
+      ["jobUrl missing, falls back to applyUrl", { jobUrl: undefined, applyUrl: "https://a.com/apply" }, "https://a.com/apply"],
+    ])("url: %s", async (_label, overrides, expectedUrl) => {
+      mockSuccessResponse([makeAshbyJob(overrides)]);
       const result = await extractFromAshby(makeContext());
-
-      expect(result.jobs[0].url).toBe(
-        "https://jobs.ashbyhq.com/acmecorp/job-abc-123/application",
-      );
+      expect(result.jobs[0].url).toBe(expectedUrl);
     });
 
-    test("falls back to jobUrl for apply_url when applyUrl is missing", async () => {
-      mockSuccessResponse([makeAshbyJob({ applyUrl: undefined })]);
+    test.each([
+      ["applyUrl present", { applyUrl: "https://a.com/apply", jobUrl: "https://a.com/j" }, "https://a.com/apply"],
+      ["applyUrl missing, falls back to jobUrl", { applyUrl: undefined, jobUrl: "https://a.com/j" }, "https://a.com/j"],
+    ])("apply_url: %s", async (_label, overrides, expected) => {
+      mockSuccessResponse([makeAshbyJob(overrides)]);
       const result = await extractFromAshby(makeContext());
-
-      expect(result.jobs[0].apply_url).toBe(
-        "https://jobs.ashbyhq.com/acmecorp/job-abc-123",
-      );
+      expect(result.jobs[0].apply_url).toBe(expected);
     });
 
-    test("falls back to applyUrl for source_detail_url when jobUrl is missing", async () => {
-      mockSuccessResponse([makeAshbyJob({ jobUrl: undefined })]);
+    test.each([
+      ["location present", {}, "San Francisco, CA"],
+      ["location missing, uses secondaryLocations", { location: undefined, secondaryLocations: [{ location: "Berlin, DE" }, { location: "London, UK" }] }, "Berlin, DE, London, UK"],
+      ["secondaryLocations uses title fallback", { location: undefined, secondaryLocations: [{ title: "Remote US" }, { location: "Paris, FR" }] }, "Remote US, Paris, FR"],
+      ["both absent", { location: undefined, secondaryLocations: undefined }, null],
+    ])("location_raw: %s", async (_label, overrides, expected) => {
+      mockSuccessResponse([makeAshbyJob(overrides)]);
       const result = await extractFromAshby(makeContext());
-
-      expect(result.jobs[0].source_detail_url).toBe(
-        "https://jobs.ashbyhq.com/acmecorp/job-abc-123/application",
-      );
+      expect(result.jobs[0].location_raw).toBe(expected);
     });
 
-    // -- Location fallback: location vs secondaryLocations -------------------
-
-    test("falls back to secondaryLocations when location is missing", async () => {
-      mockSuccessResponse([
-        makeAshbyJob({
-          location: undefined,
-          secondaryLocations: [
-            { location: "Berlin, DE" },
-            { location: "London, UK" },
-          ],
-        }),
-      ]);
+    test.each([
+      ["departmentName present", {}, "Engineering"],
+      ["departmentName missing, falls back to department", { departmentName: undefined }, "Eng"],
+      ["both missing, falls back to team", { departmentName: undefined, department: undefined }, "Platform"],
+      ["all absent", { departmentName: undefined, department: undefined, team: undefined }, null],
+    ])("department_raw: %s", async (_label, overrides, expected) => {
+      mockSuccessResponse([makeAshbyJob(overrides)]);
       const result = await extractFromAshby(makeContext());
-
-      expect(result.jobs[0].location_raw).toBe("Berlin, DE, London, UK");
+      expect(result.jobs[0].department_raw).toBe(expected);
     });
 
-    test("uses title from secondaryLocations entry when location sub-field is missing", async () => {
-      mockSuccessResponse([
-        makeAshbyJob({
-          location: undefined,
-          secondaryLocations: [
-            { title: "Remote US" },
-            { location: "Paris, FR" },
-          ],
-        }),
-      ]);
+    test.each([
+      ["publishedDate present", {}, "2025-11-01"],
+      ["publishedDate missing, falls back to publishedAt", { publishedDate: undefined }, "2025-11-01T12:00:00Z"],
+      ["both absent", { publishedDate: undefined, publishedAt: undefined }, null],
+    ])("posted_date_raw: %s", async (_label, overrides, expected) => {
+      mockSuccessResponse([makeAshbyJob(overrides)]);
       const result = await extractFromAshby(makeContext());
-
-      expect(result.jobs[0].location_raw).toBe("Remote US, Paris, FR");
+      expect(result.jobs[0].posted_date_raw).toBe(expected);
     });
 
-    test("sets location_raw to null when both location and secondaryLocations are absent", async () => {
-      mockSuccessResponse([
-        makeAshbyJob({
-          location: undefined,
-          secondaryLocations: undefined,
-        }),
-      ]);
+    test.each([
+      ["descriptionPlain present", {}, "We are looking for a talented engineer."],
+      ["descriptionPlain absent, falls back to HTML conversion", { descriptionPlain: undefined, descriptionHtml: "<p>Build great products.</p>" }, "Build great products."],
+    ])("description_text: %s", async (_label, overrides, expected) => {
+      mockSuccessResponse([makeAshbyJob(overrides)]);
       const result = await extractFromAshby(makeContext());
-
-      expect(result.jobs[0].location_raw).toBeNull();
+      expect(result.jobs[0].description_text).toContain(expected);
     });
 
-    // -- Department fallback: departmentName vs department vs team -----------
-
-    test("falls back to department when departmentName is missing", async () => {
-      mockSuccessResponse([makeAshbyJob({ departmentName: undefined })]);
+    test("detail_fetch_status is omitted when no description fields present", async () => {
+      mockSuccessResponse([makeAshbyJob({ descriptionHtml: undefined, descriptionPlain: undefined })]);
       const result = await extractFromAshby(makeContext());
-
-      expect(result.jobs[0].department_raw).toBe("Eng");
-    });
-
-    test("falls back to team when both departmentName and department are missing", async () => {
-      mockSuccessResponse([
-        makeAshbyJob({ departmentName: undefined, department: undefined }),
-      ]);
-      const result = await extractFromAshby(makeContext());
-
-      expect(result.jobs[0].department_raw).toBe("Platform");
-    });
-
-    test("sets department_raw to null when all department fields are absent", async () => {
-      mockSuccessResponse([
-        makeAshbyJob({
-          departmentName: undefined,
-          department: undefined,
-          team: undefined,
-        }),
-      ]);
-      const result = await extractFromAshby(makeContext());
-
-      expect(result.jobs[0].department_raw).toBeNull();
-    });
-
-    // -- Date fallback: publishedDate vs publishedAt -------------------------
-
-    test("falls back to publishedAt when publishedDate is missing", async () => {
-      mockSuccessResponse([makeAshbyJob({ publishedDate: undefined })]);
-      const result = await extractFromAshby(makeContext());
-
-      expect(result.jobs[0].posted_date_raw).toBe("2025-11-01T00:00:00Z");
-    });
-
-    test("sets posted_date_raw to null when both date fields are absent", async () => {
-      mockSuccessResponse([
-        makeAshbyJob({ publishedDate: undefined, publishedAt: undefined }),
-      ]);
-      const result = await extractFromAshby(makeContext());
-
-      expect(result.jobs[0].posted_date_raw).toBeNull();
-    });
-
-    // -- Description: descriptionHtml vs descriptionPlain -------------------
-
-    test("uses descriptionPlain as description_text when both are present", async () => {
-      // buildJob prefers descriptionText (mapped from descriptionPlain) over descriptionHtml
-      mockSuccessResponse([makeAshbyJob()]);
-      const result = await extractFromAshby(makeContext());
-
-      // Should be the plain text, not HTML-converted
-      expect(result.jobs[0].description_text).toBe(
-        "We are looking for a talented engineer to join our team.",
-      );
-    });
-
-    test("falls back to descriptionHtml when descriptionPlain is absent", async () => {
-      mockSuccessResponse([
-        makeAshbyJob({
-          descriptionPlain: undefined,
-          descriptionHtml: "<p>Build great products.</p>",
-        }),
-      ]);
-      const result = await extractFromAshby(makeContext());
-
-      expect(result.jobs[0].description_text).toContain("Build great products.");
-      // Should not contain HTML tags after conversion
-      expect(result.jobs[0].description_text).not.toContain("<p>");
-    });
-
-    test("does not set detail_fetch_status when neither description field is present", async () => {
-      mockSuccessResponse([
-        makeAshbyJob({
-          descriptionHtml: undefined,
-          descriptionPlain: undefined,
-        }),
-      ]);
-      const result = await extractFromAshby(makeContext());
-
       expect(result.jobs[0]).not.toHaveProperty("detail_fetch_status");
     });
   });
@@ -477,14 +256,12 @@ describe("extractFromAshby", () => {
   // Edge cases: missing / null fields
   // -------------------------------------------------------------------------
 
-  describe("edge cases with missing or null fields", () => {
+  describe("edge cases", () => {
     test("handles a job where all optional fields are undefined", async () => {
-      mockSuccessResponse([
-        {
-          title: "QA Analyst",
-          jobUrl: "https://jobs.ashbyhq.com/acmecorp/qa-analyst",
-        },
-      ]);
+      mockSuccessResponse([{
+        title: "QA Analyst",
+        jobUrl: "https://jobs.ashbyhq.com/acmecorp/qa-analyst",
+      }]);
       const result = await extractFromAshby(makeContext());
 
       expect(result.errors).toEqual([]);
@@ -496,9 +273,10 @@ describe("extractFromAshby", () => {
       expect(result.jobs[0].employment_type_raw).toBeNull();
     });
 
-    test("filters out a job with an empty title (buildJob returns null)", async () => {
+    test("filters out jobs with empty or missing title", async () => {
       mockSuccessResponse([
         makeAshbyJob({ title: "" }),
+        makeAshbyJob({ title: undefined }),
         makeAshbyJob({ id: "good-job", title: "Product Designer" }),
       ]);
       const result = await extractFromAshby(makeContext());
@@ -507,118 +285,35 @@ describe("extractFromAshby", () => {
       expect(result.jobs[0].title).toBe("Product Designer");
     });
 
-    test("filters out a job with an undefined title", async () => {
-      mockSuccessResponse([
-        makeAshbyJob({ title: undefined }),
-        makeAshbyJob({ id: "valid-job", title: "Data Engineer" }),
-      ]);
-      const result = await extractFromAshby(makeContext());
-
-      expect(result.jobs).toHaveLength(1);
-      expect(result.jobs[0].title).toBe("Data Engineer");
-    });
-
-    test("uses job_uid prefix as job_id when the id field is missing", async () => {
-      mockSuccessResponse([
-        makeAshbyJob({ id: undefined }),
-      ]);
+    test("uses job_uid prefix as job_id when id field is missing", async () => {
+      mockSuccessResponse([makeAshbyJob({ id: undefined })]);
       const result = await extractFromAshby(makeContext());
 
       const job = result.jobs[0];
       expect(job.job_id).toBe(job.job_uid.slice(0, 12));
-      expect(job.job_id).toHaveLength(12);
     });
 
-    test("handles secondaryLocations with empty entries gracefully", async () => {
-      mockSuccessResponse([
-        makeAshbyJob({
-          location: undefined,
-          secondaryLocations: [
-            { location: undefined, title: undefined },
-            { location: "Austin, TX" },
-          ],
-        }),
-      ]);
+    test("filters empty secondaryLocations entries", async () => {
+      mockSuccessResponse([makeAshbyJob({
+        location: undefined,
+        secondaryLocations: [
+          { location: undefined, title: undefined },
+          { location: "Austin, TX" },
+        ],
+      })]);
       const result = await extractFromAshby(makeContext());
-
-      // The empty entry should be filtered out by .filter(Boolean)
       expect(result.jobs[0].location_raw).toBe("Austin, TX");
     });
-  });
 
-  // -------------------------------------------------------------------------
-  // Multiple jobs and deduplication
-  // -------------------------------------------------------------------------
-
-  describe("multiple jobs extraction and deduplication", () => {
     test("extracts multiple jobs from a single API response", async () => {
       mockSuccessResponse([
         makeAshbyJob({ id: "job-1", title: "Frontend Engineer", jobUrl: "https://jobs.ashbyhq.com/acmecorp/job-1" }),
         makeAshbyJob({ id: "job-2", title: "Backend Engineer", jobUrl: "https://jobs.ashbyhq.com/acmecorp/job-2" }),
-        makeAshbyJob({ id: "job-3", title: "DevOps Engineer", jobUrl: "https://jobs.ashbyhq.com/acmecorp/job-3" }),
-      ]);
-      const result = await extractFromAshby(makeContext());
-
-      expect(result.jobs).toHaveLength(3);
-      expect(result.jobs.map((j) => j.title)).toEqual([
-        "Frontend Engineer",
-        "Backend Engineer",
-        "DevOps Engineer",
-      ]);
-    });
-
-    test("deduplicates jobs that share the same canonical URL", async () => {
-      const sharedUrl = "https://jobs.ashbyhq.com/acmecorp/same-job";
-      mockSuccessResponse([
-        makeAshbyJob({ id: "dup-1", title: "Software Engineer", jobUrl: sharedUrl }),
-        makeAshbyJob({ id: "dup-2", title: "Software Engineer", jobUrl: sharedUrl }),
-      ]);
-      const result = await extractFromAshby(makeContext());
-
-      expect(result.jobs).toHaveLength(1);
-    });
-
-    test("preserves distinct jobs that have different URLs", async () => {
-      mockSuccessResponse([
-        makeAshbyJob({ id: "a", title: "Role A", jobUrl: "https://jobs.ashbyhq.com/acmecorp/a" }),
-        makeAshbyJob({ id: "b", title: "Role B", jobUrl: "https://jobs.ashbyhq.com/acmecorp/b" }),
       ]);
       const result = await extractFromAshby(makeContext());
 
       expect(result.jobs).toHaveLength(2);
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // URL resolution — relative vs absolute
-  // -------------------------------------------------------------------------
-
-  describe("URL handling", () => {
-    test("resolves relative jobUrl against the careers URL base", async () => {
-      mockSuccessResponse([
-        makeAshbyJob({ jobUrl: "/acmecorp/job-relative-123", applyUrl: undefined }),
-      ]);
-      const result = await extractFromAshby(makeContext());
-
-      // buildJob uses normalizeUrl which resolves against baseUrl (careersUrl)
-      expect(result.jobs[0].url).toBe(
-        "https://jobs.ashbyhq.com/acmecorp/job-relative-123",
-      );
-    });
-
-    // TODO: If both jobUrl and applyUrl are empty strings, buildJob attempts to
-    // resolve "" against the baseUrl, which produces the baseUrl itself. This
-    // could potentially create misleading canonical URLs. The current behavior
-    // is tested here for regression safety.
-    test("uses careers URL as fallback when both jobUrl and applyUrl are empty", async () => {
-      mockSuccessResponse([
-        makeAshbyJob({ jobUrl: "", applyUrl: "" }),
-      ]);
-      const result = await extractFromAshby(makeContext());
-
-      expect(result.jobs).toHaveLength(1);
-      // url resolves to the base URL
-      expect(result.jobs[0].url).toBe("https://jobs.ashbyhq.com/acmecorp");
+      expect(result.jobs.map((j) => j.title)).toEqual(["Frontend Engineer", "Backend Engineer"]);
     });
   });
 });

@@ -37,7 +37,8 @@ describe("POST /api/seed", () => {
     seedCompaniesMock.mockResolvedValueOnce({ inserted: 5, skipped: 2 });
 
     const res = await POST();
-    const json = await res.json();
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const json: Record<string, unknown> = await res.json();
 
     expect(res.status).toBe(200);
     expect(json).toEqual({
@@ -52,28 +53,26 @@ describe("POST /api/seed", () => {
     seedCompaniesMock.mockResolvedValueOnce({ inserted: 0, skipped: 4 });
 
     const res = await POST();
-    const json = await res.json();
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const json: Record<string, unknown> = await res.json();
 
     expect(json.message).toBe("Seeded 0 companies (4 skipped)");
   });
 
-  test("returns 500 with success: false when seedCompanies throws an Error", async () => {
-    seedCompaniesMock.mockRejectedValueOnce(new Error("unique constraint violated"));
+  test.each([
+    ["Error instance", new Error("unique constraint violated"), "unique constraint violated"],
+    ["non-Error value", 42, "42"],
+  ])(
+    "returns 500 with success: false when seedCompanies throws %s",
+    async (_label, thrown, expectedMsg) => {
+      seedCompaniesMock.mockRejectedValueOnce(thrown);
 
-    const res = await POST();
-    const json = await res.json();
+      const res = await POST();
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const json: Record<string, unknown> = await res.json();
 
-    expect(res.status).toBe(500);
-    expect(json).toEqual({ success: false, error: "unique constraint violated" });
-  });
-
-  test("stringifies non-Error thrown values in the error response", async () => {
-    seedCompaniesMock.mockRejectedValueOnce(42);
-
-    const res = await POST();
-    const json = await res.json();
-
-    expect(res.status).toBe(500);
-    expect(json).toEqual({ success: false, error: "42" });
-  });
+      expect(res.status).toBe(500);
+      expect(json).toEqual({ success: false, error: expectedMsg });
+    }
+  );
 });

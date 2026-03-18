@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { createHash } from "node:crypto";
 import type { AllJob, ExtractionResult } from "@gjs/ats-core";
+import { companies, jobs, pollLogs } from "../db/schema";
 
 // ---------------------------------------------------------------------------
 // Mock @gjs/ats-core — we control what extractors and helpers return
@@ -34,12 +35,17 @@ vi.mock("@gjs/ats-core", () => ({
   sha256: mockSha256,
 }));
 
-// We need to import the module under test AFTER vi.mock so the mock is active
 const { pollCompany } = await import("./poll-company");
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+const NOW = new Date("2025-06-15T12:00:00Z");
+
+function expectedHash(text: string): string {
+  return createHash("sha256").update(text).digest("hex");
+}
 
 function makeFakeJob(overrides: Partial<AllJob> = {}): AllJob {
   return {
@@ -75,53 +81,41 @@ function makeFakeCompany(overrides: Record<string, unknown> = {}) {
     lastPollStatus: null,
     lastPollError: null,
     jobsCount: 0,
-    createdAt: new Date("2025-01-01"),
-    updatedAt: new Date("2025-01-01"),
+    createdAt: new Date("2025-01-01T12:00:00Z"),
+    updatedAt: new Date("2025-01-01T12:00:00Z"),
     ...overrides,
   };
 }
 
-/** Build a mock Drizzle db with chainable methods and call tracking. */
+/** Build a mock Drizzle db with chainable methods and table-aware tracking. */
 function makeMockDb(storedOpenJobs: Record<string, unknown>[] = []) {
-  // Track what gets passed to insert().values()
-  const insertedRows: Record<string, unknown>[] = [];
-  const updatedSets: Record<string, unknown>[] = [];
+  const insertedRows: Array<{ _table: unknown } & Record<string, unknown>> = [];
+  const updatedSets: Array<{ _table: unknown } & Record<string, unknown>> = [];
 
-  const onConflictDoNothing = vi.fn().mockResolvedValue(undefined);
-  const insertValues = vi.fn().mockImplementation((row: Record<string, unknown>) => {
-    insertedRows.push(row);
-    return { onConflictDoNothing };
-  });
-  const insertFn = vi.fn().mockReturnValue({ values: insertValues });
+  const insertFn = vi.fn().mockImplementation((table: unknown) => ({
+    values: vi.fn().mockImplementation((row: Record<string, unknown>) => {
+      insertedRows.push({ _table: table, ...row });
+      return { onConflictDoNothing: vi.fn().mockResolvedValue(undefined) };
+    }),
+  }));
 
-  const updateWhere = vi.fn().mockResolvedValue(undefined);
-  const updateSet = vi.fn().mockImplementation((data: Record<string, unknown>) => {
-    updatedSets.push(data);
-    return { where: updateWhere };
-  });
-  const updateFn = vi.fn().mockReturnValue({ set: updateSet });
+  const updateFn = vi.fn().mockImplementation((table: unknown) => ({
+    set: vi.fn().mockImplementation((data: Record<string, unknown>) => {
+      updatedSets.push({ _table: table, ...data });
+      return { where: vi.fn().mockResolvedValue(undefined) };
+    }),
+  }));
 
   const selectWhere = vi.fn().mockResolvedValue(storedOpenJobs);
   const selectFrom = vi.fn().mockReturnValue({ where: selectWhere });
   const selectFn = vi.fn().mockReturnValue({ from: selectFrom });
 
-  const db = {
-    select: selectFn,
-    from: selectFrom,
-    where: selectWhere,
-    insert: insertFn,
-    update: updateFn,
-  };
+  const db = { select: selectFn, insert: insertFn, update: updateFn };
 
   return {
     db: db as unknown as Parameters<typeof pollCompany>[0],
     insertedRows,
     updatedSets,
-    insertFn,
-    updateFn,
-    updateSet,
-    updateWhere,
-    selectWhere,
   };
 }
 
@@ -131,43 +125,12 @@ function makeMockDb(storedOpenJobs: Record<string, unknown>[] = []) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.useFakeTimers();
+  vi.setSystemTime(NOW);
 });
 
-// ─── computeDescriptionHash (tested indirectly via syncCompanyJobs) ─────────
-// The function is not exported, so we verify its behavior via pollCompany.
-// We can also verify sha256 mock is called correctly.
-
-describe("pollCompany — hash behavior", () => {
-  test("calls sha256 for jobs with description text", async () => {
-    const job = makeFakeJob({ description_text: "Some description" });
-    mockExtractFromGreenhouse.mockResolvedValueOnce({ jobs: [job], errors: [] });
-    const { db } = makeMockDb();
-
-    await pollCompany(db, makeFakeCompany());
-
-    expect(mockSha256).toHaveBeenCalledWith("Some description");
-  });
-
-  test("does not call sha256 when description_text is null", async () => {
-    const job = makeFakeJob({ description_text: null });
-    mockExtractFromGreenhouse.mockResolvedValueOnce({ jobs: [job], errors: [] });
-    const { db } = makeMockDb();
-
-    await pollCompany(db, makeFakeCompany());
-
-    expect(mockSha256).not.toHaveBeenCalled();
-  });
-
-  test("does not call sha256 when description_text is empty string", async () => {
-    const job = makeFakeJob({ description_text: "" });
-    mockExtractFromGreenhouse.mockResolvedValueOnce({ jobs: [job], errors: [] });
-    const { db } = makeMockDb();
-
-    await pollCompany(db, makeFakeCompany());
-
-    // Empty string is falsy, so computeDescriptionHash returns null
-    expect(mockSha256).not.toHaveBeenCalled();
-  });
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 // ─── fetchJobsFromAts (vendor dispatch) ─────────────────────────────────────
@@ -198,213 +161,158 @@ describe("pollCompany — vendor dispatch", () => {
     }
   );
 
-  test("returns error for unsupported vendor", async () => {
-    const { db, updateFn } = makeMockDb();
+  test.each(["workday", "totally-fake-ats"])(
+    "returns error for unsupported vendor %s",
+    async (vendor) => {
+      const { db, updatedSets } = makeMockDb();
 
-    const result = await pollCompany(
-      db,
-      makeFakeCompany({ atsVendor: "workday", atsSlug: "acme" })
-    );
+      const result = await pollCompany(
+        db,
+        makeFakeCompany({ atsVendor: vendor, atsSlug: "slug" })
+      );
 
-    expect(result.status).toBe("error");
-    expect(result.errorMessage).toContain("Unsupported ATS vendor: workday");
-    expect(result.jobsFound).toBe(0);
-    // Should still update company status to error
-    expect(updateFn).toHaveBeenCalled();
-  });
-
-  test("returns error for unknown vendor string", async () => {
-    const { db } = makeMockDb();
-
-    const result = await pollCompany(
-      db,
-      makeFakeCompany({ atsVendor: "totally-fake-ats", atsSlug: "slug" })
-    );
-
-    expect(result.status).toBe("error");
-    expect(result.errorMessage).toContain("Unsupported ATS vendor: totally-fake-ats");
-  });
+      expect(result.status).toBe("error");
+      expect(result.errorMessage).toContain(`Unsupported ATS vendor: ${vendor}`);
+      expect(result.jobsFound).toBe(0);
+      const companyUpdate = updatedSets.find(
+        (s) => s._table === companies && s.lastPollStatus === "error"
+      );
+      expect(companyUpdate).toBeDefined();
+    }
+  );
 });
 
-// ─── syncCompanyJobs (diff engine) ──────────────────────────────────────────
+// ─── syncCompanyJobs: new job insertion ─────────────────────────────────────
 
 describe("pollCompany — sync: new jobs are inserted", () => {
-  test("inserts new jobs that do not exist in the database", async () => {
-    const freshJob = makeFakeJob({ job_id: "new-1", job_uid: "uid-new-1" });
-    mockExtractFromGreenhouse.mockResolvedValueOnce({
-      jobs: [freshJob],
-      errors: [],
-    });
-    const { db, insertFn } = makeMockDb([]); // no stored jobs
+  test.each<[string, string | null, string | null]>([
+    ["non-empty description", "Build things.", expectedHash("Build things.")],
+    ["null description", null, null],
+    ["empty description", "", null],
+  ])(
+    "inserts new job with %s → correct descriptionHash",
+    async (_label, descText, hash) => {
+      const job = makeFakeJob({
+        job_id: "new-1",
+        job_uid: "uid-new-1",
+        description_text: descText,
+      });
+      mockExtractFromGreenhouse.mockResolvedValueOnce({ jobs: [job], errors: [] });
+      const { db, insertedRows } = makeMockDb([]);
 
-    const result = await pollCompany(db, makeFakeCompany());
+      const result = await pollCompany(db, makeFakeCompany());
 
-    expect(result.jobsNew).toBe(1);
-    expect(result.jobsFound).toBe(1);
-    // insert called: once for the new job + once for pollLogs
-    expect(insertFn).toHaveBeenCalled();
-  });
+      expect(result.jobsNew).toBe(1);
+      expect(result.jobsFound).toBe(1);
+      const jobInsert = insertedRows.find((r) => r._table === jobs);
+      expect(jobInsert).toEqual(
+        expect.objectContaining({
+          companyId: "company-uuid-1",
+          atsJobId: "new-1",
+          descriptionHash: hash,
+          status: "open",
+        })
+      );
+    }
+  );
 });
 
-describe("pollCompany — sync: existing jobs are updated when hash changes", () => {
-  test("updates job when description hash changes", async () => {
-    const oldHash = createHash("sha256").update("Old description").digest("hex");
-    const storedJob = {
-      id: "job-uuid-1",
-      companyId: "company-uuid-1",
-      atsJobId: "ats-1",
-      jobUid: "uid-1",
-      title: "Software Engineer",
-      url: "https://example.com/jobs/1",
-      canonicalUrl: "https://example.com/jobs/1",
-      status: "open",
-      descriptionHash: oldHash,
-      lastSeenAt: new Date(),
-      firstSeenAt: new Date(),
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+// ─── syncCompanyJobs: existing job content change detection ─────────────────
 
-    const freshJob = makeFakeJob({
-      job_id: "ats-1",
-      description_text: "New description",
-    });
-    mockExtractFromGreenhouse.mockResolvedValueOnce({
-      jobs: [freshJob],
-      errors: [],
-    });
-    const { db, updatedSets } = makeMockDb([storedJob]);
+describe("pollCompany — sync: existing jobs update detection", () => {
+  test.each<[string, string, string, number, boolean]>([
+    ["hash changed", "Old description", "New description", 1, true],
+    ["hash unchanged", "Same description", "Same description", 0, false],
+  ])(
+    "%s → jobsUpdated=%d",
+    async (_label, storedDesc, freshDesc, expectedUpdated, expectContentUpdate) => {
+      const storedHash = expectedHash(storedDesc);
+      const storedJob = {
+        id: "job-uuid-1",
+        companyId: "company-uuid-1",
+        atsJobId: "ats-1",
+        jobUid: "uid-1",
+        title: "Software Engineer",
+        url: "https://example.com/jobs/1",
+        canonicalUrl: "https://example.com/jobs/1",
+        status: "open",
+        descriptionHash: storedHash,
+        lastSeenAt: new Date("2025-06-14T12:00:00Z"),
+        firstSeenAt: new Date("2025-06-01T12:00:00Z"),
+        createdAt: new Date("2025-06-01T12:00:00Z"),
+        updatedAt: new Date("2025-06-14T12:00:00Z"),
+      };
 
-    const result = await pollCompany(db, makeFakeCompany());
+      const freshJob = makeFakeJob({ job_id: "ats-1", description_text: freshDesc });
+      mockExtractFromGreenhouse.mockResolvedValueOnce({ jobs: [freshJob], errors: [] });
+      const { db, updatedSets } = makeMockDb([storedJob]);
 
-    expect(result.jobsUpdated).toBe(1);
-    expect(result.jobsNew).toBe(0);
-    // The update should contain the new description
-    const contentUpdate = updatedSets.find(
-      (s) => s.descriptionText !== undefined
-    );
-    expect(contentUpdate).toBeDefined();
-    expect(contentUpdate!.descriptionText).toBe("New description");
-  });
+      const result = await pollCompany(db, makeFakeCompany());
 
-  test("bumps lastSeenAt without update when hash is unchanged", async () => {
-    const descText = "Same description";
-    const hash = createHash("sha256").update(descText).digest("hex");
-    const storedJob = {
-      id: "job-uuid-1",
-      companyId: "company-uuid-1",
-      atsJobId: "ats-1",
-      jobUid: "uid-1",
-      title: "Software Engineer",
-      url: "https://example.com/jobs/1",
-      canonicalUrl: "https://example.com/jobs/1",
-      status: "open",
-      descriptionHash: hash,
-      lastSeenAt: new Date(),
-      firstSeenAt: new Date(),
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    const freshJob = makeFakeJob({
-      job_id: "ats-1",
-      description_text: descText,
-    });
-    mockExtractFromGreenhouse.mockResolvedValueOnce({
-      jobs: [freshJob],
-      errors: [],
-    });
-    const { db, updatedSets } = makeMockDb([storedJob]);
-
-    const result = await pollCompany(db, makeFakeCompany());
-
-    expect(result.jobsUpdated).toBe(0);
-    // Should still bump lastSeenAt (one of the update calls will have
-    // lastSeenAt but not descriptionText)
-    const bumpUpdate = updatedSets.find(
-      (s) => s.lastSeenAt !== undefined && s.descriptionText === undefined
-    );
-    expect(bumpUpdate).toBeDefined();
-  });
+      expect(result.jobsUpdated).toBe(expectedUpdated);
+      const jobUpdate = updatedSets.find((s) => s._table === jobs);
+      expect(jobUpdate).toBeDefined();
+      if (expectContentUpdate) {
+        expect(jobUpdate!.descriptionText).toBe(freshDesc);
+        expect(jobUpdate!.contentUpdatedAt).toEqual(NOW);
+      } else {
+        expect(jobUpdate!.descriptionText).toBeUndefined();
+        expect(jobUpdate!.lastSeenAt).toEqual(NOW);
+      }
+    }
+  );
 });
+
+// ─── syncCompanyJobs: stale/closed thresholds ───────────────────────────────
 
 describe("pollCompany — sync: stale/closed thresholds for missing jobs", () => {
-  function makeStoredJobMissingFromApi(daysSinceLastSeen: number) {
-    const lastSeen = new Date();
-    lastSeen.setDate(lastSeen.getDate() - daysSinceLastSeen);
-    return {
-      id: `job-uuid-old-${daysSinceLastSeen}`,
-      companyId: "company-uuid-1",
-      atsJobId: `missing-${daysSinceLastSeen}`,
-      jobUid: `uid-missing-${daysSinceLastSeen}`,
-      title: "Old Job",
-      url: "https://example.com/jobs/old",
-      canonicalUrl: "https://example.com/jobs/old",
-      status: "open",
-      descriptionHash: "abc",
-      lastSeenAt: lastSeen,
-      firstSeenAt: lastSeen,
-      createdAt: lastSeen,
-      updatedAt: lastSeen,
-    };
-  }
-
-  test("leaves job open during grace period (< 7 days missing)", async () => {
-    const storedJob = makeStoredJobMissingFromApi(3);
-    // Fresh API returns no jobs at all
-    mockExtractFromGreenhouse.mockResolvedValueOnce({ jobs: [], errors: [] });
-    const { db } = makeMockDb([storedJob]);
-
-    const result = await pollCompany(db, makeFakeCompany());
-
-    // Job should remain open, no closures
-    expect(result.jobsClosed).toBe(0);
-    expect(result.status).toBe("empty");
-  });
-
-  test("marks job as stale after >= 7 days missing", async () => {
-    const storedJob = makeStoredJobMissingFromApi(10);
-    mockExtractFromGreenhouse.mockResolvedValueOnce({ jobs: [], errors: [] });
-    const { db, updatedSets } = makeMockDb([storedJob]);
-
-    const result = await pollCompany(db, makeFakeCompany());
-
-    // TODO: jobsClosed is incremented for stale jobs too, which is misleading.
-    // The counter name suggests "closed" but stale jobs are only marked stale,
-    // not closed. Consider renaming to jobsRemoved or using separate counters.
-    expect(result.jobsClosed).toBe(1);
-    const staleUpdate = updatedSets.find((s) => s.status === "stale");
-    expect(staleUpdate).toBeDefined();
-  });
-
-  test("marks job as closed after >= 30 days missing", async () => {
-    const storedJob = makeStoredJobMissingFromApi(35);
-    mockExtractFromGreenhouse.mockResolvedValueOnce({ jobs: [], errors: [] });
-    const { db, updatedSets } = makeMockDb([storedJob]);
-
-    const result = await pollCompany(db, makeFakeCompany());
-
-    expect(result.jobsClosed).toBe(1);
-    const closedUpdate = updatedSets.find((s) => s.status === "closed");
-    expect(closedUpdate).toBeDefined();
-    expect(closedUpdate!.closedAt).toBeInstanceOf(Date);
-  });
-
-  test.each([
-    [6, 0, "within grace period"],
-    [7, 1, "exactly at stale threshold"],
-    [29, 1, "just before closed threshold"],
-    [30, 1, "exactly at closed threshold"],
+  // TODO: jobsClosed is incremented for stale jobs too, which is misleading.
+  // The counter name suggests "closed" but stale jobs are only marked stale,
+  // not closed. Consider renaming to jobsRemoved or using separate counters.
+  test.each<[number, number, string | null]>([
+    [3, 0, null],
+    [6, 0, null],
+    [7, 1, "stale"],
+    [10, 1, "stale"],
+    [29, 1, "stale"],
+    [30, 1, "closed"],
+    [35, 1, "closed"],
   ])(
-    "with %d days missing: expects %d closure(s) (%s)",
-    async (days, expectedClosures) => {
-      const storedJob = makeStoredJobMissingFromApi(days);
+    "%d days missing → jobsClosed=%d, status=%s",
+    async (days, expectedClosures, expectedStatus) => {
+      const lastSeen = new Date(NOW);
+      lastSeen.setDate(lastSeen.getDate() - days);
+      const storedJob = {
+        id: "job-uuid-old",
+        companyId: "company-uuid-1",
+        atsJobId: "missing-job",
+        jobUid: "uid-missing",
+        title: "Old Job",
+        url: "https://example.com/jobs/old",
+        canonicalUrl: "https://example.com/jobs/old",
+        status: "open",
+        descriptionHash: "abc",
+        lastSeenAt: lastSeen,
+        firstSeenAt: lastSeen,
+        createdAt: lastSeen,
+        updatedAt: lastSeen,
+      };
+
       mockExtractFromGreenhouse.mockResolvedValueOnce({ jobs: [], errors: [] });
-      const { db } = makeMockDb([storedJob]);
+      const { db, updatedSets } = makeMockDb([storedJob]);
 
       const result = await pollCompany(db, makeFakeCompany());
 
       expect(result.jobsClosed).toBe(expectedClosures);
+      if (expectedStatus) {
+        const statusUpdate = updatedSets.find(
+          (s) => s._table === jobs && s.status === expectedStatus
+        );
+        expect(statusUpdate).toBeDefined();
+        if (expectedStatus === "closed") {
+          expect(statusUpdate!.closedAt).toBeInstanceOf(Date);
+        }
+      }
     }
   );
 });
@@ -412,76 +320,109 @@ describe("pollCompany — sync: stale/closed thresholds for missing jobs", () =>
 // ─── pollCompany orchestrator ───────────────────────────────────────────────
 
 describe("pollCompany — success path", () => {
-  test("updates company metadata and logs on successful poll", async () => {
+  test("updates company metadata and inserts poll log on successful poll", async () => {
     const freshJob = makeFakeJob();
-    mockExtractFromGreenhouse.mockResolvedValueOnce({
-      jobs: [freshJob],
-      errors: [],
-    });
-    const { db, updateFn, insertFn } = makeMockDb();
+    mockExtractFromGreenhouse.mockResolvedValueOnce({ jobs: [freshJob], errors: [] });
+    const { db, updatedSets, insertedRows } = makeMockDb();
 
     const result = await pollCompany(db, makeFakeCompany());
 
     expect(result.status).toBe("ok");
     expect(result.jobsFound).toBe(1);
-    expect(typeof result.durationMs).toBe("number");
     expect(result.durationMs).toBeGreaterThanOrEqual(0);
-    // company update + at least one job-related update
-    expect(updateFn).toHaveBeenCalled();
-    // pollLogs insert + job insert
-    expect(insertFn).toHaveBeenCalled();
+
+    const companyUpdate = updatedSets.find((s) => s._table === companies);
+    expect(companyUpdate).toEqual(
+      expect.objectContaining({
+        lastPollStatus: "ok",
+        lastPollError: null,
+        jobsCount: 1,
+      })
+    );
+
+    const logInsert = insertedRows.find((r) => r._table === pollLogs);
+    expect(logInsert).toEqual(
+      expect.objectContaining({ status: "ok", jobsFound: 1, jobsNew: 1 })
+    );
   });
 
   test("returns status 'empty' when ATS returns zero jobs and no errors", async () => {
     mockExtractFromGreenhouse.mockResolvedValueOnce({ jobs: [], errors: [] });
-    const { db } = makeMockDb();
+    const { db, updatedSets } = makeMockDb();
 
     const result = await pollCompany(db, makeFakeCompany());
 
     expect(result.status).toBe("empty");
     expect(result.jobsFound).toBe(0);
     expect(result.jobsNew).toBe(0);
+
+    const companyUpdate = updatedSets.find((s) => s._table === companies);
+    expect(companyUpdate).toEqual(
+      expect.objectContaining({ lastPollStatus: "empty", jobsCount: 0 })
+    );
   });
 });
 
 describe("pollCompany — error from ATS (errors array, no jobs)", () => {
-  test("returns error status and logs the error message", async () => {
+  test("returns error status and persists error to company metadata", async () => {
     mockExtractFromGreenhouse.mockResolvedValueOnce({
       jobs: [],
       errors: ["API rate limited", "Timeout exceeded"],
     });
-    const { db, updateFn } = makeMockDb();
+    const { db, updatedSets, insertedRows } = makeMockDb();
 
     const result = await pollCompany(db, makeFakeCompany());
 
     expect(result.status).toBe("error");
     expect(result.errorMessage).toBe("API rate limited; Timeout exceeded");
     expect(result.jobsFound).toBe(0);
-    expect(updateFn).toHaveBeenCalled();
+
+    const companyUpdate = updatedSets.find((s) => s._table === companies);
+    expect(companyUpdate).toEqual(
+      expect.objectContaining({
+        lastPollStatus: "error",
+        lastPollError: "API rate limited; Timeout exceeded",
+      })
+    );
+
+    const logInsert = insertedRows.find((r) => r._table === pollLogs);
+    expect(logInsert).toEqual(
+      expect.objectContaining({
+        status: "error",
+        errorMessage: "API rate limited; Timeout exceeded",
+      })
+    );
   });
 });
 
 describe("pollCompany — exception in extractor (catch block)", () => {
-  test("catches thrown errors and returns error result", async () => {
-    mockExtractFromGreenhouse.mockRejectedValueOnce(
-      new Error("Network failure")
-    );
-    const { db } = makeMockDb();
+  test.each<[string, unknown, string]>([
+    ["Error object", new Error("Network failure"), "Network failure"],
+    ["non-Error value", "string error", "string error"],
+  ])(
+    "catches %s → errorMessage=%s",
+    async (_label, thrown, expectedMessage) => {
+      mockExtractFromGreenhouse.mockRejectedValueOnce(thrown);
+      const { db, updatedSets, insertedRows } = makeMockDb();
 
-    const result = await pollCompany(db, makeFakeCompany());
+      const result = await pollCompany(db, makeFakeCompany());
 
-    expect(result.status).toBe("error");
-    expect(result.errorMessage).toBe("Network failure");
-    expect(result.jobsFound).toBe(0);
-  });
+      expect(result.status).toBe("error");
+      expect(result.errorMessage).toBe(expectedMessage);
+      expect(result.jobsFound).toBe(0);
 
-  test("catches non-Error thrown values", async () => {
-    mockExtractFromGreenhouse.mockRejectedValueOnce("string error");
-    const { db } = makeMockDb();
+      const companyUpdate = updatedSets.find((s) => s._table === companies);
+      expect(companyUpdate).toEqual(
+        expect.objectContaining({
+          lastPollStatus: "error",
+          lastPollError: expectedMessage,
+        })
+      );
 
-    const result = await pollCompany(db, makeFakeCompany());
-
-    expect(result.status).toBe("error");
-    expect(result.errorMessage).toBe("string error");
-  });
+      const logInsert = insertedRows.find((r) => r._table === pollLogs);
+      expect(logInsert).toEqual(
+        expect.objectContaining({ status: "error", errorMessage: expectedMessage })
+      );
+    }
+  );
 });

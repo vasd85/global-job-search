@@ -13,53 +13,25 @@ import {
 describe("parseGreenhouseBoardToken", () => {
   // -- boards.greenhouse.io pattern -----------------------------------------
 
-  test("extracts token from boards.greenhouse.io/{token}", () => {
-    expect(
-      parseGreenhouseBoardToken("https://boards.greenhouse.io/acmecorp"),
-    ).toBe("acmecorp");
-  });
-
-  test("extracts token from boards.greenhouse.io/{token} with trailing slash", () => {
-    expect(
-      parseGreenhouseBoardToken("https://boards.greenhouse.io/acmecorp/"),
-    ).toBe("acmecorp");
-  });
-
-  test("extracts token when additional path segments follow the token", () => {
-    expect(
-      parseGreenhouseBoardToken(
-        "https://boards.greenhouse.io/acmecorp/jobs/12345",
-      ),
-    ).toBe("acmecorp");
-  });
-
-  test("extracts token with query parameters present", () => {
-    expect(
-      parseGreenhouseBoardToken(
-        "https://boards.greenhouse.io/acmecorp?page=2",
-      ),
-    ).toBe("acmecorp");
+  test.each([
+    ["bare path", "https://boards.greenhouse.io/acmecorp"],
+    ["trailing slash", "https://boards.greenhouse.io/acmecorp/"],
+    ["extra segments", "https://boards.greenhouse.io/acmecorp/jobs/12345"],
+    ["query params", "https://boards.greenhouse.io/acmecorp?page=2"],
+  ])("extracts token from boards.greenhouse.io — %s", (_label, url) => {
+    expect(parseGreenhouseBoardToken(url)).toBe("acmecorp");
   });
 
   // -- ?for= query parameter pattern ----------------------------------------
 
-  test("extracts token from ?for= query parameter", () => {
-    expect(
-      parseGreenhouseBoardToken(
-        "https://boards.greenhouse.io/embed/job_board?for=acmecorp",
-      ),
-    ).toBe("acmecorp");
+  test.each([
+    ["greenhouse domain", "https://boards.greenhouse.io/embed/job_board?for=acmecorp"],
+    ["non-greenhouse domain", "https://example.com/careers?for=acmecorp"],
+  ])("extracts token from ?for= on %s", (_label, url) => {
+    expect(parseGreenhouseBoardToken(url)).toBe("acmecorp");
   });
 
-  test("extracts token from ?for= on a non-greenhouse domain", () => {
-    expect(
-      parseGreenhouseBoardToken(
-        "https://example.com/careers?for=acmecorp",
-      ),
-    ).toBe("acmecorp");
-  });
-
-  test("falls through to path segment when ?for= parameter is empty", () => {
+  test("falls through to path segment when ?for= is empty", () => {
     // An empty ?for= value is falsy after trim, so the function falls through
     // to the hostname/path-segment logic and returns the first path segment.
     expect(
@@ -79,82 +51,58 @@ describe("parseGreenhouseBoardToken", () => {
 
   // -- boards-api.greenhouse.io pattern -------------------------------------
 
-  test("extracts token from boards-api.greenhouse.io/v1/boards/{token}", () => {
-    expect(
-      parseGreenhouseBoardToken(
-        "https://boards-api.greenhouse.io/v1/boards/acmecorp/jobs",
-      ),
-    ).toBe("acmecorp");
+  test.each([
+    ["boards-api.greenhouse.io", "https://boards-api.greenhouse.io/v1/boards/acmecorp/jobs"],
+    ["api.greenhouse.io", "https://api.greenhouse.io/v1/boards/acmecorp/jobs"],
+  ])("extracts token from %s with /boards/ path", (_label, url) => {
+    expect(parseGreenhouseBoardToken(url)).toBe("acmecorp");
   });
 
-  test("extracts token from api.greenhouse.io with /boards/ in the path", () => {
-    expect(
-      parseGreenhouseBoardToken(
-        "https://api.greenhouse.io/v1/boards/acmecorp/jobs",
-      ),
-    ).toBe("acmecorp");
-  });
-
-  test("returns null from boards-api.greenhouse.io when no segment follows /boards/", () => {
-    expect(
-      parseGreenhouseBoardToken(
-        "https://boards-api.greenhouse.io/v1/boards",
-      ),
-    ).toBeNull();
-  });
-
-  test("returns null from boards-api.greenhouse.io when /boards/ is absent", () => {
-    expect(
-      parseGreenhouseBoardToken(
-        "https://boards-api.greenhouse.io/v1/something/acmecorp",
-      ),
-    ).toBeNull();
+  test.each([
+    ["no segment after /boards/", "https://boards-api.greenhouse.io/v1/boards"],
+    ["/boards/ absent", "https://boards-api.greenhouse.io/v1/something/acmecorp"],
+  ])("returns null from boards-api when %s", (_label, url) => {
+    expect(parseGreenhouseBoardToken(url)).toBeNull();
   });
 
   // -- Root greenhouse.io without path segment ------------------------------
 
-  test("returns null when hostname is greenhouse.io with no path segments", () => {
-    expect(
-      parseGreenhouseBoardToken("https://boards.greenhouse.io/"),
-    ).toBeNull();
-  });
-
-  test("returns null when hostname is greenhouse.io with empty path", () => {
-    expect(
-      parseGreenhouseBoardToken("https://boards.greenhouse.io"),
-    ).toBeNull();
+  test.each([
+    ["trailing slash", "https://boards.greenhouse.io/"],
+    ["no path", "https://boards.greenhouse.io"],
+  ])("returns null for root greenhouse.io — %s", (_label, url) => {
+    expect(parseGreenhouseBoardToken(url)).toBeNull();
   });
 
   // -- Non-greenhouse domains -----------------------------------------------
 
-  test("returns null for a non-greenhouse domain without ?for= param", () => {
-    expect(
-      parseGreenhouseBoardToken("https://example.com/careers"),
-    ).toBeNull();
+  test.each([
+    ["generic domain", "https://example.com/careers"],
+    ["lever.co domain", "https://jobs.lever.co/acmecorp"],
+  ])("returns null for %s without ?for= param", (_label, url) => {
+    expect(parseGreenhouseBoardToken(url)).toBeNull();
   });
 
-  test("returns null for lever.co domain", () => {
+  // -- Adversarial near-miss domains ----------------------------------------
+
+  // TODO: parseGreenhouseBoardToken uses host.includes("greenhouse.io") which
+  // matches subdomains like greenhouse.io.evil.com. Should use endsWith or
+  // exact hostname check. Currently returns "token" instead of null.
+  test("returns token for near-miss domain greenhouse.io.evil.com (known bug)", () => {
     expect(
-      parseGreenhouseBoardToken("https://jobs.lever.co/acmecorp"),
-    ).toBeNull();
+      parseGreenhouseBoardToken("https://boards.greenhouse.io.evil.com/token"),
+    ).toBe("token");
   });
 
   // -- Null, undefined, and invalid input -----------------------------------
 
-  test("returns null for null input", () => {
-    expect(parseGreenhouseBoardToken(null)).toBeNull();
-  });
-
-  test("returns null for undefined input", () => {
-    expect(parseGreenhouseBoardToken(undefined)).toBeNull();
-  });
-
-  test("returns null for empty string", () => {
-    expect(parseGreenhouseBoardToken("")).toBeNull();
-  });
-
-  test("returns null for malformed URL", () => {
-    expect(parseGreenhouseBoardToken("not-a-url")).toBeNull();
+  test.each([
+    ["null", null],
+    ["undefined", undefined],
+    ["empty string", ""],
+    ["malformed URL", "not-a-url"],
+  ])("returns null for %s input", (_label, input) => {
+    expect(parseGreenhouseBoardToken(input)).toBeNull();
   });
 });
 
@@ -165,77 +113,75 @@ describe("parseGreenhouseBoardToken", () => {
 describe("parseLeverSite", () => {
   // -- Standard jobs.lever.co URLs ------------------------------------------
 
-  test("extracts site from jobs.lever.co/{site}", () => {
-    const result = parseLeverSite("https://jobs.lever.co/acmecorp");
-    expect(result).toEqual({ site: "acmecorp", isEu: false });
-  });
-
-  test("extracts site with trailing slash", () => {
-    const result = parseLeverSite("https://jobs.lever.co/acmecorp/");
-    expect(result).toEqual({ site: "acmecorp", isEu: false });
-  });
-
-  test("extracts site when additional path segments follow", () => {
-    const result = parseLeverSite(
-      "https://jobs.lever.co/acmecorp/abc123-def456",
-    );
-    expect(result).toEqual({ site: "acmecorp", isEu: false });
-  });
-
-  test("extracts site with query parameters present", () => {
-    const result = parseLeverSite(
-      "https://jobs.lever.co/acmecorp?team=engineering",
-    );
-    expect(result).toEqual({ site: "acmecorp", isEu: false });
+  test.each([
+    ["bare path", "https://jobs.lever.co/acmecorp"],
+    ["trailing slash", "https://jobs.lever.co/acmecorp/"],
+    ["extra segments", "https://jobs.lever.co/acmecorp/abc123-def456"],
+    ["query params", "https://jobs.lever.co/acmecorp?team=engineering"],
+  ])("extracts site from jobs.lever.co — %s", (_label, url) => {
+    expect(parseLeverSite(url)).toEqual({ site: "acmecorp", isEu: false });
   });
 
   // -- EU domain ------------------------------------------------------------
 
-  test("detects EU domain from jobs.eu.lever.co", () => {
-    const result = parseLeverSite("https://jobs.eu.lever.co/acmecorp");
-    expect(result).toEqual({ site: "acmecorp", isEu: true });
-  });
-
-  test("detects EU domain with trailing slash and additional segments", () => {
-    const result = parseLeverSite(
-      "https://jobs.eu.lever.co/acmecorp/some-job-id",
-    );
-    expect(result).toEqual({ site: "acmecorp", isEu: true });
+  test.each([
+    ["bare path", "https://jobs.eu.lever.co/acmecorp"],
+    ["extra segments", "https://jobs.eu.lever.co/acmecorp/some-job-id"],
+  ])("detects EU domain — %s", (_label, url) => {
+    expect(parseLeverSite(url)).toEqual({ site: "acmecorp", isEu: true });
   });
 
   // -- Non-EU lever.co domain -----------------------------------------------
 
   test("non-EU lever.co domain sets isEu to false", () => {
-    const result = parseLeverSite("https://lever.co/acmecorp");
-    expect(result).toEqual({ site: "acmecorp", isEu: false });
+    expect(parseLeverSite("https://lever.co/acmecorp")).toEqual({
+      site: "acmecorp",
+      isEu: false,
+    });
   });
 
   // -- No path segments (root URL) ------------------------------------------
 
-  test("returns null when there are no path segments", () => {
-    expect(parseLeverSite("https://jobs.lever.co/")).toBeNull();
+  test.each([
+    ["trailing slash", "https://jobs.lever.co/"],
+    ["no path", "https://jobs.lever.co"],
+  ])("returns null for root URL — %s", (_label, url) => {
+    expect(parseLeverSite(url)).toBeNull();
   });
 
-  test("returns null when URL has no path at all", () => {
-    expect(parseLeverSite("https://jobs.lever.co")).toBeNull();
+  // -- Missing domain validation --------------------------------------------
+
+  // TODO: parseLeverSite does not check that the hostname contains "lever.co".
+  // Any URL with path segments returns a result, e.g. example.com/foo returns
+  // { site: "foo", isEu: false }. Should add a domain guard to reject
+  // non-lever URLs. This test documents the current (likely buggy) behavior.
+  test("accepts non-lever domain (known bug — no domain validation)", () => {
+    expect(parseLeverSite("https://example.com/foo")).toEqual({
+      site: "foo",
+      isEu: false,
+    });
+  });
+
+  // -- Adversarial near-miss domains ----------------------------------------
+
+  // TODO: parseLeverSite uses host.includes("lever.co") (indirectly via no
+  // domain check at all) which would match subdomains like lever.co.fake.com.
+  // Currently returns { site, isEu } instead of null.
+  test("matches near-miss domain jobs.lever.co.fake.com (known bug)", () => {
+    expect(
+      parseLeverSite("https://jobs.lever.co.fake.com/acmecorp"),
+    ).toEqual({ site: "acmecorp", isEu: false });
   });
 
   // -- Null, undefined, and invalid input -----------------------------------
 
-  test("returns null for null input", () => {
-    expect(parseLeverSite(null)).toBeNull();
-  });
-
-  test("returns null for undefined input", () => {
-    expect(parseLeverSite(undefined)).toBeNull();
-  });
-
-  test("returns null for empty string", () => {
-    expect(parseLeverSite("")).toBeNull();
-  });
-
-  test("returns null for malformed URL", () => {
-    expect(parseLeverSite("not-a-url")).toBeNull();
+  test.each([
+    ["null", null],
+    ["undefined", undefined],
+    ["empty string", ""],
+    ["malformed URL", "not-a-url"],
+  ])("returns null for %s input", (_label, input) => {
+    expect(parseLeverSite(input)).toBeNull();
   });
 });
 
@@ -246,108 +192,57 @@ describe("parseLeverSite", () => {
 describe("parseAshbyBoard", () => {
   // -- Standard jobs.ashbyhq.com URLs ---------------------------------------
 
-  test("extracts board from jobs.ashbyhq.com/{board}", () => {
-    expect(
-      parseAshbyBoard("https://jobs.ashbyhq.com/acmecorp"),
-    ).toBe("acmecorp");
-  });
-
-  test("extracts board with trailing slash", () => {
-    expect(
-      parseAshbyBoard("https://jobs.ashbyhq.com/acmecorp/"),
-    ).toBe("acmecorp");
-  });
-
-  test("extracts board when additional path segments follow", () => {
-    expect(
-      parseAshbyBoard("https://jobs.ashbyhq.com/acmecorp/some-job-id"),
-    ).toBe("acmecorp");
+  test.each([
+    ["bare path", "https://jobs.ashbyhq.com/acmecorp"],
+    ["trailing slash", "https://jobs.ashbyhq.com/acmecorp/"],
+    ["extra segments", "https://jobs.ashbyhq.com/acmecorp/some-job-id"],
+  ])("extracts board from jobs.ashbyhq.com — %s", (_label, url) => {
+    expect(parseAshbyBoard(url)).toBe("acmecorp");
   });
 
   // -- ?for= query parameter pattern ----------------------------------------
 
-  test("extracts board from ?for= query parameter", () => {
-    expect(
-      parseAshbyBoard("https://jobs.ashbyhq.com/embed?for=acmecorp"),
-    ).toBe("acmecorp");
+  test.each([
+    ["ashby domain", "https://jobs.ashbyhq.com/embed?for=acmecorp"],
+    ["non-ashby domain", "https://example.com/careers?for=acmecorp"],
+  ])("extracts board from ?for= on %s", (_label, url) => {
+    expect(parseAshbyBoard(url)).toBe("acmecorp");
   });
 
-  test("extracts board from ?for= on a non-ashby domain", () => {
-    expect(
-      parseAshbyBoard("https://example.com/careers?for=acmecorp"),
-    ).toBe("acmecorp");
-  });
+  // -- Reserved first segments (case-insensitive) ---------------------------
 
-  // -- Reserved first segments that should be ignored -----------------------
-
-  test("returns null when first segment is 'jobs'", () => {
+  test.each([
+    "jobs",
+    "job",
+    "careers",
+    "career",
+    "apply",
+    "posting",
+    "postings",
+    "embed",
+    "Jobs",     // case-insensitive: mixed case
+    "CAREERS",  // case-insensitive: uppercase
+  ])("returns null when first segment is reserved word '%s'", (reserved) => {
     expect(
-      parseAshbyBoard("https://jobs.ashbyhq.com/jobs"),
+      parseAshbyBoard(`https://jobs.ashbyhq.com/${reserved}`),
     ).toBeNull();
   });
 
-  test("returns null when first segment is 'job'", () => {
-    expect(
-      parseAshbyBoard("https://jobs.ashbyhq.com/job"),
-    ).toBeNull();
-  });
+  // -- Adversarial: partial match of reserved word must NOT be filtered -----
 
-  test("returns null when first segment is 'careers'", () => {
+  test("does not filter 'embedding' (near-miss of reserved 'embed')", () => {
     expect(
-      parseAshbyBoard("https://jobs.ashbyhq.com/careers"),
-    ).toBeNull();
-  });
-
-  test("returns null when first segment is 'career'", () => {
-    expect(
-      parseAshbyBoard("https://jobs.ashbyhq.com/career"),
-    ).toBeNull();
-  });
-
-  test("returns null when first segment is 'apply'", () => {
-    expect(
-      parseAshbyBoard("https://jobs.ashbyhq.com/apply"),
-    ).toBeNull();
-  });
-
-  test("returns null when first segment is 'posting'", () => {
-    expect(
-      parseAshbyBoard("https://jobs.ashbyhq.com/posting"),
-    ).toBeNull();
-  });
-
-  test("returns null when first segment is 'postings'", () => {
-    expect(
-      parseAshbyBoard("https://jobs.ashbyhq.com/postings"),
-    ).toBeNull();
-  });
-
-  test("returns null when first segment is 'embed'", () => {
-    expect(
-      parseAshbyBoard("https://jobs.ashbyhq.com/embed"),
-    ).toBeNull();
-  });
-
-  test("reserved segment check is case-insensitive", () => {
-    expect(
-      parseAshbyBoard("https://jobs.ashbyhq.com/Jobs"),
-    ).toBeNull();
-  });
-
-  test("reserved segment check is case-insensitive (CAREERS)", () => {
-    expect(
-      parseAshbyBoard("https://jobs.ashbyhq.com/CAREERS"),
-    ).toBeNull();
+      parseAshbyBoard("https://jobs.ashbyhq.com/embedding"),
+    ).toBe("embedding");
   });
 
   // -- Root URL without path segments ---------------------------------------
 
-  test("returns null when there are no path segments", () => {
-    expect(parseAshbyBoard("https://jobs.ashbyhq.com/")).toBeNull();
-  });
-
-  test("returns null when URL has no path at all", () => {
-    expect(parseAshbyBoard("https://jobs.ashbyhq.com")).toBeNull();
+  test.each([
+    ["trailing slash", "https://jobs.ashbyhq.com/"],
+    ["no path", "https://jobs.ashbyhq.com"],
+  ])("returns null for root URL — %s", (_label, url) => {
+    expect(parseAshbyBoard(url)).toBeNull();
   });
 
   // -- Non-ashby domain without ?for= param ---------------------------------
@@ -360,20 +255,13 @@ describe("parseAshbyBoard", () => {
 
   // -- Null, undefined, and invalid input -----------------------------------
 
-  test("returns null for null input", () => {
-    expect(parseAshbyBoard(null)).toBeNull();
-  });
-
-  test("returns null for undefined input", () => {
-    expect(parseAshbyBoard(undefined)).toBeNull();
-  });
-
-  test("returns null for empty string", () => {
-    expect(parseAshbyBoard("")).toBeNull();
-  });
-
-  test("returns null for malformed URL", () => {
-    expect(parseAshbyBoard("not-a-url")).toBeNull();
+  test.each([
+    ["null", null],
+    ["undefined", undefined],
+    ["empty string", ""],
+    ["malformed URL", "not-a-url"],
+  ])("returns null for %s input", (_label, input) => {
+    expect(parseAshbyBoard(input)).toBeNull();
   });
 });
 
@@ -384,36 +272,13 @@ describe("parseAshbyBoard", () => {
 describe("parseSmartRecruitersCompanyFromCareersUrl", () => {
   // -- Standard extraction --------------------------------------------------
 
-  test("extracts company slug from jobs.smartrecruiters.com/{company}", () => {
-    expect(
-      parseSmartRecruitersCompanyFromCareersUrl(
-        "https://jobs.smartrecruiters.com/AcmeCorp",
-      ),
-    ).toBe("AcmeCorp");
-  });
-
-  test("extracts first path segment when additional segments follow", () => {
-    expect(
-      parseSmartRecruitersCompanyFromCareersUrl(
-        "https://jobs.smartrecruiters.com/AcmeCorp/some-job-posting",
-      ),
-    ).toBe("AcmeCorp");
-  });
-
-  test("extracts first path segment with trailing slash", () => {
-    expect(
-      parseSmartRecruitersCompanyFromCareersUrl(
-        "https://jobs.smartrecruiters.com/AcmeCorp/",
-      ),
-    ).toBe("AcmeCorp");
-  });
-
-  test("extracts first path segment with query parameters", () => {
-    expect(
-      parseSmartRecruitersCompanyFromCareersUrl(
-        "https://jobs.smartrecruiters.com/AcmeCorp?search=engineer",
-      ),
-    ).toBe("AcmeCorp");
+  test.each([
+    ["bare path", "https://jobs.smartrecruiters.com/AcmeCorp"],
+    ["extra segments", "https://jobs.smartrecruiters.com/AcmeCorp/some-job-posting"],
+    ["trailing slash", "https://jobs.smartrecruiters.com/AcmeCorp/"],
+    ["query params", "https://jobs.smartrecruiters.com/AcmeCorp?search=engineer"],
+  ])("extracts company slug — %s", (_label, url) => {
+    expect(parseSmartRecruitersCompanyFromCareersUrl(url)).toBe("AcmeCorp");
   });
 
   // -- Works on any domain (uses pathSegments helper) -----------------------
@@ -428,40 +293,22 @@ describe("parseSmartRecruitersCompanyFromCareersUrl", () => {
 
   // -- Root URL without path segments ---------------------------------------
 
-  test("returns null when there are no path segments", () => {
-    expect(
-      parseSmartRecruitersCompanyFromCareersUrl(
-        "https://jobs.smartrecruiters.com/",
-      ),
-    ).toBeNull();
-  });
-
-  test("returns null when URL has no path at all", () => {
-    expect(
-      parseSmartRecruitersCompanyFromCareersUrl(
-        "https://jobs.smartrecruiters.com",
-      ),
-    ).toBeNull();
+  test.each([
+    ["trailing slash", "https://jobs.smartrecruiters.com/"],
+    ["no path", "https://jobs.smartrecruiters.com"],
+  ])("returns null for root URL — %s", (_label, url) => {
+    expect(parseSmartRecruitersCompanyFromCareersUrl(url)).toBeNull();
   });
 
   // -- Null, undefined, and invalid input -----------------------------------
 
-  test("returns null for null input", () => {
-    expect(parseSmartRecruitersCompanyFromCareersUrl(null)).toBeNull();
-  });
-
-  test("returns null for undefined input", () => {
-    expect(parseSmartRecruitersCompanyFromCareersUrl(undefined)).toBeNull();
-  });
-
-  test("returns null for empty string", () => {
-    expect(parseSmartRecruitersCompanyFromCareersUrl("")).toBeNull();
-  });
-
-  test("returns null for malformed URL", () => {
-    expect(
-      parseSmartRecruitersCompanyFromCareersUrl("not-a-url"),
-    ).toBeNull();
+  test.each([
+    ["null", null],
+    ["undefined", undefined],
+    ["empty string", ""],
+    ["malformed URL", "not-a-url"],
+  ])("returns null for %s input", (_label, input) => {
+    expect(parseSmartRecruitersCompanyFromCareersUrl(input)).toBeNull();
   });
 });
 
@@ -472,28 +319,13 @@ describe("parseSmartRecruitersCompanyFromCareersUrl", () => {
 describe("buildCareersUrl", () => {
   // -- Supported vendors ----------------------------------------------------
 
-  test("builds Greenhouse careers URL", () => {
-    expect(buildCareersUrl("greenhouse", "acmecorp")).toBe(
-      "https://boards.greenhouse.io/acmecorp",
-    );
-  });
-
-  test("builds Lever careers URL", () => {
-    expect(buildCareersUrl("lever", "acmecorp")).toBe(
-      "https://jobs.lever.co/acmecorp",
-    );
-  });
-
-  test("builds Ashby careers URL", () => {
-    expect(buildCareersUrl("ashby", "acmecorp")).toBe(
-      "https://jobs.ashbyhq.com/acmecorp",
-    );
-  });
-
-  test("builds SmartRecruiters careers URL", () => {
-    expect(buildCareersUrl("smartrecruiters", "AcmeCorp")).toBe(
-      "https://jobs.smartrecruiters.com/AcmeCorp",
-    );
+  test.each([
+    ["greenhouse", "acmecorp", "https://boards.greenhouse.io/acmecorp"],
+    ["lever", "acmecorp", "https://jobs.lever.co/acmecorp"],
+    ["ashby", "acmecorp", "https://jobs.ashbyhq.com/acmecorp"],
+    ["smartrecruiters", "AcmeCorp", "https://jobs.smartrecruiters.com/AcmeCorp"],
+  ])("builds %s careers URL", (vendor, slug, expected) => {
+    expect(buildCareersUrl(vendor, slug)).toBe(expected);
   });
 
   // -- Slug preservation ----------------------------------------------------
@@ -506,21 +338,11 @@ describe("buildCareersUrl", () => {
 
   // -- Unsupported vendor ---------------------------------------------------
 
-  test("throws error for unsupported vendor", () => {
-    expect(() => buildCareersUrl("workday", "acmecorp")).toThrow(
-      "Unsupported ATS vendor: workday",
-    );
-  });
-
-  test("throws error for unknown vendor string", () => {
-    expect(() => buildCareersUrl("nonexistent", "acmecorp")).toThrow(
-      "Unsupported ATS vendor: nonexistent",
-    );
-  });
-
-  test("throws error for empty vendor string", () => {
-    expect(() => buildCareersUrl("", "acmecorp")).toThrow(
-      "Unsupported ATS vendor: ",
-    );
+  test.each([
+    ["workday", "Unsupported ATS vendor: workday"],
+    ["nonexistent", "Unsupported ATS vendor: nonexistent"],
+    ["", "Unsupported ATS vendor: "],
+  ])("throws error for unsupported vendor '%s'", (vendor, expectedMsg) => {
+    expect(() => buildCareersUrl(vendor, "acmecorp")).toThrow(expectedMsg);
   });
 });

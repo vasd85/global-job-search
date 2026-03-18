@@ -8,7 +8,9 @@ import type { AllJob } from "../types";
 // ---------------------------------------------------------------------------
 
 /** Returns a minimal valid BuildJobArgs that buildJob() will accept. */
-function makeArgs(overrides: Omit<Partial<BuildJobArgs>, "raw"> & { raw?: Partial<BuildJobArgs["raw"]> } = {}): BuildJobArgs {
+function makeArgs(
+  overrides: Omit<Partial<BuildJobArgs>, "raw"> & { raw?: Partial<BuildJobArgs["raw"]> } = {},
+): BuildJobArgs {
   const { raw: rawOverrides, ...rest } = overrides;
   return {
     sourceType: "html",
@@ -49,11 +51,10 @@ describe("buildJob", () => {
 
   test("job_uid is the SHA1 of the canonical URL", () => {
     const job = buildValidJob();
-    const expectedUid = sha1("https://boards.greenhouse.io/acme/jobs/123");
-    expect(job.job_uid).toBe(expectedUid);
+    expect(job.job_uid).toBe(sha1("https://boards.greenhouse.io/acme/jobs/123"));
   });
 
-  test("job_id falls back to the first 12 characters of job_uid when jobIdHint is absent", () => {
+  test("job_id defaults to first 12 chars of job_uid when jobIdHint is absent", () => {
     const job = buildValidJob();
     expect(job.job_id).toBe(job.job_uid.slice(0, 12));
     expect(job.job_id).toHaveLength(12);
@@ -71,33 +72,29 @@ describe("buildJob", () => {
 
   // -- Null returns --------------------------------------------------------
 
-  test("returns null when title is empty", () => {
-    expect(buildJob(makeArgs({ raw: { title: "" } }))).toBeNull();
+  test.each([
+    ["empty string", ""],
+    ["only whitespace", "   "],
+  ])("returns null when title is %s", (_label, title) => {
+    expect(buildJob(makeArgs({ raw: { title } }))).toBeNull();
   });
 
-  test("returns null when title is only whitespace", () => {
-    expect(buildJob(makeArgs({ raw: { title: "   " } }))).toBeNull();
-  });
-
-  test("resolves an empty url against baseUrl (treated as relative root)", () => {
-    // An empty string resolved against a valid baseUrl yields the baseUrl itself
+  test("resolves an empty url against baseUrl", () => {
     const job = buildJob(makeArgs({ raw: { url: "" } }));
     expect(job).not.toBeNull();
     expect(job!.url).toBe("https://boards.greenhouse.io/");
   });
 
-  test("returns null when url is invalid and cannot be resolved against baseUrl", () => {
+  test("returns null when url is invalid and baseUrl cannot resolve it", () => {
     expect(
-      buildJob(makeArgs({
-        raw: { url: "not-a-valid-url" },
-        baseUrl: "also-not-valid",
-      })),
+      buildJob(makeArgs({ raw: { url: "not-a-valid-url" }, baseUrl: "also-not-valid" })),
     ).toBeNull();
   });
 
-  // -- URL normalization ---------------------------------------------------
+  // -- URL normalization (wiring check — details tested in url utils) ------
 
-  test("resolves a relative url against baseUrl", () => {
+  test("delegates URL normalization to normalizeUrl", () => {
+    // One representative case proves wiring; exhaustive URL normalization belongs in url tests
     const job = buildValidJob({
       raw: { url: "/jobs/456" },
       baseUrl: "https://apply.workable.com/acme",
@@ -105,106 +102,56 @@ describe("buildJob", () => {
     expect(job.url).toBe("https://apply.workable.com/jobs/456");
   });
 
-  test("strips tracking parameters from url", () => {
-    const job = buildValidJob({
-      raw: { url: "https://boards.greenhouse.io/acme/jobs/123?utm_source=linkedin&utm_medium=social" },
-    });
-    expect(job.url).not.toContain("utm_source");
-    expect(job.url).not.toContain("utm_medium");
-  });
-
-  test("strips trailing slash from url path", () => {
-    const job = buildValidJob({
-      raw: { url: "https://boards.greenhouse.io/acme/jobs/123/" },
-    });
-    expect(job.url).toBe("https://boards.greenhouse.io/acme/jobs/123");
-  });
-
   // -- Optional fields: present when provided ------------------------------
 
-  test("includes location_raw when provided", () => {
-    const job = buildValidJob({ raw: { locationRaw: "  New York, NY  " } });
-    expect(job.location_raw).toBe("New York, NY");
+  test.each<[string, Partial<BuildJobArgs["raw"]>, string]>([
+    ["location_raw", { locationRaw: "  New York, NY  " }, "New York, NY"],
+    ["department_raw", { departmentRaw: "Engineering" }, "Engineering"],
+    ["posted_date_raw", { postedDateRaw: "2025-01-15" }, "2025-01-15"],
+    ["employment_type_raw", { employmentTypeRaw: "Full-time" }, "Full-time"],
+    ["salary_raw", { salaryRaw: "$120,000 - $150,000" }, "$120,000 - $150,000"],
+    ["workplace_type", { workplaceType: "Remote" }, "Remote"],
+  ])("includes %s when provided (trimmed)", (field, rawOverrides, expected) => {
+    const job = buildValidJob({ raw: rawOverrides });
+    expect(job[field as keyof AllJob]).toBe(expected);
   });
 
-  test("includes department_raw when provided", () => {
-    const job = buildValidJob({ raw: { departmentRaw: "Engineering" } });
-    expect(job.department_raw).toBe("Engineering");
-  });
+  // -- Optional fields: null or omitted when absent ------------------------
 
-  test("includes posted_date_raw when provided", () => {
-    const job = buildValidJob({ raw: { postedDateRaw: "2025-01-15" } });
-    expect(job.posted_date_raw).toBe("2025-01-15");
-  });
-
-  test("includes employment_type_raw when provided", () => {
-    const job = buildValidJob({ raw: { employmentTypeRaw: "Full-time" } });
-    expect(job.employment_type_raw).toBe("Full-time");
-  });
-
-  test("includes salary_raw when provided", () => {
-    const job = buildValidJob({ raw: { salaryRaw: "$120,000 - $150,000" } });
-    expect(job.salary_raw).toBe("$120,000 - $150,000");
-  });
-
-  test("includes workplace_type when provided", () => {
-    const job = buildValidJob({ raw: { workplaceType: "Remote" } });
-    expect(job.workplace_type).toBe("Remote");
-  });
-
-  // -- Optional fields: omitted when null / empty --------------------------
-
-  test("sets location_raw to null when not provided", () => {
+  test.each<[string]>([
+    ["location_raw"],
+    ["department_raw"],
+    ["posted_date_raw"],
+    ["employment_type_raw"],
+  ])("%s defaults to null when not provided", (field) => {
     const job = buildValidJob();
-    expect(job.location_raw).toBeNull();
+    expect(job[field as keyof AllJob]).toBeNull();
   });
 
-  test("sets department_raw to null when not provided", () => {
+  test.each<[string]>([
+    ["description_text"],
+    ["salary_raw"],
+    ["workplace_type"],
+    ["source_job_raw"],
+    ["detail_fetch_status"],
+    ["detail_fetch_note"],
+  ])("%s is omitted from result when not provided", (field) => {
     const job = buildValidJob();
-    expect(job.department_raw).toBeNull();
+    expect(job).not.toHaveProperty(field);
   });
 
-  test("omits description_text when no description data is provided", () => {
-    const job = buildValidJob();
-    expect(job).not.toHaveProperty("description_text");
-  });
-
-  test("omits salary_raw when not provided", () => {
-    const job = buildValidJob();
-    expect(job).not.toHaveProperty("salary_raw");
-  });
-
-  test("omits workplace_type when not provided", () => {
-    const job = buildValidJob();
-    expect(job).not.toHaveProperty("workplace_type");
-  });
-
-  test("apply_url resolves to baseUrl when applyUrl is not provided (defaults to empty string)", () => {
-    // The code uses `args.raw.applyUrl ?? ""` so an undefined applyUrl becomes "",
-    // which normalizeUrl resolves against the baseUrl
+  // TODO: When applyUrl is not provided, the normalizer falls back to "" which
+  // resolves to baseUrl + "/". This means every job gets an apply_url even when
+  // the source had none. Should probably be null/omitted instead.
+  test("apply_url resolves to baseUrl when applyUrl is not provided", () => {
     const job = buildValidJob();
     expect(job.apply_url).toBe("https://boards.greenhouse.io/");
   });
 
-  test("source_detail_url resolves to baseUrl when sourceDetailUrl is not provided (defaults to empty string)", () => {
-    // Same fallback logic as applyUrl
+  // TODO: Same empty-string fallback issue as applyUrl above.
+  test("source_detail_url resolves to baseUrl when sourceDetailUrl is not provided", () => {
     const job = buildValidJob();
     expect(job.source_detail_url).toBe("https://boards.greenhouse.io/");
-  });
-
-  test("omits source_job_raw when not provided", () => {
-    const job = buildValidJob();
-    expect(job).not.toHaveProperty("source_job_raw");
-  });
-
-  test("omits detail_fetch_status when not provided", () => {
-    const job = buildValidJob();
-    expect(job).not.toHaveProperty("detail_fetch_status");
-  });
-
-  test("omits detail_fetch_note when not provided", () => {
-    const job = buildValidJob();
-    expect(job).not.toHaveProperty("detail_fetch_note");
   });
 
   // -- Description merging -------------------------------------------------
@@ -219,63 +166,34 @@ describe("buildJob", () => {
       raw: { descriptionHtml: "<p>Build amazing products.</p>" },
     });
     expect(job.description_text).toContain("Build amazing products.");
-    // Should not contain HTML tags
     expect(job.description_text).not.toContain("<p>");
   });
 
-  test("appends requirements section to description when not already present", () => {
+  test.each([
+    ["requirements", { requirementsText: "5+ years experience." }, "Requirements:"],
+    ["responsibilities", { responsibilitiesText: "Lead engineering team." }, "Responsibilities:"],
+    ["benefits", { benefitsText: "Health insurance and 401k." }, "Benefits:"],
+  ])("appends %s section to description", (_label, rawOverrides, expectedLabel) => {
     const job = buildValidJob({
-      raw: {
-        descriptionText: "Main description.",
-        requirementsText: "5+ years experience.",
-      },
+      raw: { descriptionText: "Main description.", ...rawOverrides },
     });
     expect(job.description_text).toContain("Main description.");
-    expect(job.description_text).toContain("Requirements:");
-    expect(job.description_text).toContain("5+ years experience.");
+    expect(job.description_text).toContain(expectedLabel);
+    expect(job.description_text).toContain(Object.values(rawOverrides)[0]);
   });
 
-  test("appends responsibilities section to description", () => {
-    const job = buildValidJob({
-      raw: {
-        descriptionText: "Main description.",
-        responsibilitiesText: "Lead engineering team.",
-      },
-    });
-    expect(job.description_text).toContain("Responsibilities:");
-    expect(job.description_text).toContain("Lead engineering team.");
-  });
-
-  test("appends benefits section to description", () => {
-    const job = buildValidJob({
-      raw: {
-        descriptionText: "Main description.",
-        benefitsText: "Health insurance and 401k.",
-      },
-    });
-    expect(job.description_text).toContain("Benefits:");
-    expect(job.description_text).toContain("Health insurance and 401k.");
-  });
-
-  test("does not duplicate a section that already appears in the description", () => {
+  test("does not duplicate a section already present in the description", () => {
     const requirements = "5+ years experience in backend development";
     const job = buildValidJob({
-      raw: {
-        descriptionText: `Overview\n${requirements}`,
-        requirementsText: requirements,
-      },
+      raw: { descriptionText: `Overview\n${requirements}`, requirementsText: requirements },
     });
-    // The requirements text should appear only once (already present in description)
     const occurrences = job.description_text!.split(requirements).length - 1;
     expect(occurrences).toBe(1);
   });
 
   test("builds description from sections alone when descriptionText and descriptionHtml are absent", () => {
     const job = buildValidJob({
-      raw: {
-        requirementsText: "TypeScript",
-        benefitsText: "Equity",
-      },
+      raw: { requirementsText: "TypeScript", benefitsText: "Equity" },
     });
     expect(job.description_text).toContain("Requirements:");
     expect(job.description_text).toContain("TypeScript");
@@ -283,68 +201,72 @@ describe("buildJob", () => {
     expect(job.description_text).toContain("Equity");
   });
 
-  // -- apply_url and source_detail_url normalization -----------------------
+  // -- apply_url / source_detail_url normalization (wiring check) ----------
 
-  test("normalizes applyUrl and includes it", () => {
+  test("normalizes applyUrl through normalizeUrl", () => {
     const job = buildValidJob({
       raw: { applyUrl: "/apply/123?utm_source=google" },
       baseUrl: "https://boards.greenhouse.io",
     });
     expect(job.apply_url).toBe("https://boards.greenhouse.io/apply/123");
-    expect(job.apply_url).not.toContain("utm_source");
   });
 
-  test("normalizes sourceDetailUrl and includes it", () => {
+  test("normalizes sourceDetailUrl through normalizeUrl", () => {
     const job = buildValidJob({
       raw: { sourceDetailUrl: "https://boards.greenhouse.io/detail/123/" },
     });
     expect(job.source_detail_url).toBe("https://boards.greenhouse.io/detail/123");
   });
 
-  // -- source_job_raw passthrough ------------------------------------------
+  // -- Passthrough fields --------------------------------------------------
 
-  test("passes through source_job_raw as-is when provided", () => {
+  test("passes through source_job_raw as-is", () => {
     const rawPayload = { id: 999, custom: true };
     const job = buildValidJob({ raw: { sourceJobRaw: rawPayload } });
     expect(job.source_job_raw).toEqual(rawPayload);
   });
 
-  // -- detail_fetch_status and detail_fetch_note ---------------------------
+  test.each<[string, Partial<BuildJobArgs>, string, string]>([
+    ["source_type", { sourceType: "ats_api" }, "source_type", "ats_api"],
+    ["source_ref", { sourceRef: "lever" }, "source_ref", "lever"],
+    ["detail_fetch_status", {}, "detail_fetch_status", "ok"],
+    ["detail_fetch_note", {}, "detail_fetch_note", "Fetched via API"],
+  ])("includes %s when provided", (_label, argsOverrides, field, expected) => {
+    // detail_fetch_* fields are in raw, others are top-level
+    const rawOverrides: Partial<BuildJobArgs["raw"]> = {};
+    if (field === "detail_fetch_status") rawOverrides.detailFetchStatus = expected as "ok";
+    if (field === "detail_fetch_note") rawOverrides.detailFetchNote = expected;
 
-  test("includes detail_fetch_status when provided", () => {
-    const job = buildValidJob({ raw: { detailFetchStatus: "ok" } });
-    expect(job.detail_fetch_status).toBe("ok");
-  });
-
-  test("includes detail_fetch_note when provided", () => {
-    const job = buildValidJob({ raw: { detailFetchNote: "Fetched via API" } });
-    expect(job.detail_fetch_note).toBe("Fetched via API");
-  });
-
-  // -- sourceType and sourceRef passthrough --------------------------------
-
-  test("includes ats_api as source_type when specified", () => {
-    const job = buildValidJob({ sourceType: "ats_api" });
-    expect(job.source_type).toBe("ats_api");
-  });
-
-  test("includes lever as source_ref when specified", () => {
-    const job = buildValidJob({ sourceRef: "lever" });
-    expect(job.source_ref).toBe("lever");
+    const job = buildValidJob({ ...argsOverrides, raw: rawOverrides });
+    expect(job[field as keyof AllJob]).toBe(expected);
   });
 
   // -- Determinism ---------------------------------------------------------
 
   test("produces the same job_uid for the same canonical URL across calls", () => {
-    const job1 = buildValidJob();
-    const job2 = buildValidJob();
-    expect(job1.job_uid).toBe(job2.job_uid);
+    expect(buildValidJob().job_uid).toBe(buildValidJob().job_uid);
   });
 
   test("produces different job_uid for different URLs", () => {
     const job1 = buildValidJob({ raw: { url: "https://example.com/jobs/1" } });
     const job2 = buildValidJob({ raw: { url: "https://example.com/jobs/2" } });
     expect(job1.job_uid).not.toBe(job2.job_uid);
+  });
+
+  // -- Adversarial title inputs --------------------------------------------
+
+  test.each([
+    ["only special characters", "!!!@@@###"],
+    ["emoji-only title", "\u{1F680}\u{1F4BB}\u{1F525}"],
+  ])("accepts title with %s (cleanText does not reject non-alpha)", (_label, title) => {
+    const job = buildValidJob({ raw: { title } });
+    expect(job.title).toBe(title);
+  });
+
+  // cleanText delegates to normalizeText which only collapses whitespace — no entity decoding
+  test("does not decode HTML entities in title (cleanText only normalizes whitespace)", () => {
+    const job = buildValidJob({ raw: { title: "Software &amp; Data Engineer" } });
+    expect(job.title).toBe("Software &amp; Data Engineer");
   });
 });
 
@@ -375,13 +297,10 @@ describe("dedupeJobs", () => {
   // -- No duplicates -------------------------------------------------------
 
   test("returns all jobs when there are no duplicates", () => {
-    const jobs = [
-      makeJob({ canonical_url: "https://example.com/jobs/1", url: "https://example.com/jobs/1" }),
-      makeJob({ canonical_url: "https://example.com/jobs/2", url: "https://example.com/jobs/2" }),
-      makeJob({ canonical_url: "https://example.com/jobs/3", url: "https://example.com/jobs/3" }),
-    ];
-    const result = dedupeJobs(jobs);
-    expect(result).toHaveLength(3);
+    const jobs = [1, 2, 3].map((i) =>
+      makeJob({ canonical_url: `https://example.com/jobs/${i}`, url: `https://example.com/jobs/${i}` }),
+    );
+    expect(dedupeJobs(jobs)).toHaveLength(3);
   });
 
   test("returns an empty array when given an empty array", () => {
@@ -390,9 +309,7 @@ describe("dedupeJobs", () => {
 
   test("returns a single job when given a single job", () => {
     const jobs = [makeJob()];
-    const result = dedupeJobs(jobs);
-    expect(result).toHaveLength(1);
-    expect(result[0]).toEqual(jobs[0]);
+    expect(dedupeJobs(jobs)).toEqual(jobs);
   });
 
   // -- Deduplication by canonical_url --------------------------------------
@@ -400,58 +317,58 @@ describe("dedupeJobs", () => {
   test("removes duplicates with the same canonical_url", () => {
     const url = "https://example.com/jobs/42";
     const jobs = [
-      makeJob({ canonical_url: url, url, title: "Engineer" }),
-      makeJob({ canonical_url: url, url, title: "Engineer" }),
+      makeJob({ canonical_url: url, url }),
+      makeJob({ canonical_url: url, url }),
     ];
-    const result = dedupeJobs(jobs);
-    expect(result).toHaveLength(1);
+    expect(dedupeJobs(jobs)).toHaveLength(1);
   });
 
   test("preserves insertion order of first-seen canonical_url", () => {
-    const jobs = [
-      makeJob({ canonical_url: "https://example.com/jobs/1", url: "https://example.com/jobs/1", title: "First" }),
-      makeJob({ canonical_url: "https://example.com/jobs/2", url: "https://example.com/jobs/2", title: "Second" }),
-      makeJob({ canonical_url: "https://example.com/jobs/3", url: "https://example.com/jobs/3", title: "Third" }),
-    ];
-    const result = dedupeJobs(jobs);
-    expect(result.map((j) => j.title)).toEqual(["First", "Second", "Third"]);
+    const jobs = [1, 2, 3].map((i) =>
+      makeJob({
+        canonical_url: `https://example.com/jobs/${i}`,
+        url: `https://example.com/jobs/${i}`,
+        title: `Title ${i}`,
+      }),
+    );
+    expect(dedupeJobs(jobs).map((j) => j.title)).toEqual(["Title 1", "Title 2", "Title 3"]);
   });
 
-  // -- Scoring: non-generic title bonus ------------------------------------
+  // -- Scoring: generic title penalty -------------------------------------
 
-  test("prefers a job with a non-generic title over a generic title", () => {
-    const url = "https://example.com/jobs/42";
-    const generic = makeJob({ canonical_url: url, url, title: "View Details" });
-    const descriptive = makeJob({ canonical_url: url, url, title: "Senior Backend Engineer" });
+  test.each([
+    "details",
+    "View Details",
+    "learn more",
+    "Read More",
+    "Apply Now",
+    "Apply Now for this position",
+    "Click Here",
+    "Open Role",
+    "Open Roles",
+    "View Job",
+    "View Jobs",
+    "Job Opening",
+    "Job Openings",
+    "Jobs",
+    "Job",
+    "Careers",
+    "careers",
+  ])("penalizes generic title '%s' in favor of descriptive title", (genericTitle) => {
+    const url = "https://example.com/jobs/pattern-test";
+    const generic = makeJob({ canonical_url: url, url, title: genericTitle });
+    const descriptive = makeJob({ canonical_url: url, url, title: "Staff Platform Engineer" });
     const result = dedupeJobs([generic, descriptive]);
-    expect(result).toHaveLength(1);
-    expect(result[0].title).toBe("Senior Backend Engineer");
-  });
-
-  test("treats 'Apply Now' as a generic title", () => {
-    const url = "https://example.com/jobs/55";
-    const generic = makeJob({ canonical_url: url, url, title: "Apply Now" });
-    const descriptive = makeJob({ canonical_url: url, url, title: "Product Manager" });
-    const result = dedupeJobs([generic, descriptive]);
-    expect(result[0].title).toBe("Product Manager");
-  });
-
-  test("treats 'Learn More' as a generic title", () => {
-    const url = "https://example.com/jobs/55";
-    const generic = makeJob({ canonical_url: url, url, title: "Learn More" });
-    const descriptive = makeJob({ canonical_url: url, url, title: "Data Scientist" });
-    const result = dedupeJobs([generic, descriptive]);
-    expect(result[0].title).toBe("Data Scientist");
+    expect(result[0].title).toBe("Staff Platform Engineer");
   });
 
   // -- Scoring: word count bonus -------------------------------------------
 
-  test("prefers a title with 2-12 words over a single-word title", () => {
+  test("prefers a multi-word title over a single-word title", () => {
     const url = "https://example.com/jobs/7";
     const oneWord = makeJob({ canonical_url: url, url, title: "Developer" });
     const multiWord = makeJob({ canonical_url: url, url, title: "Senior Full Stack Developer" });
-    const result = dedupeJobs([oneWord, multiWord]);
-    expect(result[0].title).toBe("Senior Full Stack Developer");
+    expect(dedupeJobs([oneWord, multiWord])[0].title).toBe("Senior Full Stack Developer");
   });
 
   // -- Scoring: camelCase penalty ------------------------------------------
@@ -460,22 +377,28 @@ describe("dedupeJobs", () => {
     const url = "https://example.com/jobs/8";
     const camelCase = makeJob({ canonical_url: url, url, title: "softwareEngineer" });
     const clean = makeJob({ canonical_url: url, url, title: "Software Engineer" });
-    const result = dedupeJobs([camelCase, clean]);
-    expect(result[0].title).toBe("Software Engineer");
+    expect(dedupeJobs([camelCase, clean])[0].title).toBe("Software Engineer");
   });
 
   // -- Scoring: location-in-title penalty ----------------------------------
 
-  test("penalizes a title that looks like it contains location metadata with a comma", () => {
+  test("penalizes a title with location keyword AND comma", () => {
     const url = "https://example.com/jobs/9";
-    const withLocation = makeJob({
-      canonical_url: url,
-      url,
-      title: "Engineer, Remote, United States",
-    });
+    const withLocation = makeJob({ canonical_url: url, url, title: "Engineer, Remote, United States" });
     const clean = makeJob({ canonical_url: url, url, title: "Software Engineer" });
-    const result = dedupeJobs([withLocation, clean]);
-    expect(result[0].title).toBe("Software Engineer");
+    expect(dedupeJobs([withLocation, clean])[0].title).toBe("Software Engineer");
+  });
+
+  // Adversarial: location keyword without comma should NOT trigger the penalty
+  test("does not penalize a title with location keyword but no comma", () => {
+    const url = "https://example.com/jobs/adv-1";
+    const withKeyword = makeJob({ canonical_url: url, url, title: "Remote Software Engineer" });
+    const plain = makeJob({ canonical_url: url, url, title: "Software Engineer" });
+    // Both have same word-count bonus and non-generic bonus; "Remote Software Engineer"
+    // should NOT be penalized since there's no comma
+    const result = dedupeJobs([withKeyword, plain]);
+    // First-seen wins when scores are equal (no penalty applied)
+    expect(result[0].title).toBe("Remote Software Engineer");
   });
 
   // -- Scoring: ats_api source bonus ---------------------------------------
@@ -484,8 +407,7 @@ describe("dedupeJobs", () => {
     const url = "https://example.com/jobs/10";
     const htmlJob = makeJob({ canonical_url: url, url, title: "Engineer", source_type: "html" });
     const apiJob = makeJob({ canonical_url: url, url, title: "Engineer", source_type: "ats_api" });
-    const result = dedupeJobs([htmlJob, apiJob]);
-    expect(result[0].source_type).toBe("ats_api");
+    expect(dedupeJobs([htmlJob, apiJob])[0].source_type).toBe("ats_api");
   });
 
   // -- Scoring: description length bonus -----------------------------------
@@ -506,15 +428,9 @@ describe("dedupeJobs", () => {
 
   // -- Scoring: combined factors -------------------------------------------
 
-  test("ats_api source can outweigh a slightly better title when scores combine", () => {
+  test("ats_api source can outweigh other factors when scores combine", () => {
     const url = "https://example.com/jobs/12";
-    // The html job has a slightly better title (2 words vs 1) but the api job has ats_api bonus (+30)
-    const htmlJob = makeJob({
-      canonical_url: url,
-      url,
-      title: "Backend Engineer",
-      source_type: "html",
-    });
+    const htmlJob = makeJob({ canonical_url: url, url, title: "Backend Engineer", source_type: "html" });
     const apiJob = makeJob({
       canonical_url: url,
       url,
@@ -522,19 +438,17 @@ describe("dedupeJobs", () => {
       source_type: "ats_api",
       description_text: "A very long and detailed description of the role that provides sufficient context about the position.",
     });
-    const result = dedupeJobs([htmlJob, apiJob]);
-    expect(result[0].source_type).toBe("ats_api");
+    expect(dedupeJobs([htmlJob, apiJob])[0].source_type).toBe("ats_api");
   });
 
-  // -- Edge: keeps the first if scores are equal ---------------------------
+  // -- Edge: equal scores --------------------------------------------------
 
-  test("keeps the first-seen job when two duplicates have equal scores", () => {
+  test("keeps first-seen job when scores are equal", () => {
     const url = "https://example.com/jobs/13";
     const first = makeJob({ canonical_url: url, url, title: "Software Engineer", job_id: "first" });
     const second = makeJob({ canonical_url: url, url, title: "Software Engineer", job_id: "second" });
     const result = dedupeJobs([first, second]);
     expect(result).toHaveLength(1);
-    // Equal scores means the second does NOT beat the first (strictly greater required)
     expect(result[0].job_id).toBe("first");
   });
 
@@ -555,33 +469,5 @@ describe("dedupeJobs", () => {
     expect(result).toHaveLength(2);
     expect(result[0].title).toBe("Frontend Engineer");
     expect(result[1].title).toBe("Backend Engineer");
-  });
-
-  // -- Generic title patterns exhaustive -----------------------------------
-
-  test.each([
-    "details",
-    "View Details",
-    "learn more",
-    "Read More",
-    "Apply Now",
-    "Apply Now for this position",
-    "Click Here",
-    "Open Role",
-    "Open Roles",
-    "View Job",
-    "View Jobs",
-    "Job Opening",
-    "Job Openings",
-    "Jobs",
-    "Job",
-    "Careers",
-    "careers",
-  ])("recognizes '%s' as a generic title that is penalized in scoring", (genericTitle) => {
-    const url = "https://example.com/jobs/pattern-test";
-    const generic = makeJob({ canonical_url: url, url, title: genericTitle });
-    const descriptive = makeJob({ canonical_url: url, url, title: "Staff Platform Engineer" });
-    const result = dedupeJobs([generic, descriptive]);
-    expect(result[0].title).toBe("Staff Platform Engineer");
   });
 });

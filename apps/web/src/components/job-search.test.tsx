@@ -1,6 +1,11 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { Job } from "./job-search";
+import {
+  makeJob,
+  makeJobsResponse,
+  mockFetch,
+  renderAndSettle,
+} from "./job-search.test-utils";
 
 // ---------------------------------------------------------------------------
 // Mock next/navigation -- useSearchParams
@@ -10,79 +15,6 @@ const mockSearchParams = new URLSearchParams();
 vi.mock("next/navigation", () => ({
   useSearchParams: () => mockSearchParams,
 }));
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function makeJob(overrides: Partial<Job> = {}): Job {
-  return {
-    id: "job-1",
-    title: "Software Engineer",
-    url: "https://boards.greenhouse.io/acme/jobs/123",
-    locationRaw: "New York, NY",
-    departmentRaw: "Engineering",
-    workplaceType: "remote",
-    salaryRaw: "$120k - $180k",
-    firstSeenAt: "2025-12-01T00:00:00Z",
-    applyUrl: "https://boards.greenhouse.io/acme/jobs/123/apply",
-    sourceRef: "greenhouse",
-    companyName: "Acme Corp",
-    companySlug: "acme-corp",
-    ...overrides,
-  };
-}
-
-function makeJobsResponse(
-  jobs: Job[] = [],
-  total?: number,
-  offset = 0,
-): { jobs: Job[]; total: number; limit: number; offset: number } {
-  return {
-    jobs,
-    total: total ?? jobs.length,
-    limit: 50,
-    offset,
-  };
-}
-
-/**
- * Sets up a fetch mock that returns the given response for /api/jobs calls.
- * Returns the mock function for assertion.
- */
-function mockFetch(response = makeJobsResponse([makeJob()])) {
-  const fetchMock = vi.fn().mockResolvedValue({
-    json: () => Promise.resolve(response),
-  });
-  vi.stubGlobal("fetch", fetchMock);
-  return fetchMock;
-}
-
-/**
- * Renders JobSearch, advances the 300ms debounce timer, and waits for
- * the loading indicator to disappear (i.e. the fetch resolved and the
- * component re-rendered with data).
- */
-async function renderAndSettle(
-  response?: ReturnType<typeof makeJobsResponse>,
-) {
-  const fetchMock = mockFetch(response ?? makeJobsResponse([makeJob()]));
-  const { JobSearch } = await import("./job-search");
-
-  render(<JobSearch />);
-
-  // Advance past the 300ms debounce inside act() so React flushes state
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(350);
-  });
-
-  // Wait for loading to disappear (fetch resolved, state updated)
-  await waitFor(() => {
-    expect(screen.queryByText("Loading\u2026")).not.toBeInTheDocument();
-  });
-
-  return fetchMock;
-}
 
 beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
@@ -106,16 +38,12 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("JobSearch", () => {
-  test("shows loading indicator before debounce fires", async () => {
+  test("does not call fetch before debounce fires", async () => {
     mockFetch(makeJobsResponse([makeJob()]));
     const { JobSearch } = await import("./job-search");
 
     render(<JobSearch />);
 
-    // Before debounce fires, the component renders nothing meaningful in
-    // the stats row (no data yet, not loading until debounce fires).
-    // Actually the component sets loading=false initially and the useEffect
-    // fires the debounce. Let's verify the fetch hasn't been called yet.
     expect(vi.mocked(fetch)).not.toHaveBeenCalled();
 
     // Advance past debounce within act
@@ -160,75 +88,122 @@ describe("JobSearch", () => {
 });
 
 // ---------------------------------------------------------------------------
+// JobSearch -- fetch error handling
+// ---------------------------------------------------------------------------
+
+describe("JobSearch fetch errors", () => {
+  // TODO: fetchJobs (job-search.tsx:66-80) has no catch block — errors
+  //       propagate as unhandled rejections. Component should catch fetch
+  //       errors and display an error message to the user. Until fixed,
+  //       we suppress unhandled rejections in these tests to prove the
+  //       component at least stays mounted.
+  let rejectHandler: (reason: unknown, promise: Promise<unknown>) => void;
+
+  beforeEach(() => {
+    rejectHandler = () => {};
+    process.on("unhandledRejection", rejectHandler);
+  });
+
+  afterEach(() => {
+    process.off("unhandledRejection", rejectHandler);
+  });
+
+  test("does not crash when fetch rejects with a network error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new TypeError("Failed to fetch")),
+    );
+    const { JobSearch } = await import("./job-search");
+
+    render(<JobSearch />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(350);
+    });
+
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
+      "Global Job Search",
+    );
+  });
+
+  test("does not crash when response JSON parsing fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        json: () => Promise.reject(new SyntaxError("Unexpected token")),
+      }),
+    );
+    const { JobSearch } = await import("./job-search");
+
+    render(<JobSearch />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(350);
+    });
+
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
+      "Global Job Search",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
 // JobSearch -- filter interactions
 // ---------------------------------------------------------------------------
 
 describe("JobSearch filters", () => {
-  test("typing in search input triggers debounced fetch with search param", async () => {
-    const fetchMock = await renderAndSettle();
-    fetchMock.mockClear();
+  test.each<[string, () => Promise<void>, string]>([
+    [
+      "search",
+      async () => {
+        const input = screen.getByPlaceholderText(
+          "Search by title or department...",
+        );
+        await userEvent.type(input, "react");
+      },
+      "search=react",
+    ],
+    [
+      "workplaceType",
+      async () => {
+        const selects = screen.getAllByRole("combobox");
+        const el = selects.find((s) =>
+          within(s).queryByText("All locations"),
+        )!;
+        await userEvent.selectOptions(el, "remote");
+      },
+      "workplaceType=remote",
+    ],
+    [
+      "vendor",
+      async () => {
+        const selects = screen.getAllByRole("combobox");
+        const el = selects.find((s) => within(s).queryByText("All ATS"))!;
+        await userEvent.selectOptions(el, "lever");
+      },
+      "vendor=lever",
+    ],
+  ])(
+    "%s filter triggers fetch with correct query param",
+    async (_name, interact, expectedParam) => {
+      const fetchMock = await renderAndSettle();
+      fetchMock.mockClear();
 
-    const searchInput = screen.getByPlaceholderText(
-      "Search by title or department...",
-    );
+      await interact();
 
-    await userEvent.type(searchInput, "react");
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(350);
+      });
 
-    // Advance past the debounce
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(350);
-    });
-
-    // The last call should include search=react
-    const lastCall = fetchMock.mock.calls.at(-1)?.[0] as string;
-    expect(lastCall).toContain("search=react");
-    expect(lastCall).toContain("offset=0");
-  });
-
-  test("selecting a workplace type triggers fetch with workplaceType param", async () => {
-    const fetchMock = await renderAndSettle();
-    fetchMock.mockClear();
-
-    const selects = screen.getAllByRole("combobox");
-    const workplaceSelect = selects.find((s) =>
-      within(s).queryByText("All locations"),
-    )!;
-    expect(workplaceSelect).toBeDefined();
-
-    await userEvent.selectOptions(workplaceSelect, "remote");
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(350);
-    });
-
-    const lastCall = fetchMock.mock.calls.at(-1)?.[0] as string;
-    expect(lastCall).toContain("workplaceType=remote");
-  });
-
-  test("selecting a vendor triggers fetch with vendor param", async () => {
-    const fetchMock = await renderAndSettle();
-    fetchMock.mockClear();
-
-    const selects = screen.getAllByRole("combobox");
-    const vendorSelect = selects.find((s) =>
-      within(s).queryByText("All ATS"),
-    )!;
-    expect(vendorSelect).toBeDefined();
-
-    await userEvent.selectOptions(vendorSelect, "lever");
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(350);
-    });
-
-    const lastCall = fetchMock.mock.calls.at(-1)?.[0] as string;
-    expect(lastCall).toContain("vendor=lever");
-  });
+      const lastCall = fetchMock.mock.calls.at(-1)?.[0] as string;
+      expect(lastCall).toContain(expectedParam);
+      expect(lastCall).toContain("offset=0");
+    },
+  );
 
   test("empty filter values are omitted from the query string", async () => {
     const fetchMock = await renderAndSettle();
 
-    // Default call should not include search, workplaceType, vendor, or company
     const url = fetchMock.mock.calls[0][0] as string;
     expect(url).not.toContain("search=");
     expect(url).not.toContain("workplaceType=");
@@ -278,12 +253,10 @@ describe("JobSearch filters", () => {
     const nextBtn = screen.getByRole("button", { name: /next/i });
     await userEvent.click(nextBtn);
 
-    // Wait for the page-change fetch to complete
     await act(async () => {
       await vi.advanceTimersByTimeAsync(50);
     });
 
-    // Verify we requested offset=50
     const pageCall = fetchMock.mock.calls.at(-1)?.[0] as string;
     expect(pageCall).toContain("offset=50");
 
@@ -300,7 +273,6 @@ describe("JobSearch filters", () => {
       await vi.advanceTimersByTimeAsync(350);
     });
 
-    // The new fetch should reset offset to 0
     const filterCall = fetchMock.mock.calls.at(-1)?.[0] as string;
     expect(filterCall).toContain("offset=0");
     expect(filterCall).toContain("vendor=ashby");
@@ -321,7 +293,6 @@ describe("JobSearch URL initialization", () => {
     ) as HTMLInputElement;
     expect(searchInput.value).toBe("devops");
 
-    // Fetch should include the URL param value
     const url = fetchMock.mock.calls[0][0] as string;
     expect(url).toContain("search=devops");
   });
@@ -341,13 +312,11 @@ describe("JobSearch URL initialization", () => {
     mockSearchParams.set("companyName", "Acme Corp");
     await renderAndSettle();
 
-    // The clear button proves the chip is rendered
     const clearBtn = screen.getByRole("button", {
       name: "Clear company filter",
     });
     expect(clearBtn).toBeInTheDocument();
 
-    // The chip label is inside the chip container (next to the clear button)
     const chipContainer = clearBtn.closest("span")!;
     expect(chipContainer.textContent).toContain("Acme Corp");
   });
@@ -364,7 +333,6 @@ describe("JobSearch company filter", () => {
     const fetchMock = await renderAndSettle();
     fetchMock.mockClear();
 
-    // Click the clear button on the company chip
     const clearBtn = screen.getByRole("button", {
       name: "Clear company filter",
     });
@@ -374,22 +342,18 @@ describe("JobSearch company filter", () => {
       await vi.advanceTimersByTimeAsync(350);
     });
 
-    // Chip should be gone
     expect(
       screen.queryByRole("button", { name: "Clear company filter" }),
     ).not.toBeInTheDocument();
 
-    // Fetch should not include company param
     const url = fetchMock.mock.calls.at(-1)?.[0] as string;
     expect(url).not.toContain("company=");
   });
 
   test("shows companySlug when companyName is not available", async () => {
     mockSearchParams.set("company", "acme-corp");
-    // No companyName set
     await renderAndSettle();
 
-    // Should fall back to displaying slug
     expect(screen.getByText("acme-corp")).toBeInTheDocument();
   });
 });
@@ -439,18 +403,15 @@ describe("JobSearch pagination", () => {
     const nextBtn = screen.getByRole("button", { name: /next/i });
     await userEvent.click(nextBtn);
 
-    // changePage calls fetchJobs directly (no debounce)
     const url = fetchMock.mock.calls[0][0] as string;
     expect(url).toContain("offset=50");
   });
 
   test("Next button is disabled on the last page", async () => {
-    // total=100, so 2 pages. Start on page 1.
     const fetchMock = await renderAndSettle(
       makeJobsResponse([makeJob()], 100),
     );
 
-    // Replace the mock to return page-2 data after clicking Next
     fetchMock.mockResolvedValue({
       json: () => Promise.resolve(makeJobsResponse([makeJob()], 100, 50)),
     });
@@ -458,12 +419,10 @@ describe("JobSearch pagination", () => {
     const nextBtn = screen.getByRole("button", { name: /next/i });
     await userEvent.click(nextBtn);
 
-    // Wait for the component to process the response
     await act(async () => {
       await vi.advanceTimersByTimeAsync(50);
     });
 
-    // After page 2 loads: offset=50, total=100, so Next is disabled
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /next/i })).toBeDisabled();
     });
@@ -481,12 +440,10 @@ describe("JobSearch pagination", () => {
   });
 
   test("clicking Prev fetches the previous page with decremented offset", async () => {
-    // Start on page 1 with 200 total
     const fetchMock = await renderAndSettle(
       makeJobsResponse([makeJob()], 200),
     );
 
-    // Click Next to go to page 2
     await userEvent.click(screen.getByRole("button", { name: /next/i }));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(50);
@@ -494,7 +451,6 @@ describe("JobSearch pagination", () => {
 
     fetchMock.mockClear();
 
-    // Click Prev to go back to page 1
     await userEvent.click(screen.getByRole("button", { name: /prev/i }));
 
     const url = fetchMock.mock.calls[0][0] as string;
@@ -542,44 +498,42 @@ describe("JobCard", () => {
     });
     await renderAndSettle(makeJobsResponse([job]));
 
-    // Title and company should still render
     expect(screen.getByText(job.title)).toBeInTheDocument();
     expect(screen.getByText(job.companyName)).toBeInTheDocument();
 
-    // These optional fields should not appear
     expect(screen.queryByText("New York, NY")).not.toBeInTheDocument();
     expect(screen.queryByText("Engineering")).not.toBeInTheDocument();
     expect(screen.queryByText("remote")).not.toBeInTheDocument();
     expect(screen.queryByText(/\$120k/)).not.toBeInTheDocument();
   });
 
-  test("Apply link uses applyUrl when available", async () => {
-    const job = makeJob({
-      applyUrl: "https://apply.example.com/123",
-      url: "https://boards.example.com/jobs/123",
-    });
-    await renderAndSettle(makeJobsResponse([job]));
-
-    const applyLink = screen.getByRole("link", { name: /apply/i });
-    expect(applyLink).toHaveAttribute(
-      "href",
+  test.each<[string, { applyUrl: string | null; url: string }, string]>([
+    [
+      "uses applyUrl when available",
+      {
+        applyUrl: "https://apply.example.com/123",
+        url: "https://boards.example.com/jobs/123",
+      },
       "https://apply.example.com/123",
-    );
-  });
-
-  test("Apply link falls back to job URL when applyUrl is null", async () => {
-    const job = makeJob({
-      applyUrl: null,
-      url: "https://boards.example.com/jobs/456",
-    });
-    await renderAndSettle(makeJobsResponse([job]));
-
-    const applyLink = screen.getByRole("link", { name: /apply/i });
-    expect(applyLink).toHaveAttribute(
-      "href",
+    ],
+    [
+      "falls back to job URL when applyUrl is null",
+      {
+        applyUrl: null,
+        url: "https://boards.example.com/jobs/456",
+      },
       "https://boards.example.com/jobs/456",
-    );
-  });
+    ],
+  ])(
+    "Apply link %s",
+    async (_desc, overrides, expectedHref) => {
+      const job = makeJob(overrides);
+      await renderAndSettle(makeJobsResponse([job]));
+
+      const applyLink = screen.getByRole("link", { name: /apply/i });
+      expect(applyLink).toHaveAttribute("href", expectedHref);
+    },
+  );
 
   test("job title links to job URL and opens in new tab", async () => {
     const job = makeJob({
@@ -605,10 +559,9 @@ describe("JobCard", () => {
   });
 
   test("formats the posted date using month and day", async () => {
-    const job = makeJob({ firstSeenAt: "2025-07-15T00:00:00Z" });
+    const job = makeJob({ firstSeenAt: "2025-07-15T12:00:00Z" });
     await renderAndSettle(makeJobsResponse([job]));
 
-    // toLocaleDateString with { month: "short", day: "numeric" } produces "Jul 15"
     expect(screen.getByText(/Jul 15/)).toBeInTheDocument();
   });
 });

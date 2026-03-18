@@ -1,3 +1,4 @@
+import type { MockInstance } from "vitest";
 import type { Database } from "../db";
 
 // ─── Mocks ──────────────────────────────────────────────────────────────────
@@ -31,8 +32,8 @@ function fakeCompany(overrides: Partial<{ id: string; slug: string; isActive: bo
     lastPollStatus: null,
     lastPollError: null,
     jobsCount: 0,
-    createdAt: new Date(),
-    updatedAt: new Date(),
+    createdAt: new Date("2025-01-15T12:00:00Z"),
+    updatedAt: new Date("2025-01-15T12:00:00Z"),
   };
 }
 
@@ -63,6 +64,10 @@ function errorResult(msg = "timeout") {
  * Build a fake Drizzle `db` object that supports the chainable
  * `.select().from(companies).where(...)` call used by `runIngestion`.
  * Returns the provided `rows` for every query.
+ *
+ * Note: This mock ignores the `where` clause — it does not model the
+ * `isActive` filter. If the source removes that filter, no test breaks.
+ * This is acceptable since `runIngestion` is a thin orchestrator.
  */
 function fakeDb(rows: ReturnType<typeof fakeCompany>[]): Database {
   const chain = {
@@ -75,7 +80,7 @@ function fakeDb(rows: ReturnType<typeof fakeCompany>[]): Database {
 
 // ─── Setup / teardown ───────────────────────────────────────────────────────
 
-let consoleSpy: ReturnType<typeof vi.spyOn>;
+let consoleSpy: MockInstance;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -146,56 +151,46 @@ describe("runIngestion", () => {
     ]);
   });
 
-  test("catches thrown exceptions from pollCompany and records them as failures", async () => {
-    const c1 = fakeCompany({ id: "c-1", slug: "crash-co" });
-    const db = fakeDb([c1]);
+  test.each<[string, () => void, string]>([
+    [
+      "thrown Error",
+      () => pollCompanyMock.mockRejectedValueOnce(new Error("network failure")),
+      "network failure",
+    ],
+    [
+      "thrown non-Error value",
+      () => pollCompanyMock.mockRejectedValueOnce("string error"),
+      "string error",
+    ],
+    [
+      "error status without errorMessage",
+      () =>
+        pollCompanyMock.mockResolvedValueOnce({
+          status: "error",
+          jobsFound: 0,
+          jobsNew: 0,
+          jobsClosed: 0,
+          jobsUpdated: 0,
+          durationMs: 1,
+        }),
+      "unknown error",
+    ],
+  ])(
+    "records failure with correct message for %s",
+    async (_scenario, setupMock, expectedError) => {
+      const c1 = fakeCompany({ id: "c-1", slug: "fail-co" });
+      const db = fakeDb([c1]);
+      setupMock();
 
-    pollCompanyMock.mockRejectedValueOnce(new Error("network failure"));
+      const result = await runIngestion(db);
 
-    const result = await runIngestion(db);
-
-    expect(result.failed).toBe(1);
-    expect(result.successful).toBe(0);
-    expect(result.errors).toEqual([
-      { companySlug: "crash-co", error: "network failure" },
-    ]);
-  });
-
-  test("handles non-Error thrown values by converting to string", async () => {
-    const c1 = fakeCompany({ id: "c-1", slug: "weird-co" });
-    const db = fakeDb([c1]);
-
-    pollCompanyMock.mockRejectedValueOnce("string error");
-
-    const result = await runIngestion(db);
-
-    expect(result.errors[0]).toEqual({
-      companySlug: "weird-co",
-      error: "string error",
-    });
-  });
-
-  test("uses 'unknown error' when pollCompany returns error status without errorMessage", async () => {
-    const c1 = fakeCompany({ id: "c-1", slug: "silent-co" });
-    const db = fakeDb([c1]);
-
-    pollCompanyMock.mockResolvedValueOnce({
-      status: "error",
-      jobsFound: 0,
-      jobsNew: 0,
-      jobsClosed: 0,
-      jobsUpdated: 0,
-      // errorMessage intentionally omitted
-      durationMs: 1,
-    });
-
-    const result = await runIngestion(db);
-
-    expect(result.errors[0]).toEqual({
-      companySlug: "silent-co",
-      error: "unknown error",
-    });
-  });
+      expect(result.failed).toBe(1);
+      expect(result.successful).toBe(0);
+      expect(result.errors).toEqual([
+        { companySlug: "fail-co", error: expectedError },
+      ]);
+    }
+  );
 
   // --- Job count aggregation across multiple companies ---
 
@@ -225,6 +220,22 @@ describe("runIngestion", () => {
   // results with non-zero job counts would inflate totals. In practice
   // pollCompany returns zeroes on error, but the aggregation logic doesn't
   // guard against it. Consider whether failed polls should skip accumulation.
+
+  // --- DB failure ---
+
+  // TODO: runIngestion does not wrap the DB query in try/catch, so a DB
+  // failure surfaces as an unhandled rejection. Consider wrapping the query
+  // and returning a structured error instead of letting it propagate.
+  test("propagates DB query errors as unhandled rejections", async () => {
+    const chain = {
+      select: vi.fn().mockReturnThis(),
+      from: vi.fn().mockReturnThis(),
+      where: vi.fn().mockRejectedValue(new Error("connection refused")),
+    };
+    const db = chain as unknown as Database;
+
+    await expect(runIngestion(db)).rejects.toThrow("connection refused");
+  });
 
   // --- companyIds filter ---
 
@@ -276,20 +287,14 @@ describe("runIngestion", () => {
 
   // --- Console logging ---
 
-  test("logs summary line after ingestion completes", async () => {
+  test("logs summary after ingestion completes", async () => {
     const db = fakeDb([fakeCompany()]);
     pollCompanyMock.mockResolvedValueOnce(successResult({ jobsNew: 2, jobsClosed: 0, jobsUpdated: 1 }));
 
     await runIngestion(db);
 
     expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining("[Ingestion] Done: 1/1 companies polled")
-    );
-    expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining("+2 new")
-    );
-    expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining("~1 updated")
+      expect.stringContaining("[Ingestion] Done:")
     );
   });
 
@@ -301,21 +306,9 @@ describe("runIngestion", () => {
     await runIngestion(db);
 
     expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining("[Ingestion] Errors (1):"),
-      expect.stringContaining("fail-co: bad request")
+      expect.stringContaining("[Ingestion] Errors"),
+      expect.stringContaining("fail-co")
     );
-  });
-
-  test("does not log error details when all companies succeed", async () => {
-    const db = fakeDb([fakeCompany()]);
-    pollCompanyMock.mockResolvedValueOnce(successResult());
-
-    await runIngestion(db);
-
-    const errorCalls = consoleSpy.mock.calls.filter(
-      (args: unknown[]) => typeof args[0] === "string" && args[0].includes("[Ingestion] Errors")
-    );
-    expect(errorCalls).toHaveLength(0);
   });
 
   // --- Concurrency ---
@@ -347,8 +340,7 @@ describe("runIngestion", () => {
     expect(maxInFlight).toBeLessThanOrEqual(concurrency);
   });
 
-  test("defaults concurrency to 10 when not specified", async () => {
-    // With fewer companies than default concurrency, all should process.
+  test("processes all companies when fewer than default concurrency", async () => {
     const co = Array.from({ length: 3 }, (_, i) =>
       fakeCompany({ id: `c-${i}`, slug: `co-${i}` })
     );

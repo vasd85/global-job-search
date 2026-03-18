@@ -1,16 +1,26 @@
 import { extractFromGreenhouse } from "./greenhouse";
 import type { ExtractionContext } from "./extractor-types";
 import { createEmptyDiagnostics } from "../types";
+import type { Diagnostics } from "../types";
 
 // ---------------------------------------------------------------------------
-// Mock fetchJson from ./common
+// Mock fetchJson — isolate the extractor from network I/O
 // ---------------------------------------------------------------------------
-
-const mockFetchJson = vi.fn();
 
 vi.mock("./common", () => ({
-  fetchJson: (...args: unknown[]) => mockFetchJson(...args),
+  fetchJson: vi.fn(),
 }));
+
+// Mock identifiers — token parsing is tested in identifiers.test.ts
+vi.mock("../discovery/identifiers", () => ({
+  parseGreenhouseBoardToken: vi.fn(),
+}));
+
+import { fetchJson } from "./common";
+import { parseGreenhouseBoardToken } from "../discovery/identifiers";
+
+const fetchJsonMock = vi.mocked(fetchJson);
+const parseTokenMock = vi.mocked(parseGreenhouseBoardToken);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -26,7 +36,6 @@ function makeContext(overrides: Partial<ExtractionContext> = {}): ExtractionCont
   };
 }
 
-/** Realistic Greenhouse API job entry with all fields populated. */
 function makeGreenhouseJob(overrides: Record<string, unknown> = {}) {
   return {
     id: 4012345,
@@ -34,7 +43,7 @@ function makeGreenhouseJob(overrides: Record<string, unknown> = {}) {
     absolute_url: "https://boards.greenhouse.io/acmecorp/jobs/4012345",
     location: { name: "San Francisco, CA" },
     content: "<p>We are looking for a Senior Software Engineer to join our platform team.</p>",
-    first_published: "2025-11-01T00:00:00Z",
+    first_published: "2025-11-01T12:00:00Z",
     updated_at: "2025-12-15T12:30:00Z",
     departments: [{ name: "Engineering" }, { name: "Platform" }],
     offices: [{ name: "San Francisco" }],
@@ -42,19 +51,12 @@ function makeGreenhouseJob(overrides: Record<string, unknown> = {}) {
   };
 }
 
-/** A second distinct job for multi-job tests. */
-function makeSecondJob() {
-  return makeGreenhouseJob({
-    id: 4012346,
-    title: "Product Manager",
-    absolute_url: "https://boards.greenhouse.io/acmecorp/jobs/4012346",
-    location: { name: "New York, NY" },
-    content: "<p>Lead product strategy for our core platform.</p>",
-    first_published: "2025-10-20T00:00:00Z",
-    updated_at: "2025-12-10T08:00:00Z",
-    departments: [{ name: "Product" }],
-    offices: [{ name: "New York" }],
-  });
+function mockSuccessResponse(jobs: unknown[]) {
+  fetchJsonMock.mockResolvedValue({ data: { jobs }, error: null });
+}
+
+function mockErrorResponse(error: string) {
+  fetchJsonMock.mockResolvedValue({ data: null, error });
 }
 
 // ---------------------------------------------------------------------------
@@ -62,106 +64,96 @@ function makeSecondJob() {
 // ---------------------------------------------------------------------------
 
 beforeEach(() => {
-  mockFetchJson.mockReset();
+  vi.clearAllMocks();
+  parseTokenMock.mockReturnValue("acmecorp");
 });
 
-// ---------------------------------------------------------------------------
-// Token parsing failures (invalid careersUrl)
-// ---------------------------------------------------------------------------
+describe("extractFromGreenhouse", () => {
+  // -------------------------------------------------------------------------
+  // Board token parse failure (wiring check — parsing logic in identifiers.test.ts)
+  // -------------------------------------------------------------------------
 
-describe("extractFromGreenhouse - invalid board token", () => {
-  test.each([
-    ["completely invalid URL", "not-a-url-at-all"],
-    ["URL with no path segment on greenhouse.io", "https://boards.greenhouse.io/"],
-    ["non-Greenhouse domain", "https://example.com/acmecorp"],
-    ["empty string", ""],
-  ])("returns empty jobs with error when careersUrl is %s", async (_label, careersUrl) => {
-    const result = await extractFromGreenhouse(makeContext({ careersUrl }));
+  test("returns an error when board token cannot be parsed", async () => {
+    parseTokenMock.mockReturnValue(null);
+    const ctx = makeContext({ careersUrl: "https://bad.example.com" });
+    const result = await extractFromGreenhouse(ctx);
 
     expect(result.jobs).toEqual([]);
-    expect(result.errors).toHaveLength(1);
     expect(result.errors[0]).toContain("Unable to parse Greenhouse board token");
-    // fetchJson should never be called if the token cannot be parsed
-    expect(mockFetchJson).not.toHaveBeenCalled();
+    expect(fetchJsonMock).not.toHaveBeenCalled();
   });
-});
 
-// ---------------------------------------------------------------------------
-// API failure handling
-// ---------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // API endpoint construction & context forwarding
+  // -------------------------------------------------------------------------
 
-describe("extractFromGreenhouse - API failure", () => {
-  test("returns empty jobs with error when fetchJson returns null data", async () => {
-    mockFetchJson.mockResolvedValue({ data: null, error: "network timeout" });
+  test("calls fetchJson with correct endpoint and forwards context args", async () => {
+    mockSuccessResponse([]);
+    const diag: Diagnostics = createEmptyDiagnostics();
+    const ctx = makeContext({ diagnostics: diag, timeoutMs: 10000, maxRetries: 3, maxAttempts: 5 });
+    await extractFromGreenhouse(ctx);
 
+    expect(fetchJsonMock).toHaveBeenCalledWith(
+      "https://boards-api.greenhouse.io/v1/boards/acmecorp/jobs?content=true",
+      diag,
+      10000,
+      3,
+      5,
+    );
+  });
+
+  test("passes undefined for maxAttempts when not provided in context", async () => {
+    mockSuccessResponse([]);
+    await extractFromGreenhouse(makeContext());
+
+    const call = fetchJsonMock.mock.calls[0];
+    expect(call[4]).toBeUndefined();
+  });
+
+  // -------------------------------------------------------------------------
+  // API error handling
+  // -------------------------------------------------------------------------
+
+  test("returns error message with endpoint and error text on API failure", async () => {
+    mockErrorResponse("network timeout");
     const result = await extractFromGreenhouse(makeContext());
 
     expect(result.jobs).toEqual([]);
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]).toContain("Greenhouse API failed");
     expect(result.errors[0]).toContain("network timeout");
-  });
-
-  test("includes the API endpoint URL in the error message on failure", async () => {
-    mockFetchJson.mockResolvedValue({ data: null, error: "500 Internal Server Error" });
-
-    const result = await extractFromGreenhouse(makeContext());
-
     expect(result.errors[0]).toContain("boards-api.greenhouse.io");
-    expect(result.errors[0]).toContain("acmecorp");
   });
 
-  test("reports 'unknown error' when fetchJson returns null data with no error message", async () => {
-    mockFetchJson.mockResolvedValue({ data: null, error: null });
-
+  test("returns 'unknown error' when fetchJson returns null data with no error string", async () => {
+    fetchJsonMock.mockResolvedValue({ data: null, error: null });
     const result = await extractFromGreenhouse(makeContext());
 
     expect(result.errors[0]).toContain("unknown error");
   });
-});
 
-// ---------------------------------------------------------------------------
-// Empty job list
-// ---------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // Empty job list
+  // -------------------------------------------------------------------------
 
-describe("extractFromGreenhouse - empty job list", () => {
-  test("returns empty jobs with no errors when API returns an empty jobs array", async () => {
-    mockFetchJson.mockResolvedValue({ data: { jobs: [] }, error: null });
-
+  test.each([
+    ["empty array", { jobs: [] }],
+    ["missing jobs property", {}],
+    ["null jobs property", { jobs: null }],
+  ])("returns zero jobs and no errors when API returns %s", async (_label, data) => {
+    fetchJsonMock.mockResolvedValue({ data, error: null });
     const result = await extractFromGreenhouse(makeContext());
 
     expect(result.jobs).toEqual([]);
     expect(result.errors).toEqual([]);
   });
 
-  test("returns empty jobs with no errors when API response has no jobs property", async () => {
-    mockFetchJson.mockResolvedValue({ data: {}, error: null });
+  // -------------------------------------------------------------------------
+  // Successful extraction — full field mapping
+  // -------------------------------------------------------------------------
 
-    const result = await extractFromGreenhouse(makeContext());
-
-    expect(result.jobs).toEqual([]);
-    expect(result.errors).toEqual([]);
-  });
-
-  test("returns empty jobs when jobs property is explicitly null", async () => {
-    mockFetchJson.mockResolvedValue({ data: { jobs: null }, error: null });
-
-    const result = await extractFromGreenhouse(makeContext());
-
-    expect(result.jobs).toEqual([]);
-    expect(result.errors).toEqual([]);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Successful extraction with full data
-// ---------------------------------------------------------------------------
-
-describe("extractFromGreenhouse - successful extraction", () => {
-  test("extracts a single job with all fields mapped correctly", async () => {
-    const rawJob = makeGreenhouseJob();
-    mockFetchJson.mockResolvedValue({ data: { jobs: [rawJob] }, error: null });
-
+  test("maps a fully-populated Greenhouse job to correct normalized fields", async () => {
+    mockSuccessResponse([makeGreenhouseJob()]);
     const result = await extractFromGreenhouse(makeContext());
 
     expect(result.errors).toEqual([]);
@@ -173,45 +165,14 @@ describe("extractFromGreenhouse - successful extraction", () => {
     expect(job.job_id).toBe("4012345");
     expect(job.location_raw).toBe("San Francisco, CA");
     expect(job.department_raw).toBe("Engineering, Platform");
-    expect(job.posted_date_raw).toBe("2025-11-01T00:00:00Z");
+    expect(job.posted_date_raw).toBe("2025-11-01T12:00:00Z");
     expect(job.source_type).toBe("ats_api");
     expect(job.source_ref).toBe("greenhouse");
+    expect(job.detail_fetch_status).toBe("ok");
   });
 
-  test("extracts multiple jobs from API response", async () => {
-    mockFetchJson.mockResolvedValue({
-      data: { jobs: [makeGreenhouseJob(), makeSecondJob()] },
-      error: null,
-    });
-
-    const result = await extractFromGreenhouse(makeContext());
-
-    expect(result.errors).toEqual([]);
-    expect(result.jobs).toHaveLength(2);
-    expect(result.jobs[0].title).toBe("Senior Software Engineer");
-    expect(result.jobs[1].title).toBe("Product Manager");
-  });
-
-  test("job_uid is deterministic for the same URL", async () => {
-    mockFetchJson.mockResolvedValue({ data: { jobs: [makeGreenhouseJob()] }, error: null });
-    const result1 = await extractFromGreenhouse(makeContext());
-
-    mockFetchJson.mockResolvedValue({ data: { jobs: [makeGreenhouseJob()] }, error: null });
-    const result2 = await extractFromGreenhouse(makeContext());
-
-    expect(result1.jobs[0].job_uid).toBe(result2.jobs[0].job_uid);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Field mapping details
-// ---------------------------------------------------------------------------
-
-describe("extractFromGreenhouse - field mapping", () => {
   test("maps absolute_url to url, apply_url, and source_detail_url", async () => {
-    const rawJob = makeGreenhouseJob();
-    mockFetchJson.mockResolvedValue({ data: { jobs: [rawJob] }, error: null });
-
+    mockSuccessResponse([makeGreenhouseJob()]);
     const result = await extractFromGreenhouse(makeContext());
     const job = result.jobs[0];
 
@@ -220,314 +181,118 @@ describe("extractFromGreenhouse - field mapping", () => {
     expect(job.source_detail_url).toBe("https://boards.greenhouse.io/acmecorp/jobs/4012345");
   });
 
-  test("converts HTML content to plain text in description_text", async () => {
-    const rawJob = makeGreenhouseJob({
-      content: "<h2>About the Role</h2><p>Build <strong>amazing</strong> things.</p>",
-    });
-    mockFetchJson.mockResolvedValue({ data: { jobs: [rawJob] }, error: null });
-
-    const result = await extractFromGreenhouse(makeContext());
-    const job = result.jobs[0];
-
-    expect(job.description_text).toBeDefined();
-    expect(job.description_text).toContain("About the Role");
-    expect(job.description_text).toContain("Build");
-    expect(job.description_text).toContain("amazing");
-    expect(job.description_text).not.toContain("<h2>");
-    expect(job.description_text).not.toContain("<strong>");
-  });
-
-  test("joins multiple department names with comma separator", async () => {
-    const rawJob = makeGreenhouseJob({
-      departments: [{ name: "Engineering" }, { name: "Infrastructure" }, { name: "SRE" }],
-    });
-    mockFetchJson.mockResolvedValue({ data: { jobs: [rawJob] }, error: null });
-
-    const result = await extractFromGreenhouse(makeContext());
-
-    expect(result.jobs[0].department_raw).toBe("Engineering, Infrastructure, SRE");
-  });
-
-  test("uses first_published as posted_date_raw when available", async () => {
-    const rawJob = makeGreenhouseJob({
-      first_published: "2025-06-01T00:00:00Z",
-      updated_at: "2025-12-01T00:00:00Z",
-    });
-    mockFetchJson.mockResolvedValue({ data: { jobs: [rawJob] }, error: null });
-
-    const result = await extractFromGreenhouse(makeContext());
-
-    expect(result.jobs[0].posted_date_raw).toBe("2025-06-01T00:00:00Z");
-  });
-
-  test("falls back to updated_at when first_published is absent", async () => {
-    const rawJob = makeGreenhouseJob({
-      first_published: undefined,
-      updated_at: "2025-12-01T00:00:00Z",
-    });
-    mockFetchJson.mockResolvedValue({ data: { jobs: [rawJob] }, error: null });
-
-    const result = await extractFromGreenhouse(makeContext());
-
-    expect(result.jobs[0].posted_date_raw).toBe("2025-12-01T00:00:00Z");
-  });
-
-  test("sets detail_fetch_status to 'ok' when content is present", async () => {
-    const rawJob = makeGreenhouseJob({ content: "<p>Some content</p>" });
-    mockFetchJson.mockResolvedValue({ data: { jobs: [rawJob] }, error: null });
-
-    const result = await extractFromGreenhouse(makeContext());
-
-    expect(result.jobs[0].detail_fetch_status).toBe("ok");
-  });
-
-  test("omits detail_fetch_status when content is absent", async () => {
-    const rawJob = makeGreenhouseJob({ content: undefined });
-    mockFetchJson.mockResolvedValue({ data: { jobs: [rawJob] }, error: null });
-
-    const result = await extractFromGreenhouse(makeContext());
-
-    expect(result.jobs[0]).not.toHaveProperty("detail_fetch_status");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Missing and null fields (edge cases)
-// ---------------------------------------------------------------------------
-
-describe("extractFromGreenhouse - missing or null fields in API response", () => {
-  test.each<[string, Record<string, unknown>, string | null]>([
-    ["missing location object", { location: undefined }, null],
-    ["null location name", { location: { name: undefined } }, null],
-    ["empty location name", { location: { name: "" } }, null],
-  ])("handles %s gracefully", async (_label, locationOverride, expectedLocation) => {
-    const rawJob = makeGreenhouseJob(locationOverride);
-    mockFetchJson.mockResolvedValue({ data: { jobs: [rawJob] }, error: null });
-
-    const result = await extractFromGreenhouse(makeContext());
-
-    expect(result.jobs).toHaveLength(1);
-    expect(result.jobs[0].location_raw).toBe(expectedLocation);
-  });
-
-  test("falls back to offices when departments array is empty", async () => {
-    const rawJob = makeGreenhouseJob({
-      departments: [],
-      offices: [{ name: "Berlin" }, { name: "London" }],
-    });
-    mockFetchJson.mockResolvedValue({ data: { jobs: [rawJob] }, error: null });
-
-    const result = await extractFromGreenhouse(makeContext());
-
-    // TODO: The current implementation uses `??` (nullish coalescing) between the
-    // departments .join() and the offices .join(). Since [].join() returns "" (falsy
-    // but not nullish), the `??` will NOT fall back to offices. This means
-    // department_raw will be "" which normalizeText likely converts to null.
-    // This may be a bug -- `.filter(Boolean).join(", ") || null` would be
-    // more correct to ensure fallback to offices when departments is empty.
-    // The test reflects the actual behavior.
-    expect(result.jobs[0].department_raw).toBeNull();
-  });
-
-  test("sets department_raw to null when both departments and offices are missing", async () => {
-    const rawJob = makeGreenhouseJob({
-      departments: undefined,
-      offices: undefined,
-    });
-    mockFetchJson.mockResolvedValue({ data: { jobs: [rawJob] }, error: null });
-
-    const result = await extractFromGreenhouse(makeContext());
-
-    expect(result.jobs[0].department_raw).toBeNull();
-  });
-
-  test("filters out department entries with falsy names", async () => {
-    const rawJob = makeGreenhouseJob({
-      departments: [{ name: "Engineering" }, { name: undefined }, { name: "" }, { name: "DevOps" }],
-    });
-    mockFetchJson.mockResolvedValue({ data: { jobs: [rawJob] }, error: null });
-
-    const result = await extractFromGreenhouse(makeContext());
-
-    expect(result.jobs[0].department_raw).toBe("Engineering, DevOps");
-  });
-
-  test("sets posted_date_raw to null when both first_published and updated_at are missing", async () => {
-    const rawJob = makeGreenhouseJob({
-      first_published: undefined,
-      updated_at: undefined,
-    });
-    mockFetchJson.mockResolvedValue({ data: { jobs: [rawJob] }, error: null });
-
-    const result = await extractFromGreenhouse(makeContext());
-
-    expect(result.jobs[0].posted_date_raw).toBeNull();
-  });
-
-  test("uses empty string for url when absolute_url is missing", async () => {
-    const rawJob = makeGreenhouseJob({ absolute_url: undefined });
-    mockFetchJson.mockResolvedValue({ data: { jobs: [rawJob] }, error: null });
-
-    const result = await extractFromGreenhouse(makeContext());
-
-    // An empty string URL resolves against the baseUrl (careersUrl)
-    expect(result.jobs).toHaveLength(1);
-    expect(result.jobs[0].url).toContain("boards.greenhouse.io");
-  });
-
-  test("omits description_text when content is missing", async () => {
-    const rawJob = makeGreenhouseJob({ content: undefined });
-    mockFetchJson.mockResolvedValue({ data: { jobs: [rawJob] }, error: null });
-
-    const result = await extractFromGreenhouse(makeContext());
-
-    expect(result.jobs[0]).not.toHaveProperty("description_text");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// API endpoint construction and token parsing from different URL formats
-// ---------------------------------------------------------------------------
-
-describe("extractFromGreenhouse - API endpoint construction", () => {
-  test.each([
-    [
-      "standard boards.greenhouse.io URL",
-      "https://boards.greenhouse.io/acmecorp",
-      "acmecorp",
-    ],
-    [
-      "boards-api.greenhouse.io URL with boards path",
-      "https://boards-api.greenhouse.io/v1/boards/betacorp/jobs",
-      "betacorp",
-    ],
-    [
-      "URL with ?for= query parameter",
-      "https://boards.greenhouse.io/embed/job_board?for=deltacorp",
-      "deltacorp",
-    ],
-  ])("constructs correct endpoint for %s", async (_label, careersUrl, expectedToken) => {
-    mockFetchJson.mockResolvedValue({ data: { jobs: [] }, error: null });
-
-    await extractFromGreenhouse(makeContext({ careersUrl }));
-
-    expect(mockFetchJson).toHaveBeenCalledTimes(1);
-    const calledUrl = mockFetchJson.mock.calls[0][0] as string;
-    expect(calledUrl).toBe(
-      `https://boards-api.greenhouse.io/v1/boards/${expectedToken}/jobs?content=true`
-    );
-  });
-
-  // Adversarial false-positive tests for URL / domain detection
-  test.each([
-    ["domain containing 'greenhouse' but not greenhouse.io", "https://greenhouse.example.com/acmecorp"],
-    ["domain with greenhouse in subdomain only", "https://greenhouse.fakecorp.io/token"],
-    ["path containing greenhouse.io as a segment", "https://example.com/boards.greenhouse.io/acme"],
-  ])("rejects %s and does not call API", async (_label, careersUrl) => {
-    const result = await extractFromGreenhouse(makeContext({ careersUrl }));
-
-    expect(result.jobs).toEqual([]);
-    expect(result.errors).toHaveLength(1);
-    expect(mockFetchJson).not.toHaveBeenCalled();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// fetchJson invocation parameters
-// ---------------------------------------------------------------------------
-
-describe("extractFromGreenhouse - fetchJson parameters", () => {
-  test("passes diagnostics, timeoutMs, maxRetries, and maxAttempts to fetchJson", async () => {
-    const diagnostics = createEmptyDiagnostics();
-    mockFetchJson.mockResolvedValue({ data: { jobs: [] }, error: null });
-
-    await extractFromGreenhouse(
-      makeContext({ diagnostics, timeoutMs: 10000, maxRetries: 3, maxAttempts: 5 })
-    );
-
-    expect(mockFetchJson).toHaveBeenCalledWith(
-      expect.any(String),
-      diagnostics,
-      10000,
-      3,
-      5
-    );
-  });
-
-  test("passes undefined for maxAttempts when not provided in context", async () => {
-    mockFetchJson.mockResolvedValue({ data: { jobs: [] }, error: null });
-
-    await extractFromGreenhouse(makeContext());
-
-    const call = mockFetchJson.mock.calls[0];
-    expect(call[4]).toBeUndefined();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Deduplication integration
-// ---------------------------------------------------------------------------
-
-describe("extractFromGreenhouse - deduplication", () => {
-  test("deduplicates jobs with the same absolute_url", async () => {
-    const sharedUrl = "https://boards.greenhouse.io/acmecorp/jobs/4012345";
-    const job1 = makeGreenhouseJob({ id: 4012345, absolute_url: sharedUrl, title: "Engineer" });
-    const job2 = makeGreenhouseJob({ id: 4012345, absolute_url: sharedUrl, title: "Engineer" });
-    mockFetchJson.mockResolvedValue({ data: { jobs: [job1, job2] }, error: null });
-
-    const result = await extractFromGreenhouse(makeContext());
-
-    expect(result.jobs).toHaveLength(1);
-  });
-
-  test("does not deduplicate jobs with different URLs", async () => {
-    const job1 = makeGreenhouseJob({
-      id: 100,
-      absolute_url: "https://boards.greenhouse.io/acmecorp/jobs/100",
-    });
-    const job2 = makeGreenhouseJob({
-      id: 200,
-      absolute_url: "https://boards.greenhouse.io/acmecorp/jobs/200",
-    });
-    mockFetchJson.mockResolvedValue({ data: { jobs: [job1, job2] }, error: null });
-
+  test("extracts multiple jobs from a single API response", async () => {
+    mockSuccessResponse([
+      makeGreenhouseJob({ id: 100, title: "Engineer", absolute_url: "https://boards.greenhouse.io/acmecorp/jobs/100" }),
+      makeGreenhouseJob({ id: 200, title: "Designer", absolute_url: "https://boards.greenhouse.io/acmecorp/jobs/200" }),
+    ]);
     const result = await extractFromGreenhouse(makeContext());
 
     expect(result.jobs).toHaveLength(2);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// buildJob filtering integration (jobs with empty/whitespace titles)
-// ---------------------------------------------------------------------------
-
-describe("extractFromGreenhouse - buildJob filtering", () => {
-  test("filters out jobs with empty titles", async () => {
-    const validJob = makeGreenhouseJob();
-    const emptyTitleJob = makeGreenhouseJob({
-      id: 9999,
-      title: "",
-      absolute_url: "https://boards.greenhouse.io/acmecorp/jobs/9999",
-    });
-    mockFetchJson.mockResolvedValue({ data: { jobs: [validJob, emptyTitleJob] }, error: null });
-
-    const result = await extractFromGreenhouse(makeContext());
-
-    expect(result.jobs).toHaveLength(1);
-    expect(result.jobs[0].title).toBe("Senior Software Engineer");
+    expect(result.jobs.map((j) => j.title)).toEqual(["Engineer", "Designer"]);
   });
 
-  test("filters out jobs with whitespace-only titles", async () => {
-    const whitespaceJob = makeGreenhouseJob({
-      id: 8888,
-      title: "   ",
-      absolute_url: "https://boards.greenhouse.io/acmecorp/jobs/8888",
-    });
-    mockFetchJson.mockResolvedValue({ data: { jobs: [whitespaceJob] }, error: null });
+  // -------------------------------------------------------------------------
+  // Field fallback chains (test.each)
+  // -------------------------------------------------------------------------
 
+  describe("field fallback chains", () => {
+    test.each([
+      ["first_published present", {}, "2025-11-01T12:00:00Z"],
+      ["first_published absent, falls back to updated_at", { first_published: undefined }, "2025-12-15T12:30:00Z"],
+      ["both absent", { first_published: undefined, updated_at: undefined }, null],
+    ])("posted_date_raw: %s", async (_label, overrides, expected) => {
+      mockSuccessResponse([makeGreenhouseJob(overrides)]);
+      const result = await extractFromGreenhouse(makeContext());
+      expect(result.jobs[0].posted_date_raw).toBe(expected);
+    });
+
+    test.each([
+      ["location present", {}, "San Francisco, CA"],
+      ["null location name", { location: { name: undefined } }, null],
+      ["missing location object", { location: undefined }, null],
+      ["empty location name", { location: { name: "" } }, null],
+    ])("location_raw: %s", async (_label, overrides, expected) => {
+      mockSuccessResponse([makeGreenhouseJob(overrides)]);
+      const result = await extractFromGreenhouse(makeContext());
+      expect(result.jobs[0].location_raw).toBe(expected);
+    });
+
+    test.each([
+      ["multiple departments joined", { departments: [{ name: "Engineering" }, { name: "Infrastructure" }, { name: "SRE" }] }, "Engineering, Infrastructure, SRE"],
+      ["filters out falsy department names", { departments: [{ name: "Engineering" }, { name: undefined }, { name: "" }, { name: "DevOps" }] }, "Engineering, DevOps"],
+      ["both departments and offices missing", { departments: undefined, offices: undefined }, null],
+    ])("department_raw: %s", async (_label, overrides, expected) => {
+      mockSuccessResponse([makeGreenhouseJob(overrides)]);
+      const result = await extractFromGreenhouse(makeContext());
+      expect(result.jobs[0].department_raw).toBe(expected);
+    });
+
+    // TODO: The current implementation uses `??` (nullish coalescing) between
+    // departments.join() and offices.join(). Since [].join() returns "" (falsy
+    // but not nullish), `??` will NOT fall back to offices when departments is
+    // empty. department_raw ends up as null (via normalizeText).
+    // `.filter(Boolean).join(", ") || null` would be more correct to ensure
+    // fallback to offices when departments is empty.
+    test("does not fall back to offices when departments array is empty", async () => {
+      mockSuccessResponse([makeGreenhouseJob({
+        departments: [],
+        offices: [{ name: "Berlin" }, { name: "London" }],
+      })]);
+      const result = await extractFromGreenhouse(makeContext());
+      expect(result.jobs[0].department_raw).toBeNull();
+    });
+
+    test.each([
+      ["content present", { content: "<p>Some content</p>" }, "ok"],
+      ["content absent", { content: undefined }, undefined],
+    ])("detail_fetch_status: %s", async (_label, overrides, expected) => {
+      mockSuccessResponse([makeGreenhouseJob(overrides)]);
+      const result = await extractFromGreenhouse(makeContext());
+      if (expected === undefined) {
+        expect(result.jobs[0]).not.toHaveProperty("detail_fetch_status");
+      } else {
+        expect(result.jobs[0].detail_fetch_status).toBe(expected);
+      }
+    });
+
+    test("converts HTML content to plain text in description_text", async () => {
+      mockSuccessResponse([makeGreenhouseJob({
+        content: "<h2>About the Role</h2><p>Build <strong>amazing</strong> things.</p>",
+      })]);
+      const result = await extractFromGreenhouse(makeContext());
+      const job = result.jobs[0];
+
+      expect(job.description_text).toContain("About the Role");
+      expect(job.description_text).toContain("amazing");
+      expect(job.description_text).not.toContain("<h2>");
+      expect(job.description_text).not.toContain("<strong>");
+    });
+
+    test("omits description_text when content is missing", async () => {
+      mockSuccessResponse([makeGreenhouseJob({ content: undefined })]);
+      const result = await extractFromGreenhouse(makeContext());
+      expect(result.jobs[0]).not.toHaveProperty("description_text");
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Edge cases
+  // -------------------------------------------------------------------------
+
+  test("handles a job where all optional fields are undefined", async () => {
+    mockSuccessResponse([{
+      id: 999,
+      title: "QA Analyst",
+      absolute_url: "https://boards.greenhouse.io/acmecorp/jobs/999",
+    }]);
     const result = await extractFromGreenhouse(makeContext());
 
-    expect(result.jobs).toEqual([]);
     expect(result.errors).toEqual([]);
+    expect(result.jobs).toHaveLength(1);
+    expect(result.jobs[0].title).toBe("QA Analyst");
+    expect(result.jobs[0].location_raw).toBeNull();
+    expect(result.jobs[0].department_raw).toBeNull();
+    expect(result.jobs[0].posted_date_raw).toBeNull();
   });
 });

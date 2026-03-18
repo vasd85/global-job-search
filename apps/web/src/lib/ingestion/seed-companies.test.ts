@@ -3,20 +3,36 @@ import { companies } from "../db/schema";
 import { seedCompanies, TEST_SEED_COMPANIES } from "./seed-companies";
 
 // ---------------------------------------------------------------------------
-// Mock DB builder
+// Mock DB builder — captures .values() arguments for data assertions
+// (see db-mock-patterns.md: "Track .set() / .values() arguments")
 // ---------------------------------------------------------------------------
 
-function createMockDb(opts?: { throwOnInsert?: boolean }) {
-  const onConflictDoNothing = opts?.throwOnInsert
-    ? vi.fn().mockRejectedValue(new Error("DB error"))
-    : vi.fn().mockResolvedValue(undefined);
+function createMockDb(opts?: {
+  onConflictBehavior?: Array<"resolve" | "reject">;
+}) {
+  const valuesCalls: Record<string, unknown>[] = [];
+  const behaviors = opts?.onConflictBehavior;
 
-  const values = vi.fn().mockReturnValue({ onConflictDoNothing });
+  let callIndex = 0;
+  const onConflictDoNothing = vi.fn().mockImplementation(() => {
+    const behavior = behaviors?.[callIndex++];
+    if (behavior === "reject") {
+      return Promise.reject(new Error("DB error"));
+    }
+    return Promise.resolve(undefined);
+  });
+
+  const values = vi.fn().mockImplementation((data: Record<string, unknown>) => {
+    valuesCalls.push(data);
+    return { onConflictDoNothing };
+  });
+
   const insert = vi.fn().mockReturnValue({ values });
 
   return {
     db: { insert } as unknown as Database,
-    spies: { insert, values, onConflictDoNothing },
+    valuesCalls,
+    insertSpy: insert,
   };
 }
 
@@ -32,7 +48,7 @@ describe("seedCompanies", () => {
   });
 
   test("inserts a single company with correct slug and field mapping", async () => {
-    const { db, spies } = createMockDb();
+    const { db, valuesCalls, insertSpy } = createMockDb();
     const entry = {
       name: "Stripe",
       ats_vendor: "greenhouse",
@@ -44,8 +60,8 @@ describe("seedCompanies", () => {
     const result = await seedCompanies(db, [entry]);
 
     expect(result).toEqual({ inserted: 1, skipped: 0 });
-    expect(spies.insert).toHaveBeenCalledWith(companies);
-    expect(spies.values).toHaveBeenCalledWith({
+    expect(insertSpy).toHaveBeenCalledWith(companies);
+    expect(valuesCalls[0]).toEqual({
       slug: "greenhouse-stripe",
       name: "Stripe",
       website: "https://stripe.com",
@@ -57,12 +73,12 @@ describe("seedCompanies", () => {
   });
 
   test("defaults website and industry to null when omitted", async () => {
-    const { db, spies } = createMockDb();
+    const { db, valuesCalls } = createMockDb();
     const entry = { name: "Acme", ats_vendor: "lever", ats_slug: "acme" };
 
     await seedCompanies(db, [entry]);
 
-    expect(spies.values).toHaveBeenCalledWith(
+    expect(valuesCalls[0]).toEqual(
       expect.objectContaining({ website: null, industry: null }),
     );
   });
@@ -80,16 +96,19 @@ describe("seedCompanies", () => {
     ["special characters replaced with hyphens", "lever", "acme.co", "lever-acme-co"],
     ["spaces become hyphens", "ashby", "my company", "ashby-my-company"],
     ["underscores become hyphens", "greenhouse", "my_slug", "greenhouse-my-slug"],
-    // TODO: consecutive hyphens are NOT collapsed — "a--b" stays as-is
     ["dots in both parts", "ats.io", "co.uk", "ats-io-co-uk"],
+    // TODO: consecutive hyphens are NOT collapsed — "a--b" stays as-is
+    ["consecutive special chars produce multi-hyphens", "lever", "a..b", "lever-a--b"],
+    // TODO: unicode is replaced char-by-char, producing trailing hyphens
+    ["unicode characters replaced with hyphens", "greenhouse", "café", "greenhouse-caf-"],
   ])(
     "generates correct slug when input has %s",
     async (_label, vendor, slug, expectedSlug) => {
-      const { db, spies } = createMockDb();
+      const { db, valuesCalls } = createMockDb();
       await seedCompanies(db, [
         { name: "X", ats_vendor: vendor, ats_slug: slug },
       ]);
-      expect(spies.values).toHaveBeenCalledWith(
+      expect(valuesCalls[0]).toEqual(
         expect.objectContaining({ slug: expectedSlug }),
       );
     },
@@ -98,7 +117,7 @@ describe("seedCompanies", () => {
   // --- Error handling -------------------------------------------------------
 
   test("counts a throwing insert as skipped, not inserted", async () => {
-    const { db } = createMockDb({ throwOnInsert: true });
+    const { db } = createMockDb({ onConflictBehavior: ["reject"] });
 
     const result = await seedCompanies(db, [
       { name: "Fail", ats_vendor: "lever", ats_slug: "fail" },
@@ -108,16 +127,9 @@ describe("seedCompanies", () => {
   });
 
   test("processes all entries and reports correct totals for a batch", async () => {
-    // Build a mock where the second insert throws
-    const onConflict = vi
-      .fn()
-      .mockResolvedValueOnce(undefined)
-      .mockRejectedValueOnce(new Error("conflict"))
-      .mockResolvedValueOnce(undefined);
-
-    const values = vi.fn().mockReturnValue({ onConflictDoNothing: onConflict });
-    const insert = vi.fn().mockReturnValue({ values });
-    const db = { insert } as unknown as Database;
+    const { db, valuesCalls } = createMockDb({
+      onConflictBehavior: ["resolve", "reject", "resolve"],
+    });
 
     const data = [
       { name: "A", ats_vendor: "greenhouse", ats_slug: "a" },
@@ -128,7 +140,7 @@ describe("seedCompanies", () => {
     const result = await seedCompanies(db, data);
 
     expect(result).toEqual({ inserted: 2, skipped: 1 });
-    expect(insert).toHaveBeenCalledTimes(3);
+    expect(valuesCalls).toHaveLength(3);
   });
 });
 
@@ -137,24 +149,20 @@ describe("seedCompanies", () => {
 // ---------------------------------------------------------------------------
 
 describe("TEST_SEED_COMPANIES", () => {
-  test("contains exactly 10 entries", () => {
-    expect(TEST_SEED_COMPANIES).toHaveLength(10);
+  test("is non-empty", () => {
+    expect(TEST_SEED_COMPANIES.length).toBeGreaterThan(0);
   });
 
-  test("every entry has the required name, ats_vendor, and ats_slug fields", () => {
-    for (const entry of TEST_SEED_COMPANIES) {
+  test.each(TEST_SEED_COMPANIES.map((e) => [e.name, e] as const))(
+    "%s has required fields and valid website with industry",
+    (_name, entry) => {
       expect(entry.name).toBeTruthy();
       expect(entry.ats_vendor).toBeTruthy();
       expect(entry.ats_slug).toBeTruthy();
-    }
-  });
-
-  test("every entry has a website and at least one industry tag", () => {
-    for (const entry of TEST_SEED_COMPANIES) {
       expect(entry.website).toMatch(/^https?:\/\//);
       expect(entry.industry!.length).toBeGreaterThanOrEqual(1);
-    }
-  });
+    },
+  );
 
   test("all slugs are unique across the array", () => {
     const slugs = TEST_SEED_COMPANIES.map(

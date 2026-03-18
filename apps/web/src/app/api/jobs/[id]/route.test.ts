@@ -3,13 +3,13 @@
 // ---------------------------------------------------------------------------
 // Mock @/lib/db — chainable Drizzle query builder
 // ---------------------------------------------------------------------------
-const { mockLimit, mockWhere, mockInnerJoin, mockFrom, mockSelect } = vi.hoisted(() => {
+const { mockLimit, mockWhere, mockSelect } = vi.hoisted(() => {
   const mockLimit = vi.fn();
   const mockWhere = vi.fn(() => ({ limit: mockLimit }));
   const mockInnerJoin = vi.fn(() => ({ where: mockWhere }));
   const mockFrom = vi.fn(() => ({ innerJoin: mockInnerJoin }));
   const mockSelect = vi.fn(() => ({ from: mockFrom }));
-  return { mockLimit, mockWhere, mockInnerJoin, mockFrom, mockSelect };
+  return { mockLimit, mockWhere, mockSelect };
 });
 
 vi.mock("@/lib/db", () => ({
@@ -47,7 +47,7 @@ vi.mock("@/lib/db/schema", () => ({
 }));
 
 vi.mock("drizzle-orm", () => ({
-  eq: vi.fn((...args: unknown[]) => args),
+  eq: vi.fn((col, val) => `eq(${col},${val})`),
 }));
 
 import { GET } from "./route";
@@ -97,61 +97,46 @@ describe("GET /api/jobs/[id]", () => {
     mockLimit.mockResolvedValueOnce([fakeJobRow]);
 
     const response = await GET(new Request("http://localhost"), makeParams(FAKE_UUID));
-    const body = await response.json();
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const body: Record<string, unknown> = await response.json();
 
     expect(response.status).toBe(200);
     expect(body).toEqual(fakeJobRow);
-  });
-
-  test("returns the first result only, not an array", async () => {
-    mockLimit.mockResolvedValueOnce([fakeJobRow]);
-
-    const response = await GET(new Request("http://localhost"), makeParams(FAKE_UUID));
-    const body = await response.json();
-
-    // The route returns result[0], not the array
-    expect(body.id).toBe(FAKE_UUID);
-    expect(Array.isArray(body)).toBe(false);
   });
 
   test("returns 404 with error message when job is not found", async () => {
     mockLimit.mockResolvedValueOnce([]);
 
     const response = await GET(new Request("http://localhost"), makeParams(FAKE_UUID));
-    const body = await response.json();
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const body: Record<string, unknown> = await response.json();
 
     expect(response.status).toBe(404);
     expect(body).toEqual({ error: "Job not found" });
   });
 
-  test("returns 500 with error message when DB throws an Error", async () => {
-    mockLimit.mockRejectedValueOnce(new Error("connection refused"));
+  test.each([
+    ["Error instance", new Error("connection refused"), "connection refused"],
+    ["non-Error string", "some string error", "some string error"],
+  ])(
+    "returns 500 with error message when DB throws %s",
+    async (_label, thrown, expectedMsg) => {
+      mockLimit.mockRejectedValueOnce(thrown);
 
-    const response = await GET(new Request("http://localhost"), makeParams(FAKE_UUID));
-    const body = await response.json();
+      const response = await GET(new Request("http://localhost"), makeParams(FAKE_UUID));
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const body: Record<string, unknown> = await response.json();
 
-    expect(response.status).toBe(500);
-    expect(body).toEqual({ error: "connection refused" });
-  });
+      expect(response.status).toBe(500);
+      expect(body).toEqual({ error: expectedMsg });
+    }
+  );
 
-  test("returns 500 with stringified value when DB throws a non-Error", async () => {
-    mockLimit.mockRejectedValueOnce("some string error");
-
-    const response = await GET(new Request("http://localhost"), makeParams(FAKE_UUID));
-    const body = await response.json();
-
-    expect(response.status).toBe(500);
-    expect(body).toEqual({ error: "some string error" });
-  });
-
-  test("passes the id param through to the query chain", async () => {
+  test("filters by the provided job id via eq(jobs.id, id)", async () => {
     mockLimit.mockResolvedValueOnce([fakeJobRow]);
 
     await GET(new Request("http://localhost"), makeParams("specific-uuid"));
 
-    // Verify select was called (starts the chain)
-    expect(mockSelect).toHaveBeenCalledOnce();
-    // The full chain is: select -> from -> innerJoin -> where -> limit(1)
-    expect(mockLimit).toHaveBeenCalledWith(1);
+    expect(mockWhere).toHaveBeenCalledWith("eq(jobs.id,specific-uuid)");
   });
 });

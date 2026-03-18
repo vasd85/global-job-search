@@ -1,10 +1,61 @@
 // @vitest-environment node
 
 // ---------------------------------------------------------------------------
+// Mock drizzle-orm — token-based condition builders so we can assert WHAT
+// was queried, not just that "a query ran".
+// ---------------------------------------------------------------------------
+
+vi.mock("drizzle-orm", () => {
+  // sql is used as a tagged template literal: sql`count(*)::int`
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const sqlFn = Object.assign(vi.fn((..._args: unknown[]) => "count(*)"), {
+    raw: vi.fn((s: string) => s),
+  });
+  return {
+    eq: vi.fn((col, val) => `eq(${col},${val})`),
+    ilike: vi.fn((col, val) => `ilike(${col},${val})`),
+    and: vi.fn((...args: unknown[]) => args),
+    or: vi.fn((...args: unknown[]) => `or(${args.join(",")})`),
+    isNotNull: vi.fn((col) => `isNotNull(${col})`),
+    desc: vi.fn((col) => `desc(${col})`),
+    sql: sqlFn,
+  };
+});
+
+// ---------------------------------------------------------------------------
+// Mock @/lib/db/schema — column references as string tokens
+// ---------------------------------------------------------------------------
+
+vi.mock("@/lib/db/schema", () => ({
+  jobs: {
+    id: "jobs.id",
+    title: "jobs.title",
+    url: "jobs.url",
+    locationRaw: "jobs.locationRaw",
+    departmentRaw: "jobs.departmentRaw",
+    workplaceType: "jobs.workplaceType",
+    salaryRaw: "jobs.salaryRaw",
+    firstSeenAt: "jobs.firstSeenAt",
+    lastSeenAt: "jobs.lastSeenAt",
+    applyUrl: "jobs.applyUrl",
+    sourceRef: "jobs.sourceRef",
+    companyId: "jobs.companyId",
+    status: "jobs.status",
+    descriptionText: "jobs.descriptionText",
+  },
+  companies: {
+    id: "companies.id",
+    name: "companies.name",
+    slug: "companies.slug",
+    atsVendor: "companies.atsVendor",
+  },
+}));
+
+// ---------------------------------------------------------------------------
 // Mock @/lib/db — chainable Drizzle-style API
 // ---------------------------------------------------------------------------
 
-const { state, mockOffset, mockLimit, mockOrderBy, mockWhere, mockInnerJoin, mockFrom, mockSelect } = vi.hoisted(() => {
+const { state, mockOffset, mockWhere, mockSelect } = vi.hoisted(() => {
   const state = {
     mockJobRows: [] as Record<string, unknown>[],
     mockCountRows: [{ count: 0 }] as { count: number }[],
@@ -19,12 +70,8 @@ const { state, mockOffset, mockLimit, mockOrderBy, mockWhere, mockInnerJoin, moc
   const mockLimit = vi.fn().mockReturnValue({ offset: mockOffset });
   const mockOrderBy = vi.fn().mockReturnValue({ limit: mockLimit });
 
-  // Two separate where mocks: one for the paginated query (chains to orderBy),
-  // one for the count query (resolves directly).
   const mockWhere = vi.fn().mockImplementation(() => {
     state.whereCallCount++;
-    // First call: paginated query -> chains to orderBy
-    // Second call: count query -> resolves to count rows
     if (state.whereCallCount % 2 === 1) {
       return { orderBy: mockOrderBy };
     }
@@ -36,13 +83,14 @@ const { state, mockOffset, mockLimit, mockOrderBy, mockWhere, mockInnerJoin, moc
   const mockFrom = vi.fn().mockReturnValue({ innerJoin: mockInnerJoin });
   const mockSelect = vi.fn().mockReturnValue({ from: mockFrom });
 
-  return { state, mockOffset, mockLimit, mockOrderBy, mockWhere, mockInnerJoin, mockFrom, mockSelect };
+  return { state, mockOffset, mockWhere, mockSelect };
 });
 
 vi.mock("@/lib/db", () => ({
   db: { select: mockSelect },
 }));
 
+import { eq, ilike, or, isNotNull } from "drizzle-orm";
 import { GET } from "./route";
 
 // ---------------------------------------------------------------------------
@@ -61,7 +109,8 @@ async function getJsonResponse(
   params: Record<string, string> = {}
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const response = await GET(makeRequest(params));
-  const body = await response.json();
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+  const body: Record<string, unknown> = await response.json();
   return { status: response.status, body };
 }
 
@@ -82,6 +131,11 @@ function makeFakeJobRow(overrides: Record<string, unknown> = {}) {
     companySlug: "acme",
     ...overrides,
   };
+}
+
+/** Extract the where-clause token array from the paginated query (1st call). */
+function getPaginatedWhereArg(): unknown {
+  return mockWhere.mock.calls[0]?.[0];
 }
 
 // ---------------------------------------------------------------------------
@@ -127,6 +181,7 @@ describe("GET /api/jobs", () => {
     // propagates to the SQL LIMIT clause, which may cause unexpected
     // DB behavior. The route should validate and default invalid limits.
     ["abc", null, "non-numeric limit results in NaN (serialized as null)"],
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   ])("limit=%s results in limit=%j (%s)", async (input, expected, _label) => {
     const { body } = await getJsonResponse({ limit: input });
     expect(body.limit).toBe(expected);
@@ -183,30 +238,81 @@ describe("GET /api/jobs", () => {
     expect(body.total).toBe(0);
   });
 
-  // --- Filter params trigger DB calls ---
+  // --- Default status filter ---
 
-  describe("filter parameters are forwarded to the DB query", () => {
-    test.each([
-      ["search", "engineer"],
-      ["workplaceType", "remote"],
-      ["vendor", "greenhouse"],
-      ["company", "acme"],
-      ["hasDescription", "true"],
-    ])(
-      "%s=%s triggers a filtered query (select called with conditions)",
-      async (param, value) => {
-        await getJsonResponse({ [param]: value });
+  test("always applies status='open' condition by default", async () => {
+    await getJsonResponse();
 
-        // Both paginated and count queries should execute
-        expect(mockSelect).toHaveBeenCalledTimes(2);
-        expect(mockWhere).toHaveBeenCalledTimes(2);
-      }
-    );
+    expect(eq).toHaveBeenCalledWith("jobs.status", "open");
+    const whereArg = getPaginatedWhereArg() as unknown[];
+    expect(whereArg).toContain("eq(jobs.status,open)");
+  });
+
+  test("applies explicit status param when provided", async () => {
+    await getJsonResponse({ status: "closed" });
+
+    expect(eq).toHaveBeenCalledWith("jobs.status", "closed");
+    const whereArg = getPaginatedWhereArg() as unknown[];
+    expect(whereArg).toContain("eq(jobs.status,closed)");
+  });
+
+  // --- Individual filter params produce correct conditions ---
+
+  describe("filter parameters produce correct condition tokens", () => {
+    test("search adds or(ilike(title), ilike(department)) condition", async () => {
+      await getJsonResponse({ search: "engineer" });
+
+      expect(ilike).toHaveBeenCalledWith("jobs.title", "%engineer%");
+      expect(ilike).toHaveBeenCalledWith("jobs.departmentRaw", "%engineer%");
+      expect(or).toHaveBeenCalled();
+      const whereArg = getPaginatedWhereArg() as unknown[];
+      expect(whereArg).toContain(
+        "or(ilike(jobs.title,%engineer%),ilike(jobs.departmentRaw,%engineer%))"
+      );
+    });
+
+    test("workplaceType adds eq(workplaceType, value) condition", async () => {
+      await getJsonResponse({ workplaceType: "remote" });
+
+      expect(eq).toHaveBeenCalledWith("jobs.workplaceType", "remote");
+      const whereArg = getPaginatedWhereArg() as unknown[];
+      expect(whereArg).toContain("eq(jobs.workplaceType,remote)");
+    });
+
+    test("vendor adds eq(atsVendor, value) condition", async () => {
+      await getJsonResponse({ vendor: "greenhouse" });
+
+      expect(eq).toHaveBeenCalledWith("companies.atsVendor", "greenhouse");
+      const whereArg = getPaginatedWhereArg() as unknown[];
+      expect(whereArg).toContain("eq(companies.atsVendor,greenhouse)");
+    });
+
+    test("company adds eq(slug, value) condition", async () => {
+      await getJsonResponse({ company: "acme" });
+
+      expect(eq).toHaveBeenCalledWith("companies.slug", "acme");
+      const whereArg = getPaginatedWhereArg() as unknown[];
+      expect(whereArg).toContain("eq(companies.slug,acme)");
+    });
+
+    test("hasDescription='true' adds isNotNull(descriptionText) condition", async () => {
+      await getJsonResponse({ hasDescription: "true" });
+
+      expect(isNotNull).toHaveBeenCalledWith("jobs.descriptionText");
+      const whereArg = getPaginatedWhereArg() as unknown[];
+      expect(whereArg).toContain("isNotNull(jobs.descriptionText)");
+    });
+
+    test("hasDescription='false' does not add description filter", async () => {
+      await getJsonResponse({ hasDescription: "false" });
+
+      expect(isNotNull).not.toHaveBeenCalled();
+    });
   });
 
   // --- Multiple filters combined ---
 
-  test("applies multiple filters simultaneously", async () => {
+  test("combines multiple filters in a single and() call", async () => {
     await getJsonResponse({
       search: "engineer",
       workplaceType: "remote",
@@ -216,48 +322,40 @@ describe("GET /api/jobs", () => {
       status: "closed",
     });
 
-    expect(mockSelect).toHaveBeenCalledTimes(2);
-    expect(mockWhere).toHaveBeenCalledTimes(2);
+    const whereArg = getPaginatedWhereArg() as unknown[];
+    expect(whereArg).toContain("eq(jobs.status,closed)");
+    expect(whereArg).toContain("eq(jobs.workplaceType,remote)");
+    expect(whereArg).toContain("isNotNull(jobs.descriptionText)");
+    expect(whereArg).toContain("eq(companies.atsVendor,greenhouse)");
+    expect(whereArg).toContain("eq(companies.slug,acme)");
   });
 
-  // --- Status default ---
+  // --- Omitted filters don't produce spurious conditions ---
 
-  test("uses status 'open' by default (always adds status condition)", async () => {
+  test("omitted filters produce only the default status condition", async () => {
     await getJsonResponse();
 
-    // The where clause is always called (status = "open" is always added)
-    expect(mockWhere).toHaveBeenCalledTimes(2);
-  });
-
-  // --- hasDescription filter ---
-
-  test("hasDescription='false' does not add description filter", async () => {
-    // hasDescription only adds the filter when value is exactly "true"
-    await getJsonResponse({ hasDescription: "false" });
-
-    // The query still executes, just without the isNotNull condition
-    expect(mockSelect).toHaveBeenCalledTimes(2);
+    const whereArg = getPaginatedWhereArg() as unknown[];
+    // Only status=open should be in the conditions
+    expect(whereArg).toEqual(["eq(jobs.status,open)"]);
   });
 
   // --- Error handling ---
 
-  test("returns 500 with error message when DB throws an Error", async () => {
-    state.mockDbError = new Error("connection refused");
+  test.each([
+    ["Error instance", new Error("connection refused"), "connection refused"],
+    ["non-Error string", "raw string failure", "raw string failure"],
+  ])("returns 500 when DB throws %s", async (_label, thrown, expectedMsg) => {
+    if (thrown instanceof Error) {
+      state.mockDbError = thrown;
+    } else {
+      mockOffset.mockRejectedValueOnce(thrown);
+    }
 
     const { status, body } = await getJsonResponse();
 
     expect(status).toBe(500);
-    expect(body).toEqual({ error: "connection refused" });
-  });
-
-  test("returns 500 with stringified error when DB throws a non-Error", async () => {
-    // Override the mock to throw a string
-    mockOffset.mockRejectedValueOnce("raw string failure");
-
-    const { status, body } = await getJsonResponse();
-
-    expect(status).toBe(500);
-    expect(body).toEqual({ error: "raw string failure" });
+    expect(body).toEqual({ error: expectedMsg });
   });
 
   // --- Pagination values in response ---

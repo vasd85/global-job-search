@@ -3,11 +3,11 @@
 // ---------------------------------------------------------------------------
 // Mock @/lib/db — chainable Drizzle query builder
 // ---------------------------------------------------------------------------
-const { mockOrderBy, mockFrom, mockSelect } = vi.hoisted(() => {
+const { mockOrderBy, mockSelect } = vi.hoisted(() => {
   const mockOrderBy = vi.fn();
   const mockFrom = vi.fn(() => ({ orderBy: mockOrderBy }));
   const mockSelect = vi.fn(() => ({ from: mockFrom }));
-  return { mockOrderBy, mockFrom, mockSelect };
+  return { mockOrderBy, mockSelect };
 });
 
 vi.mock("@/lib/db", () => ({
@@ -30,9 +30,10 @@ vi.mock("@/lib/db/schema", () => ({
 }));
 
 vi.mock("drizzle-orm", () => ({
-  desc: vi.fn((col: unknown) => col),
+  desc: vi.fn((col: unknown) => `desc(${col})`),
 }));
 
+import { desc } from "drizzle-orm";
 import { GET } from "./route";
 
 // ---------------------------------------------------------------------------
@@ -77,7 +78,8 @@ describe("GET /api/companies", () => {
     mockOrderBy.mockResolvedValueOnce(fakeCompanies);
 
     const response = await GET();
-    const body = await response.json();
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const body: Record<string, unknown> = await response.json();
 
     expect(response.status).toBe(200);
     expect(body).toEqual({
@@ -86,23 +88,24 @@ describe("GET /api/companies", () => {
     });
   });
 
-  test("total equals the length of the returned companies array", async () => {
-    mockOrderBy.mockResolvedValueOnce(fakeCompanies);
-
-    const response = await GET();
-    const body = await response.json();
-
-    expect(body.total).toBe(body.companies.length);
-  });
-
   test("returns empty array with total 0 when no companies exist", async () => {
     mockOrderBy.mockResolvedValueOnce([]);
 
     const response = await GET();
-    const body = await response.json();
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const body: Record<string, unknown> = await response.json();
 
     expect(response.status).toBe(200);
     expect(body).toEqual({ companies: [], total: 0 });
+  });
+
+  test("orders results by jobsCount descending", async () => {
+    mockOrderBy.mockResolvedValueOnce([]);
+
+    await GET();
+
+    expect(desc).toHaveBeenCalledWith("companies.jobsCount");
+    expect(mockOrderBy).toHaveBeenCalledWith("desc(companies.jobsCount)");
   });
 
   test.each([
@@ -115,20 +118,11 @@ describe("GET /api/companies", () => {
       mockOrderBy.mockRejectedValueOnce(thrown);
 
       const response = await GET();
-      const body = await response.json();
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const body: Record<string, unknown> = await response.json();
 
       expect(response.status).toBe(500);
       expect(body).toEqual({ error: expectedMsg });
     }
   );
-
-  test("invokes the full query chain: select -> from -> orderBy", async () => {
-    mockOrderBy.mockResolvedValueOnce([]);
-
-    await GET();
-
-    expect(mockSelect).toHaveBeenCalledOnce();
-    expect(mockFrom).toHaveBeenCalledOnce();
-    expect(mockOrderBy).toHaveBeenCalledOnce();
-  });
 });

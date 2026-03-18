@@ -66,12 +66,10 @@ describe("POST /api/ingestion", () => {
     );
   });
 
-  test("handles invalid JSON body gracefully and uses defaults", async () => {
-    const req = new Request("http://localhost/api/ingestion", {
-      method: "POST",
-      body: "not json",
-    });
-
+  test.each([
+    ["invalid JSON body", new Request("http://localhost/api/ingestion", { method: "POST", body: "not json" })],
+    ["missing body (no Content-Type)", new Request("http://localhost/api/ingestion", { method: "POST" })],
+  ])("handles %s gracefully and uses defaults", async (_label, req) => {
     await POST(req);
 
     expect(runIngestionMock).toHaveBeenCalledWith(
@@ -84,44 +82,28 @@ describe("POST /api/ingestion", () => {
     const req = makeRequest({});
 
     const res = await POST(req);
-    const json = await res.json();
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const json: Record<string, unknown> = await res.json();
 
     expect(res.status).toBe(200);
     expect(json).toEqual({ success: true, ...FAKE_RESULT });
   });
 
-  test("returns 500 with success: false when runIngestion throws an Error", async () => {
-    runIngestionMock.mockRejectedValueOnce(new Error("db connection lost"));
-    const req = makeRequest({});
+  test.each([
+    ["Error instance", new Error("db connection lost"), "db connection lost"],
+    ["non-Error string", "unexpected string error", "unexpected string error"],
+  ])(
+    "returns 500 with success: false when runIngestion throws %s",
+    async (_label, thrown, expectedMsg) => {
+      runIngestionMock.mockRejectedValueOnce(thrown);
+      const req = makeRequest({});
 
-    const res = await POST(req);
-    const json = await res.json();
+      const res = await POST(req);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const json: Record<string, unknown> = await res.json();
 
-    expect(res.status).toBe(500);
-    expect(json).toEqual({ success: false, error: "db connection lost" });
-  });
-
-  test("stringifies non-Error thrown values in the error response", async () => {
-    runIngestionMock.mockRejectedValueOnce("unexpected string error");
-    const req = makeRequest({});
-
-    const res = await POST(req);
-    const json = await res.json();
-
-    expect(res.status).toBe(500);
-    expect(json).toEqual({ success: false, error: "unexpected string error" });
-  });
-
-  test("handles missing body (no Content-Type) gracefully", async () => {
-    const req = new Request("http://localhost/api/ingestion", {
-      method: "POST",
-    });
-
-    await POST(req);
-
-    expect(runIngestionMock).toHaveBeenCalledWith(
-      expect.anything(),
-      { concurrency: 5, companyIds: undefined }
-    );
-  });
+      expect(res.status).toBe(500);
+      expect(json).toEqual({ success: false, error: expectedMsg });
+    }
+  );
 });
