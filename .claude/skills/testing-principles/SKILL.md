@@ -3,78 +3,168 @@ name: testing-principles
 description: >-
   Core testing principles and project-specific test patterns for the
   global-job-search monorepo. Preloaded into test-writer and code-reviewer
-  subagents.
+  subagents. Use this skill whenever writing tests, reviewing test code,
+  evaluating test coverage, or deciding how to mock dependencies — even if
+  the user doesn't explicitly mention testing conventions.
 user-invocable: false
 ---
 
 # Testing Principles
 
+This skill is the single source of truth for testing conventions in the
+global-job-search monorepo. It covers universal principles (applicable to
+all test files) and project-specific patterns (in `references/`).
+
 ## Core Principles
 
-1. **Test contracts, not implementation.** Verify observable effects, not
-   internal mechanisms. Tests must survive refactoring that changes HOW but
-   not WHAT. Never assert which internal helper was called — assert what
-   the caller observes.
+### 1. Test the contract, not the implementation
 
-2. **Adversarial negative testing.** For string matching, URL parsing, or
-   domain validation: always include a near-miss that must NOT match.
-   If code checks `host.includes("greenhouse.io")`, test that
-   `notgreenhouse.io` does not match.
+Tests verify **what** a function promises, not **how** it achieves it.
+This matters because implementations change during refactoring — if tests
+are coupled to internals, every refactor breaks tests without any real
+regression.
 
-3. **Respect module boundaries.** Test only the layer under test. Do not
-   re-test behavior that belongs to a dependency. If another module's
-   test suite covers it, mock or accept the dependency's output.
+- Describe expected behavior from the caller's perspective in test names.
+  Never reference internal code structure (e.g., "comes first in the code",
+  "uses indexOf internally").
+- If current behavior looks potentially buggy (e.g., a generic fallback
+  when a field is missing), write the test but add `// TODO:` explaining
+  why the behavior may be wrong. Don't silently enshrine bugs as the
+  expected contract.
 
-4. **Every test name earned by assertions.** If the test name says "shows
-   loading indicator", the assertions must query the loading element. A
-   name that doesn't match its assertions creates false confidence.
+### 2. Adversarial negative testing
 
-5. **Deterministic data.** Never use midnight UTC (`T00:00:00Z`) for dates
-   formatted with locale functions — use `T12:00:00Z`. Always mock
-   `Date.now()` with `vi.setSystemTime()` or pass explicit timestamps.
+For any code that does string matching, URL parsing, domain validation,
+or pattern recognition — false positives are the biggest risk. A function
+that matches too broadly can silently accept bad input for months before
+anyone notices.
 
-6. **Always test async failure paths.** For any `fetch`, DB, or external
-   service call: test rejection, non-OK status, and invalid response body.
-   If the code lacks error handling, write the test and add `// TODO:`.
+- When code uses `string.includes(substring)`, write tests for boundary
+  false positives. Example: if code checks `host.includes("greenhouse.io")`,
+  test that `notgreenhouse.io` and `greenhouse.io.evil.com` are correctly
+  rejected (or flag that they're accepted).
+- For URL/identifier parsing, test adversarial inputs: look-alike domains,
+  extra path segments, URL-encoded characters, protocol-relative URLs.
+- For every positive pattern match, include at least one crafted near-miss
+  that should **not** match.
 
-7. **Table-driven tests.** Use `test.each` when 3+ cases share the same
-   assertion shape. One block covers all cases, not N copy-pasted tests.
+### 3. Respect module boundaries
 
-8. **Flag bugs, don't enshrine.** If behavior looks wrong, write the test
-   but add `// TODO:` explaining the issue. Don't silently assert buggy
-   values as the correct contract.
+Before writing any test, answer: **"What is this module's own job?"**
+Only test logic inside the module. Duplicating coverage from a dependency
+means two test files break for a single change, with no extra safety.
 
-9. **UI tests: assert what users see.** Test loading/error/empty states
-   and user interactions → visible results. Do not test `useEffect` call
-   counts, debounce timer internals, or `useCallback` references.
+If another module's test suite already covers a behavior, mock or accept
+the dependency's output and focus on the current module's unique logic.
 
-10. **Mock real semantics.** DB mocks must distinguish insert vs conflict.
-    Assert `.set()` / `.values()` arguments, not just call counts.
-    `expect(mock).toHaveBeenCalled()` only proves "something ran" — prove
-    the correct data was written.
+**Size guideline:** a test file for a thin wrapper/mapper should be
+~150-300 lines, not 600+. If growing beyond that, you're likely testing
+the wrong layer.
+
+### 4. Every test name must be earned by its assertions
+
+If a test is named "shows loading indicator", the assertions **must** query
+the DOM for the loading element. A test that only checks `fetch` call count
+does not earn that name — it creates false confidence that the UI works.
+
+Before writing a test, state the contract it defends in plain English.
+If assertions don't prove that contract, either strengthen assertions or
+rename the test honestly.
+
+### 5. Deterministic test data
+
+Flaky tests erode trust in the entire suite. Common sources of
+non-determinism:
+
+- **Dates:** Never use midnight UTC (`T00:00:00Z`) for values formatted
+  with `toLocaleDateString()` — midnight UTC becomes the previous day in
+  negative-offset timezones. Use midday: `T12:00:00Z`.
+- **Locale strings:** If code uses locale formatting, either mock the
+  locale or assert with a regex accepting both `Jul 15` and `15 Jul`.
+- **`Date.now()` / `new Date()`:** Always use `vi.setSystemTime()` or
+  pass explicit timestamps. Never rely on "current time" in assertions.
+
+### 6. Always test async failure paths
+
+For any function/component calling `fetch`, a database, or an external
+service — test at least one failure case. This catches missing error
+handling before users hit it.
+
+- `fetch` rejects (network error)
+- `fetch` returns non-OK status (500, 404)
+- Response body is not valid JSON
+
+If the code lacks error handling, write the test that proves the broken
+behavior and add `// TODO:` explaining the gap. This makes the issue
+discoverable, not silently skipped.
+
+### 7. Table-driven tests (`test.each`)
+
+When 2+ tests in a `describe` call the same function with the same
+matcher and only input/expected differ, replace them with `test.each`.
+The goal: reduce total lines while maintaining coverage clarity.
+
+"Same assertion shape" means same function + same matcher, not visually
+identical code. Tests can differ in setup details — if the core is
+`expect(fn(input)).toX(expected)`, that's one shape.
+
+**Typing rule:** when `test.each` values feed a function accepting a
+narrow type (union, enum), cast the array or use a generic to preserve
+type safety:
+
+```ts
+test.each<[AtsVendor]>([["greenhouse"], ["lever"]])(
+  "returns true for %s",
+  (vendor) => { expect(isKnownAtsVendor(vendor)).toBe(true); },
+);
+```
+
+**Where to look:** vendor lists, URL pattern sets, guard clauses
+(null/undefined/empty), enum-like checks, filter variations, nullable
+field rendering. Each logical group -> one `test.each`.
+
+### 8. Flag bugs, don't enshrine them
+
+If behavior looks wrong, write the test but add `// TODO:` explaining the
+issue and what the correct behavior might be. This surfaces the problem
+for future developers without silently accepting it as correct.
+
+### 9. Test effects, not mechanisms
+
+Verify what the caller observes, not which internal helper was called.
+This is the practical application of principle #1.
+
+```ts
+// Implementation-bound: breaks if hash function changes
+expect(mockSha256).toHaveBeenCalledWith("Some description");
+
+// Contract-based: proves content-change detection works
+// Feed two polls with different descriptions -> assert jobsUpdated = 1
+```
+
+**Query builder corollary:** `expect(mockWhere).toHaveBeenCalledTimes(2)`
+proves "a query ran" but not "the correct filter was applied". Capture and
+assert the arguments instead.
+
+### 10. Mock real semantics
+
+DB mocks must model real operation outcomes, not just "not fail". A mock
+for `insert().onConflictDoNothing()` should distinguish "inserted new row"
+from "conflict — did nothing". Assert `.set()` / `.values()` arguments,
+not just call counts — `expect(mock).toHaveBeenCalled()` only proves
+"something ran", not "the correct data was written".
+
+For detailed mock patterns with code examples, see
+`references/db-mock-patterns.md`.
 
 ## Project-Specific Patterns
 
-### ATS extractors (`packages/ats-core/src/extractors/`)
+Detailed code examples and patterns are in `references/`. Read the
+relevant file when working on that domain:
 
-Extractors are thin wiring. Test:
-- API URL construction from careers URL / board token
-- Field mapping: raw API response → `BuildJobArgs.raw`
-- Fallback chains (e.g., `departmentName ?? department ?? team`)
-- Error paths: null data, API errors, empty job lists
-- Do NOT test `job_uid`, dedup, URL parsing — those are normalizer/discovery tests.
-
-Size: ~150–300 lines per extractor test file.
-
-### API route handlers (`apps/web/src/app/api/`)
-
-- Mock Drizzle condition builders (`eq`, `ilike`, `isNotNull`) to return
-  identifiable tokens, then assert those tokens appear in `where()` args.
-- Assert WHAT filter was applied, not just THAT a query ran.
-- Test each filter param independently + combined filters.
-
-### React components (`apps/web/src/components/`)
-
-- React Testing Library: `render(...)`, `screen.getBy*`, `userEvent`.
-- Use `test.each` for filter/field variations.
-- Size: ~200–400 lines for a complex component.
+| Domain | Reference file | When to read |
+|--------|---------------|--------------|
+| Drizzle ORM mocks | `references/db-mock-patterns.md` | Writing tests that mock database operations |
+| API route handlers | `references/api-route-patterns.md` | Testing `apps/web/src/app/api/` routes |
+| React components | `references/component-patterns.md` | Testing `apps/web/src/components/` |
+| ATS extractors | `references/extractor-patterns.md` | Testing `packages/ats-core/src/extractors/` |
