@@ -2,6 +2,16 @@
 
 vi.mock("@/lib/db", () => ({ db: {} }));
 
+const getSessionMock = vi.fn();
+vi.mock("@/lib/auth", () => ({
+  auth: {
+    api: {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+      getSession: (...args: unknown[]) => getSessionMock(...args),
+    },
+  },
+}));
+
 vi.mock("@/lib/ingestion/run-ingestion", () => ({
   runIngestion: vi.fn(),
 }));
@@ -13,6 +23,8 @@ import { POST } from "./route";
 const runIngestionMock = runIngestion as ReturnType<typeof vi.fn>;
 
 // ---- Helpers ---------------------------------------------------------------
+
+const adminSession = { user: { id: "u1", role: "admin" }, session: {} };
 
 function makeRequest(body?: unknown): Request {
   const init: RequestInit = { method: "POST" };
@@ -38,12 +50,29 @@ const FAKE_RESULT = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  getSessionMock.mockResolvedValue(adminSession);
   runIngestionMock.mockResolvedValue(FAKE_RESULT);
 });
 
 // ---- Tests -----------------------------------------------------------------
 
 describe("POST /api/ingestion", () => {
+  test("returns 403 when not authenticated", async () => {
+    getSessionMock.mockResolvedValueOnce(null);
+
+    const res = await POST(makeRequest({}));
+
+    expect(res.status).toBe(403);
+  });
+
+  test("returns 403 when user is not admin", async () => {
+    getSessionMock.mockResolvedValueOnce({ user: { id: "u2", role: "user" }, session: {} });
+
+    const res = await POST(makeRequest({}));
+
+    expect(res.status).toBe(403);
+  });
+
   test("forwards concurrency and companyIds to runIngestion", async () => {
     const req = makeRequest({ concurrency: 3, companyIds: ["c-1", "c-2"] });
 

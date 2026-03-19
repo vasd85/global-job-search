@@ -40,6 +40,9 @@ apps/web/next-env.d.ts
 .idea/
 .vscode/
 
+# Project documentation (local drafts)
+docs/
+
 # Claude Code local settings
 .claude/settings.local.json
 .claude/worktrees/

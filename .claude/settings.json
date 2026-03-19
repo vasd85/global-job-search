@@ -1,11 +1,6 @@
 {
   "permissions": {
     "allow": [
-      "Bash(pnpm *)",
-      "Bash(git *)",
-      "Bash(gh *)",
-      "Bash(npx *)",
-      "Bash(node *)",
       "Read",
       "Write",
       "Edit",
@@ -28,7 +23,9 @@
       "Bash(git commit -m'*)",
       "Bash(git commit -am *)",
       "Bash(git commit -am\"*)",
-      "Bash(git commit -am'*)"
+      "Bash(git commit -am'*)",
+      "Read(./.env)",
+      "Read(./.env.*)"
     ]
   },
   "hooks": {

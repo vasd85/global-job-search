@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { auth } from "@/lib/auth";
 import { runIngestion } from "@/lib/ingestion/run-ingestion";
 
 interface IngestionBody {
@@ -8,6 +9,11 @@ interface IngestionBody {
 }
 
 export async function POST(request: Request) {
+  const session = await auth.api.getSession({ headers: request.headers });
+  if (!session || session.user.role !== "admin") {
+    return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+  }
+
   try {
     const body = (await request.json().catch(() => ({}))) as IngestionBody;
     const companyIds = body.companyIds;
