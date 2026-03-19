@@ -4,12 +4,6 @@ import { nextCookies } from "better-auth/next-js";
 import { admin, magicLink } from "better-auth/plugins";
 import { db } from "@/lib/db";
 
-function requireEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) throw new Error(`Missing required environment variable: ${name}`);
-  return value;
-}
-
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
@@ -22,8 +16,10 @@ export const auth = betterAuth({
   }),
   socialProviders: {
     google: {
-      clientId: requireEnv("GOOGLE_CLIENT_ID"),
-      clientSecret: requireEnv("GOOGLE_CLIENT_SECRET"),
+      // Empty-string fallback: avoids crash at build time (module loads during next build page collection).
+      // Google OAuth will fail at runtime with a clear provider error if these are unset.
+      clientId: process.env.GOOGLE_CLIENT_ID ?? "",
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
       prompt: "select_account",
     },
   },
