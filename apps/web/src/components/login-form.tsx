@@ -10,10 +10,15 @@ export function LoginForm() {
   const [error, setError] = useState<string | null>(null);
 
   const handleGoogleSignIn = async () => {
-    await authClient.signIn.social({
-      provider: "google",
-      callbackURL: "/",
-    });
+    setError(null);
+    try {
+      await authClient.signIn.social({
+        provider: "google",
+        callbackURL: "/",
+      });
+    } catch {
+      setError("Failed to sign in with Google. Please try again.");
+    }
   };
 
   const handleMagicLink = async (e: React.FormEvent) => {
