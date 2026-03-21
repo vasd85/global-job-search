@@ -7,6 +7,7 @@ import {
   revokeApiKey,
   ApiKeyValidationError,
   ApiKeyDuplicateError,
+  ApiKeyNotFoundError,
 } from "@/lib/api-keys/api-key-service";
 
 export async function GET(request: Request) {
@@ -102,9 +103,12 @@ export async function DELETE(request: Request) {
     await revokeApiKey(db, session.user.id, keyId);
     return NextResponse.json({ success: true });
   } catch (error) {
+    if (error instanceof ApiKeyNotFoundError) {
+      return NextResponse.json({ error: error.message }, { status: 404 });
+    }
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : String(error) },
-      { status: 404 },
+      { error: "Internal server error" },
+      { status: 500 },
     );
   }
 }

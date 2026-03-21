@@ -188,13 +188,16 @@ describe("addApiKey", () => {
     expect(result.maskedHint).toBe("...ABCD");
   });
 
-  test("generates fingerprintHmac from userId:provider:rawKey", async () => {
+  test("generates fingerprintHmac from userId:provider:sha256(rawKey)", async () => {
     const generateHmacMock = (await import("../crypto/encryption")).generateHmac as ReturnType<typeof vi.fn>;
     const db = createMockDb([]);
 
     await addApiKey(db as never, "user-42", "anthropic", "sk-ant-test9999");
 
-    expect(generateHmacMock).toHaveBeenCalledWith("user-42:anthropic:sk-ant-test9999");
+    // Raw key is SHA-256 hashed before being included in HMAC input
+    const { createHash } = await import("node:crypto");
+    const keyHash = createHash("sha256").update("sk-ant-test9999").digest("hex");
+    expect(generateHmacMock).toHaveBeenCalledWith(`user-42:anthropic:${keyHash}`);
   });
 
   test("duplicate check runs before existing-key check", async () => {

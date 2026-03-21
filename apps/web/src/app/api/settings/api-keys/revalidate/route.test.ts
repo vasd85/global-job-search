@@ -16,10 +16,17 @@ const revalidateApiKeyMock = vi.fn();
 vi.mock("@/lib/api-keys/api-key-service", () => ({
   // eslint-disable-next-line @typescript-eslint/no-unsafe-return
   revalidateApiKey: (...args: unknown[]) => revalidateApiKeyMock(...args),
+  ApiKeyNotFoundError: class extends Error {
+    constructor(message = "API key not found") {
+      super(message);
+      this.name = "ApiKeyNotFoundError";
+    }
+  },
 }));
 
 // Re-import after mock registration
 import { POST } from "./route";
+import { ApiKeyNotFoundError } from "@/lib/api-keys/api-key-service";
 
 // ---- Helpers --------------------------------------------------------------
 
@@ -127,7 +134,7 @@ describe("POST /api/settings/api-keys/revalidate", () => {
   });
 
   test("returns 404 when key is not found", async () => {
-    revalidateApiKeyMock.mockRejectedValueOnce(new Error("API key not found"));
+    revalidateApiKeyMock.mockRejectedValueOnce(new ApiKeyNotFoundError());
 
     const res = await POST(jsonRequest({ keyId: "nonexistent-key" }));
     const json = (await res.json()) as Record<string, unknown>;
@@ -136,23 +143,23 @@ describe("POST /api/settings/api-keys/revalidate", () => {
     expect(json.error).toBe("API key not found");
   });
 
-  test("returns 404 with error message when revalidation throws unexpected error", async () => {
+  test("returns 500 when revalidation throws unexpected error", async () => {
     revalidateApiKeyMock.mockRejectedValueOnce(new Error("Decryption failed"));
 
     const res = await POST(jsonRequest({ keyId: "key1" }));
     const json = (await res.json()) as Record<string, unknown>;
 
-    expect(res.status).toBe(404);
-    expect(json.error).toBe("Decryption failed");
+    expect(res.status).toBe(500);
+    expect(json.error).toBe("Internal server error");
   });
 
-  test("handles non-Error thrown values by converting to string", async () => {
+  test("returns 500 for non-Error thrown values", async () => {
     revalidateApiKeyMock.mockRejectedValueOnce("raw-string-error");
 
     const res = await POST(jsonRequest({ keyId: "key1" }));
     const json = (await res.json()) as Record<string, unknown>;
 
-    expect(res.status).toBe(404);
-    expect(json.error).toBe("raw-string-error");
+    expect(res.status).toBe(500);
+    expect(json.error).toBe("Internal server error");
   });
 });

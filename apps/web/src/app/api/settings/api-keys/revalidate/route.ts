@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
-import { revalidateApiKey } from "@/lib/api-keys/api-key-service";
+import { revalidateApiKey, ApiKeyNotFoundError } from "@/lib/api-keys/api-key-service";
 
 export async function POST(request: Request) {
   const session = await auth.api.getSession({ headers: request.headers });
@@ -25,9 +25,12 @@ export async function POST(request: Request) {
     const result = await revalidateApiKey(db, session.user.id, keyId);
     return NextResponse.json({ success: true, validation: result });
   } catch (error) {
+    if (error instanceof ApiKeyNotFoundError) {
+      return NextResponse.json({ error: error.message }, { status: 404 });
+    }
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : String(error) },
-      { status: 404 },
+      { error: "Internal server error" },
+      { status: 500 },
     );
   }
 }

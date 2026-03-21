@@ -1,5 +1,5 @@
 import { eq, and, ne, or, desc } from "drizzle-orm";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { Database } from "../db";
 import { userApiKeys } from "../db/schema";
 import { encrypt, decrypt, generateHmac } from "../crypto/encryption";
@@ -7,11 +7,14 @@ import { validateAnthropicKey, type ValidationResult } from "./validate-anthropi
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
+export type ApiKeyProvider = "anthropic";
+export type ApiKeyStatus = "active" | "invalid" | "revoked";
+
 export interface ApiKeyMeta {
   id: string;
-  provider: string;
+  provider: ApiKeyProvider;
   maskedHint: string | null;
-  status: string;
+  status: ApiKeyStatus;
   lastValidatedAt: Date | null;
   lastErrorCode: string | null;
   createdAt: Date;
@@ -20,7 +23,7 @@ export interface ApiKeyMeta {
 export interface AddApiKeyResult {
   id: string;
   maskedHint: string;
-  status: string;
+  status: ApiKeyStatus;
   validationStatus: ValidationResult["status"];
 }
 
@@ -29,7 +32,7 @@ export interface AddApiKeyResult {
 export async function addApiKey(
   db: Database,
   userId: string,
-  provider: string,
+  provider: ApiKeyProvider,
   rawKey: string,
 ): Promise<AddApiKeyResult> {
   const validation = await validateAnthropicKey(rawKey);
@@ -40,14 +43,18 @@ export async function addApiKey(
   const newId = randomUUID();
   const aad = `${userId}:${provider}:${newId}`;
   const { ciphertext, iv, authTag } = encrypt(rawKey, aad);
-  const fingerprintHmac = generateHmac(`${userId}:${provider}:${rawKey}`);
+  // Hash the raw key before HMAC so the fingerprint never contains raw key material
+  const keyHash = createHash("sha256").update(rawKey).digest("hex");
+  const fingerprintHmac = generateHmac(`${userId}:${provider}:${keyHash}`);
   const maskedHint = `...${rawKey.slice(-4)}`;
   const now = new Date();
 
-  // billing_warning and rate_limited are both valid keys — store as "active"
-  const dbStatus = validation.status === "billing_warning" || validation.status === "rate_limited"
-    ? "active"
-    : validation.status;
+  // After validation check above, status is "active" | "billing_warning" | "rate_limited".
+  // Map all valid statuses to the DB-level "active" status.
+  const dbStatus: ApiKeyStatus =
+    validation.status === "active" || validation.status === "billing_warning" || validation.status === "rate_limited"
+      ? "active"
+      : "invalid";
 
   // Single transaction: dedup check + revoke existing + insert new key
   await db.transaction(async (tx) => {
@@ -101,7 +108,7 @@ export async function addApiKey(
 export async function getActiveKeyMeta(
   db: Database,
   userId: string,
-  provider: string,
+  provider: ApiKeyProvider,
 ): Promise<ApiKeyMeta | null> {
   const rows = await db
     .select({
@@ -117,7 +124,7 @@ export async function getActiveKeyMeta(
     .where(and(eq(userApiKeys.userId, userId), eq(userApiKeys.provider, provider), eq(userApiKeys.status, "active")))
     .limit(1);
 
-  return rows[0] ?? null;
+  return (rows[0] as ApiKeyMeta | undefined) ?? null;
 }
 
 /**
@@ -129,7 +136,7 @@ export async function getActiveKeyMeta(
 export async function getCurrentKeyMeta(
   db: Database,
   userId: string,
-  provider: string,
+  provider: ApiKeyProvider,
 ): Promise<ApiKeyMeta | null> {
   const rows = await db
     .select({
@@ -150,13 +157,13 @@ export async function getCurrentKeyMeta(
     .orderBy(desc(userApiKeys.createdAt))
     .limit(1);
 
-  return rows[0] ?? null;
+  return (rows[0] as ApiKeyMeta | undefined) ?? null;
 }
 
 export async function decryptActiveKey(
   db: Database,
   userId: string,
-  provider: string,
+  provider: ApiKeyProvider,
 ): Promise<string | null> {
   const rows = await db
     .select({
@@ -189,7 +196,7 @@ export async function revokeApiKey(
     .returning({ id: userApiKeys.id });
 
   if (result.length === 0) {
-    throw new Error("API key not found or already revoked");
+    throw new ApiKeyNotFoundError("API key not found or already revoked");
   }
 }
 
@@ -211,7 +218,7 @@ export async function revalidateApiKey(
     .limit(1);
 
   if (rows.length === 0) {
-    throw new Error("API key not found");
+    throw new ApiKeyNotFoundError();
   }
 
   const row = rows[0];
@@ -250,5 +257,12 @@ export class ApiKeyDuplicateError extends Error {
   constructor() {
     super("This API key is already active");
     this.name = "ApiKeyDuplicateError";
+  }
+}
+
+export class ApiKeyNotFoundError extends Error {
+  constructor(message = "API key not found") {
+    super(message);
+    this.name = "ApiKeyNotFoundError";
   }
 }

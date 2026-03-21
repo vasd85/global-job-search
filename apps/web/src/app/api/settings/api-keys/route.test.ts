@@ -36,11 +36,17 @@ vi.mock("@/lib/api-keys/api-key-service", () => ({
       this.name = "ApiKeyDuplicateError";
     }
   },
+  ApiKeyNotFoundError: class extends Error {
+    constructor(message = "API key not found") {
+      super(message);
+      this.name = "ApiKeyNotFoundError";
+    }
+  },
 }));
 
 // Re-import after mock registration
 import { GET, POST, DELETE } from "./route";
-import { ApiKeyValidationError, ApiKeyDuplicateError } from "@/lib/api-keys/api-key-service";
+import { ApiKeyValidationError, ApiKeyDuplicateError, ApiKeyNotFoundError } from "@/lib/api-keys/api-key-service";
 
 // ---- Helpers --------------------------------------------------------------
 
@@ -316,7 +322,7 @@ describe("DELETE /api/settings/api-keys", () => {
   });
 
   test("returns 404 when key not found", async () => {
-    revokeApiKeyMock.mockRejectedValueOnce(new Error("API key not found or already revoked"));
+    revokeApiKeyMock.mockRejectedValueOnce(new ApiKeyNotFoundError("API key not found or already revoked"));
 
     const res = await DELETE(jsonRequest("DELETE", { keyId: "key-nope" }));
 
@@ -335,13 +341,13 @@ describe("DELETE /api/settings/api-keys", () => {
     );
   });
 
-  test("handles non-Error thrown values by converting to string", async () => {
-    revokeApiKeyMock.mockRejectedValueOnce("raw-string-error");
+  test("returns 500 for unexpected errors", async () => {
+    revokeApiKeyMock.mockRejectedValueOnce(new Error("DB connection lost"));
 
     const res = await DELETE(jsonRequest("DELETE", { keyId: "key1" }));
     const json = await res.json() as Record<string, unknown>;
 
-    expect(res.status).toBe(404);
-    expect(json.error).toBe("raw-string-error");
+    expect(res.status).toBe(500);
+    expect(json.error).toBe("Internal server error");
   });
 });
