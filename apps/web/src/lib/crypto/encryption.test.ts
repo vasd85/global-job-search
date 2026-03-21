@@ -1,3 +1,4 @@
+import { createHmac as rawCreateHmac } from "node:crypto";
 import { encrypt, decrypt, generateHmac } from "./encryption";
 
 const VALID_HEX_KEY = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
@@ -181,5 +182,58 @@ describe("generateHmac edge cases", () => {
     const hmac2 = generateHmac("anthropic:user1:sk-key");
 
     expect(hmac1).not.toBe(hmac2);
+  });
+});
+
+describe("HKDF key derivation (domain separation)", () => {
+  test("encrypt and generateHmac use different derived subkeys", () => {
+    // Verify the observable property: the HMAC output is NOT what you'd get
+    // if generateHmac used the raw master key directly (no HKDF derivation).
+    const masterKey = Buffer.from(VALID_HEX_KEY, "hex");
+
+    // HMAC with raw master key (no HKDF)
+    const hmacWithMasterKey = rawCreateHmac("sha256", masterKey).update("test-data").digest("hex");
+    // HMAC through the module (uses HKDF-derived subkey)
+    const hmacWithDerivedKey = generateHmac("test-data");
+
+    // They must differ because HKDF derives a different subkey
+    expect(hmacWithDerivedKey).not.toBe(hmacWithMasterKey);
+  });
+
+  test("encrypt/decrypt still round-trip after HKDF derivation", () => {
+    // This is a smoke test to confirm HKDF doesn't break the encrypt/decrypt contract
+    const plaintext = "sk-ant-api03-hkdf-test-key";
+    const aad = "user1:anthropic:hkdf-key-id";
+
+    const { ciphertext, iv, authTag } = encrypt(plaintext, aad);
+    const decrypted = decrypt({ ciphertext, iv, authTag, aad });
+
+    expect(decrypted).toBe(plaintext);
+  });
+
+  test("HMAC is deterministic across calls (derived key is stable for same master key)", () => {
+    const hmac1 = generateHmac("determinism-check");
+    const hmac2 = generateHmac("determinism-check");
+
+    expect(hmac1).toBe(hmac2);
+  });
+
+  test("different master keys produce different derived subkeys", () => {
+    const hmac1 = generateHmac("same-input");
+
+    // Switch to a different master key
+    process.env.ENCRYPTION_KEY = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
+    const hmac2 = generateHmac("same-input");
+
+    expect(hmac1).not.toBe(hmac2);
+  });
+
+  test("ciphertext from one master key cannot be decrypted with a different master key", () => {
+    const { ciphertext, iv, authTag } = encrypt("secret", "aad");
+
+    // Switch master key
+    process.env.ENCRYPTION_KEY = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
+
+    expect(() => decrypt({ ciphertext, iv, authTag, aad: "aad" })).toThrow();
   });
 });

@@ -29,6 +29,7 @@ import {
   revalidateApiKey,
   ApiKeyValidationError,
   ApiKeyDuplicateError,
+  ApiKeyNotFoundError,
 } from "./api-key-service";
 
 const encryptMock = encrypt as ReturnType<typeof vi.fn>;
@@ -157,6 +158,43 @@ describe("addApiKey", () => {
     await addApiKey(db as never, "user1", "anthropic", "sk-ant-test1234");
 
     expect(db.transaction).toHaveBeenCalled();
+  });
+
+  test("all operations inside transaction use tx, not outer db", async () => {
+    // Track whether select/insert/update calls happen on the tx object
+    // passed to the transaction callback, not the outer db.
+    const txOps: string[] = [];
+    const chainable = {
+      from: vi.fn().mockReturnThis(),
+      where: vi.fn().mockReturnThis(),
+      orderBy: vi.fn().mockReturnThis(),
+      limit: vi.fn()
+        .mockResolvedValueOnce([])                           // dup check: no dup
+        .mockResolvedValueOnce([{ id: "old-key" }]),         // existing key: found
+      set: vi.fn().mockReturnThis(),
+      returning: vi.fn().mockResolvedValue([]),
+      values: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const tx: MockDb = {
+      select: vi.fn(() => { txOps.push("select"); return chainable; }),
+      insert: vi.fn(() => { txOps.push("insert"); return chainable; }),
+      update: vi.fn(() => { txOps.push("update"); return chainable; }),
+      transaction: vi.fn(),
+    };
+
+    const db: MockDb = {
+      select: vi.fn(() => { throw new Error("select called on db instead of tx"); }),
+      insert: vi.fn(() => { throw new Error("insert called on db instead of tx"); }),
+      update: vi.fn(() => { throw new Error("update called on db instead of tx"); }),
+      transaction: vi.fn(async (fn: (tx: MockDb) => Promise<void>) => fn(tx)),
+    };
+
+    await addApiKey(db as never, "user1", "anthropic", "sk-ant-new1234");
+
+    // The transaction callback should have used tx for: 2 selects (dup + existing),
+    // 1 update (revoke old), 1 insert (new key)
+    expect(txOps).toEqual(["select", "select", "update", "insert"]);
   });
 
   test("sets status to active for billing_warning validation", async () => {
@@ -412,11 +450,19 @@ describe("revokeApiKey", () => {
     await expect(revokeApiKey(db as never, "user1", "key1")).resolves.toBeUndefined();
   });
 
-  test("throws when key not found or not owned", async () => {
+  test("throws ApiKeyNotFoundError when key not found or not owned", async () => {
     const db = createMockDb([]);
 
     await expect(revokeApiKey(db as never, "user1", "key-nope")).rejects.toThrow(
-      "API key not found or already revoked"
+      ApiKeyNotFoundError,
+    );
+  });
+
+  test("ApiKeyNotFoundError includes descriptive message", async () => {
+    const db = createMockDb([]);
+
+    await expect(revokeApiKey(db as never, "user1", "key-nope")).rejects.toThrow(
+      "API key not found or already revoked",
     );
   });
 });
@@ -471,20 +517,20 @@ describe("revalidateApiKey", () => {
     expect(validateMock).toHaveBeenCalledWith("sk-ant-real-key-5678");
   });
 
-  test("throws when key not found", async () => {
+  test("throws ApiKeyNotFoundError when key not found", async () => {
     const db = createMockDb([]);
 
     await expect(revalidateApiKey(db as never, "user1", "key-nope")).rejects.toThrow(
-      "API key not found"
+      ApiKeyNotFoundError,
     );
   });
 
-  test("throws when key is revoked (cannot resurrect revoked keys)", async () => {
+  test("throws ApiKeyNotFoundError when key is revoked (cannot resurrect revoked keys)", async () => {
     // Mock returns empty because the query now filters out revoked keys via ne(status, "revoked")
     const db = createMockDb([]);
 
     await expect(revalidateApiKey(db as never, "user1", "revoked-key")).rejects.toThrow(
-      "API key not found"
+      ApiKeyNotFoundError,
     );
   });
 
@@ -607,6 +653,30 @@ describe("ApiKeyDuplicateError", () => {
 
     expect(error.name).toBe("ApiKeyDuplicateError");
     expect(error.message).toBe("This API key is already active");
+    expect(error).toBeInstanceOf(Error);
+  });
+});
+
+describe("ApiKeyNotFoundError", () => {
+  test("has correct name and default message", () => {
+    const error = new ApiKeyNotFoundError();
+
+    expect(error.name).toBe("ApiKeyNotFoundError");
+    expect(error.message).toBe("API key not found");
+    expect(error).toBeInstanceOf(Error);
+  });
+
+  test("accepts custom message", () => {
+    const error = new ApiKeyNotFoundError("API key not found or already revoked");
+
+    expect(error.message).toBe("API key not found or already revoked");
+    expect(error.name).toBe("ApiKeyNotFoundError");
+  });
+
+  test("is distinguishable from plain Error via instanceof", () => {
+    const error = new ApiKeyNotFoundError();
+
+    expect(error).toBeInstanceOf(ApiKeyNotFoundError);
     expect(error).toBeInstanceOf(Error);
   });
 });
