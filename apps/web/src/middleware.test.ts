@@ -33,6 +33,7 @@ describe("middleware", () => {
       ["/profile/edit"],
       ["/settings"],
       ["/settings/notifications"],
+      ["/settings/api-keys"],
     ])("%s without session redirects to /login", (path) => {
       getSessionCookieMock.mockReturnValue(undefined);
 
@@ -77,8 +78,16 @@ describe("middleware", () => {
     });
   });
 
-  describe("admin API paths return 401 for unauthenticated requests", () => {
-    test.each([["/api/seed"], ["/api/seed/batch"], ["/api/ingestion"], ["/api/ingestion/run"]])(
+  describe("protected API paths return 401 for unauthenticated requests", () => {
+    test.each([
+      ["/api/settings"],
+      ["/api/settings/api-keys"],
+      ["/api/settings/api-keys/revalidate"],
+      ["/api/seed"],
+      ["/api/seed/batch"],
+      ["/api/ingestion"],
+      ["/api/ingestion/run"],
+    ])(
       "%s without session returns 401 JSON",
       async (path) => {
         getSessionCookieMock.mockReturnValue(undefined);
@@ -92,7 +101,12 @@ describe("middleware", () => {
       }
     );
 
-    test.each([["/api/seed"], ["/api/ingestion"]])(
+    test.each([
+      ["/api/settings"],
+      ["/api/settings/api-keys"],
+      ["/api/seed"],
+      ["/api/ingestion"],
+    ])(
       "%s with session passes through",
       (path) => {
         getSessionCookieMock.mockReturnValue("session-token-value");

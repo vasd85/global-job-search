@@ -8,8 +8,22 @@ import {
   jsonb,
   uniqueIndex,
   index,
-  real
+  real,
+  customType,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType() {
+    return "bytea";
+  },
+  toDriver(value: Buffer): Buffer {
+    return value;
+  },
+  fromDriver(value: Buffer): Buffer {
+    return Buffer.from(value);
+  },
+});
 
 // ─── auth: user ─────────────────────────────────────────────────────────────
 
@@ -180,6 +194,37 @@ export const userProfiles = pgTable("user_profile", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// ─── user_api_key ──────────────────────────────────────────────────────────
+
+export const userApiKeys = pgTable(
+  "user_api_key",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(), // anthropic
+    ciphertext: bytea("ciphertext").notNull(),
+    iv: bytea("iv").notNull(),
+    authTag: bytea("auth_tag").notNull(),
+    keyVersion: integer("key_version").notNull().default(1),
+    status: text("status").notNull().default("active"), // active | invalid | revoked
+    maskedHint: text("masked_hint"),
+    fingerprintHmac: text("fingerprint_hmac").notNull(),
+    lastValidatedAt: timestamp("last_validated_at", { withTimezone: true }),
+    lastErrorCode: text("last_error_code"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("user_api_key_active_idx")
+      .on(table.userId, table.provider)
+      .where(sql`status = 'active'`),
+    index("user_api_key_user_idx").on(table.userId),
+  ]
+);
 
 // ─── job_match ──────────────────────────────────────────────────────────────
 

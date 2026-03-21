@@ -15,6 +15,13 @@
       "when": 1773928760002,
       "tag": "0001_spotty_bloodscream",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1773992202780,
+      "tag": "0002_sour_deadpool",
+      "breakpoints": true
     }
   ]
 }
