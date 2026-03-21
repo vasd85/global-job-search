@@ -121,12 +121,20 @@ export function JobSearch() {
             <h1 className="text-lg font-semibold tracking-tight text-zinc-900 dark:text-white">
               🌍 Global Job Search
             </h1>
-            <a
-              href="/companies"
-              className="text-sm text-zinc-500 transition-colors hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white"
-            >
-              Companies →
-            </a>
+            <nav className="flex gap-4">
+              <a
+                href="/companies"
+                className="text-sm text-zinc-500 transition-colors hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white"
+              >
+                Companies
+              </a>
+              <a
+                href="/settings/api-keys"
+                className="text-sm text-zinc-500 transition-colors hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white"
+              >
+                Settings
+              </a>
+            </nav>
           </div>
 
           {/* Search bar */}

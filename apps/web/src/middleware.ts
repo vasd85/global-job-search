@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionCookie } from "better-auth/cookies";
 
 const PROTECTED_PATHS = ["/dashboard", "/profile", "/settings"];
+const PROTECTED_API_PATHS = ["/api/settings"];
 const ADMIN_API_PATHS = ["/api/seed", "/api/ingestion"];
 const AUTH_PATHS = ["/login"];
 
@@ -19,9 +20,9 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // Block unauthenticated access to admin API routes (optimistic cookie check;
-  // actual admin role validation happens in the route handler)
-  if (ADMIN_API_PATHS.some((p) => pathname.startsWith(p)) && !sessionCookie) {
+  // Block unauthenticated access to protected and admin API routes (optimistic
+  // cookie check; actual role validation happens in route handlers)
+  if ([...PROTECTED_API_PATHS, ...ADMIN_API_PATHS].some((p) => pathname.startsWith(p)) && !sessionCookie) {
     return NextResponse.json(
       { error: "Authentication required" },
       { status: 401 }
@@ -37,6 +38,7 @@ export const config = {
     "/profile/:path*",
     "/settings/:path*",
     "/login",
+    "/api/settings/:path*",
     "/api/seed/:path*",
     "/api/ingestion/:path*",
   ],
