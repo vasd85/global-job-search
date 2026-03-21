@@ -64,15 +64,17 @@ function createMockDb(selectRows: Record<string, unknown>[] = []): MockDb {
     values: vi.fn().mockResolvedValue(undefined),
   };
 
-  return {
+  const db: MockDb = {
     select: vi.fn(() => chainable),
     insert: vi.fn(() => chainable),
     update: vi.fn(() => chainable),
+    // Transaction passes the same db as tx so pre-configured mocks are visible inside.
     transaction: vi.fn(async (fn: (tx: MockDb) => Promise<void>) => {
-      const tx = createMockDb();
-      await fn(tx as unknown as MockDb);
+      await fn(db);
     }),
   };
+
+  return db;
 }
 
 // ---- Setup ----------------------------------------------------------------
@@ -149,13 +151,12 @@ describe("addApiKey", () => {
     expect(db.transaction).toHaveBeenCalled();
   });
 
-  test("inserts directly without transaction when no existing key", async () => {
+  test("uses transaction even when no existing key (all checks inside tx)", async () => {
     const db = createMockDb([]);
 
     await addApiKey(db as never, "user1", "anthropic", "sk-ant-test1234");
 
-    expect(db.transaction).not.toHaveBeenCalled();
-    expect(db.insert).toHaveBeenCalled();
+    expect(db.transaction).toHaveBeenCalled();
   });
 
   test("sets status to active for billing_warning validation", async () => {
@@ -471,6 +472,15 @@ describe("revalidateApiKey", () => {
     const db = createMockDb([]);
 
     await expect(revalidateApiKey(db as never, "user1", "key-nope")).rejects.toThrow(
+      "API key not found"
+    );
+  });
+
+  test("throws when key is revoked (cannot resurrect revoked keys)", async () => {
+    // Mock returns empty because the query now filters out revoked keys via ne(status, "revoked")
+    const db = createMockDb([]);
+
+    await expect(revalidateApiKey(db as never, "user1", "revoked-key")).rejects.toThrow(
       "API key not found"
     );
   });

@@ -1,4 +1,4 @@
-import { eq, and, or, desc } from "drizzle-orm";
+import { eq, and, ne, or, desc } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type { Database } from "../db";
 import { userApiKeys } from "../db/schema";
@@ -49,53 +49,37 @@ export async function addApiKey(
     ? "active"
     : validation.status;
 
-  // Check if the same key is already active (dedup via fingerprintHmac)
-  const duplicate = await db
-    .select({ id: userApiKeys.id })
-    .from(userApiKeys)
-    .where(and(
-      eq(userApiKeys.userId, userId),
-      eq(userApiKeys.provider, provider),
-      eq(userApiKeys.status, "active"),
-      eq(userApiKeys.fingerprintHmac, fingerprintHmac),
-    ))
-    .limit(1);
+  // Single transaction: dedup check + revoke existing + insert new key
+  await db.transaction(async (tx) => {
+    const duplicate = await tx
+      .select({ id: userApiKeys.id })
+      .from(userApiKeys)
+      .where(and(
+        eq(userApiKeys.userId, userId),
+        eq(userApiKeys.provider, provider),
+        eq(userApiKeys.status, "active"),
+        eq(userApiKeys.fingerprintHmac, fingerprintHmac),
+      ))
+      .limit(1);
 
-  if (duplicate.length > 0) {
-    throw new ApiKeyDuplicateError();
-  }
+    if (duplicate.length > 0) {
+      throw new ApiKeyDuplicateError();
+    }
 
-  // Atomic replace: deactivate old key + insert new one
-  const existing = await db
-    .select({ id: userApiKeys.id })
-    .from(userApiKeys)
-    .where(and(eq(userApiKeys.userId, userId), eq(userApiKeys.provider, provider), eq(userApiKeys.status, "active")))
-    .limit(1);
+    const existing = await tx
+      .select({ id: userApiKeys.id })
+      .from(userApiKeys)
+      .where(and(eq(userApiKeys.userId, userId), eq(userApiKeys.provider, provider), eq(userApiKeys.status, "active")))
+      .limit(1);
 
-  if (existing.length > 0) {
-    await db.transaction(async (tx) => {
+    if (existing.length > 0) {
       await tx
         .update(userApiKeys)
         .set({ status: "revoked", revokedAt: now, updatedAt: now })
         .where(eq(userApiKeys.id, existing[0].id));
+    }
 
-      await tx.insert(userApiKeys).values({
-        id: newId,
-        userId,
-        provider,
-        ciphertext,
-        iv,
-        authTag,
-        keyVersion: 1,
-        status: dbStatus,
-        maskedHint,
-        fingerprintHmac,
-        lastValidatedAt: now,
-        lastErrorCode: validation.errorCode ?? null,
-      });
-    });
-  } else {
-    await db.insert(userApiKeys).values({
+    await tx.insert(userApiKeys).values({
       id: newId,
       userId,
       provider,
@@ -109,7 +93,7 @@ export async function addApiKey(
       lastValidatedAt: now,
       lastErrorCode: validation.errorCode ?? null,
     });
-  }
+  });
 
   return { id: newId, maskedHint, status: dbStatus, validationStatus: validation.status };
 }
@@ -223,7 +207,7 @@ export async function revalidateApiKey(
       authTag: userApiKeys.authTag,
     })
     .from(userApiKeys)
-    .where(and(eq(userApiKeys.id, keyId), eq(userApiKeys.userId, userId)))
+    .where(and(eq(userApiKeys.id, keyId), eq(userApiKeys.userId, userId), ne(userApiKeys.status, "revoked")))
     .limit(1);
 
   if (rows.length === 0) {

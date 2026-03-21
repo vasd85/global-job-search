@@ -1,7 +1,9 @@
-import { createCipheriv, createDecipheriv, createHmac, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHmac, hkdfSync, randomBytes } from "node:crypto";
 
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 12;
+const HKDF_HASH = "sha256";
+const HKDF_KEY_LENGTH = 32; // 256 bits
 
 export interface EncryptResult {
   ciphertext: Buffer;
@@ -16,7 +18,7 @@ export interface DecryptParams {
   aad: string;
 }
 
-function getEncryptionKey(): Buffer {
+function getMasterKey(): Buffer {
   const hex = process.env.ENCRYPTION_KEY;
   if (!hex) {
     throw new Error("ENCRYPTION_KEY environment variable is not set");
@@ -27,8 +29,14 @@ function getEncryptionKey(): Buffer {
   return Buffer.from(hex, "hex");
 }
 
+/** Derive a purpose-specific subkey via HKDF (domain separation). */
+function deriveSubkey(purpose: "aes-256-gcm" | "hmac-sha256"): Buffer {
+  const ikm = getMasterKey();
+  return Buffer.from(hkdfSync(HKDF_HASH, ikm, Buffer.alloc(0), purpose, HKDF_KEY_LENGTH));
+}
+
 export function encrypt(plaintext: string, aad: string): EncryptResult {
-  const key = getEncryptionKey();
+  const key = deriveSubkey("aes-256-gcm");
   const iv = randomBytes(IV_LENGTH);
   const cipher = createCipheriv(ALGORITHM, key, iv);
   cipher.setAAD(Buffer.from(aad, "utf8"));
@@ -40,7 +48,7 @@ export function encrypt(plaintext: string, aad: string): EncryptResult {
 }
 
 export function decrypt(params: DecryptParams): string {
-  const key = getEncryptionKey();
+  const key = deriveSubkey("aes-256-gcm");
   const decipher = createDecipheriv(ALGORITHM, key, params.iv);
   decipher.setAAD(Buffer.from(params.aad, "utf8"));
   decipher.setAuthTag(params.authTag);
@@ -50,6 +58,6 @@ export function decrypt(params: DecryptParams): string {
 }
 
 export function generateHmac(data: string): string {
-  const key = getEncryptionKey();
+  const key = deriveSubkey("hmac-sha256");
   return createHmac("sha256", key).update(data).digest("hex");
 }
