@@ -2,7 +2,7 @@
 name: project-context
 description: >
   Compact project context for global-job-search monorepo. Preloaded into
-  subagents that need project awareness (code-reviewer, test-writer).
+  subagents that need project awareness.
 user-invocable: false
 ---
 
@@ -46,6 +46,23 @@ Package manager: **pnpm** (workspaces). Node ≥22. ES Modules throughout.
 Do not re-check or re-state these rules — the linter catches them:
 - `@typescript-eslint/no-explicit-any` and all `no-unsafe-*` rules
 - Standard formatting and import rules
+
+## Agent Pipeline
+
+This project uses a thinker/doer agent architecture coordinated by the
+`/implement` skill:
+
+| Agent | Role | Category |
+|-------|------|----------|
+| code-architect | Design plans and architecture | Thinker (read-only + scratchpad write) |
+| test-scenario-designer | Design test strategies and scenarios | Thinker (read-only + scratchpad write) |
+| code-reviewer | Review code and test quality | Thinker (read-only + scratchpad write) |
+| developer | Implement code from plans | Doer (full write access) |
+| test-writer | Implement tests from scenarios | Doer (full write access) |
+
+Context is passed between agents via files in `.claude/scratchpads/<task>/`:
+plan.md, dev-progress.md, test-scenarios.md, test-progress.md, review.md,
+phase-state.md.
 
 ## Conventions
 

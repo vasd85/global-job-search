@@ -9,6 +9,14 @@ argument-hint: "[base-branch]"
 
 # Pre-PR Pipeline
 
+> **For comprehensive coverage** on medium/large tasks (3+ files, new
+> features, architectural changes), use `/implement` instead. It runs
+> the full pipeline: architect → developer → test-scenario-designer →
+> test-writer → code-reviewer → PR.
+>
+> `/pre-pr` is the **fast path** for small changes where you've already
+> written the code and tests yourself and just need quality checks.
+
 Run the full quality pipeline before opening a PR.
 Base branch defaults to `main` unless `$ARGUMENTS[0]` specifies otherwise.
 
