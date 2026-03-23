@@ -68,6 +68,9 @@ All packages use `"type": "module"` with ES2022/ESNext TypeScript.
 ## Quality Pipeline
 
 Hooks enforce typecheck + lint before commit and tests before PR creation.
-Run `/pre-pr` before opening a PR — it handles the full pipeline (checks, test-writer, code-reviewer, PR).
 
-Use `/code-architect` for implementation plans and architectural decisions on complex changes.
+### Workflows
+
+- `/implement <task>` — full pipeline for medium/large tasks (3+ files, new features, architecture).
+- `/pre-pr` — quick quality gate for small changes.
+- `/code-architect` — standalone architectural planning.

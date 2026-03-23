@@ -46,6 +46,7 @@ docs/
 # Claude Code local settings
 .claude/settings.local.json
 .claude/worktrees/
+.claude/scratchpads/
 
 # Scraper pipeline (local only)
 qa-jobs-scrapper/
