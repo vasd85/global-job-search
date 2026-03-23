@@ -15,8 +15,8 @@ if [[ "$FILE_PATH" == *"qa-jobs-scrapper"* ]]; then
 fi
 
 BASENAME=$(basename "$FILE_PATH")
-if [[ "$BASENAME" == .env* ]]; then
-  echo "Blocked: .env files contain secrets and must not be edited by agents." >&2
+if [[ "$BASENAME" == .env* && "$BASENAME" != ".env.example" ]]; then
+  echo "Blocked: .env files contain secrets and must not be edited by agents. Use .env.example for template changes." >&2
   exit 2
 fi
 

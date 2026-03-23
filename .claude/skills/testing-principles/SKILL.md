@@ -157,6 +157,45 @@ not just call counts — `expect(mock).toHaveBeenCalled()` only proves
 For detailed mock patterns with code examples, see
 `references/db-mock-patterns.md`.
 
+### 11. E2E testing for user-facing changes
+
+UI changes require at least one e2e or integration test that verifies
+the user flow end-to-end — not just that a component renders, but that
+the full action-to-outcome chain works.
+
+- **UI changes:** test the user flow: navigate → interact → verify outcome.
+  Use React Testing Library for component-level integration, or browser
+  automation (Playwright) for full e2e.
+- **API changes:** test with real request/response cycles — call the route
+  handler with a constructed `Request`, assert response status and body
+  shape.
+- **Pattern:** setup state → perform action → assert visible outcome (not
+  internal state). If the test doesn't exercise the same code path a real
+  user would trigger, it's not an integration test.
+
+### 12. Corner case identification heuristics
+
+Before writing tests, systematically check these categories for each
+function or endpoint under test:
+
+- **Boundary values:** 0, 1, -1, MAX_SAFE_INTEGER, empty string `""`,
+  single character, very long strings (1000+ chars), null, undefined.
+- **Type coercion traps:** `"0"`, `"false"`, `"null"`, `"undefined"` as
+  strings — JavaScript coercion can silently accept these.
+- **Unicode and special characters:** emoji in text fields, RTL characters,
+  zero-width spaces, HTML entities, SQL-significant characters (`'`, `;`).
+- **Concurrent access:** if the code reads-then-writes shared state, test
+  what happens with overlapping operations.
+- **Pagination edge cases:** page 0, page -1, page beyond total, page
+  size 0, empty result set, exactly one page of results.
+- **Timezone sensitivity:** operations on dates near midnight UTC, DST
+  transitions, date formatting across locales.
+- **Empty collections:** zero results, zero matches, empty arrays passed
+  to functions expecting data.
+
+Not every function needs every category. Focus on categories relevant to
+the function's inputs and domain.
+
 ## Project-Specific Patterns
 
 Detailed code examples and patterns are in `references/`. Read the

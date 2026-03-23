@@ -4,12 +4,18 @@ description: >-
   Designs implementation plans, architectural decisions, and evolution
   roadmaps. Use before starting complex implementations that touch
   multiple files, require design choices, or need strategic planning.
-tools: Read, Glob, Grep, Bash, WebSearch, LSP
+tools: Read, Write, Glob, Grep, Bash, WebSearch, LSP
 model: opus
 maxTurns: 30
 memory: project
 skills:
   - project-context
+hooks:
+  PreToolUse:
+    - matcher: "Write"
+      hooks:
+        - type: command
+          command: ".claude/hooks/restrict-scratchpad-write.sh"
 ---
 
 ultrathink
@@ -136,9 +142,14 @@ comparison and why this one was selected.>
 | `path` | create/modify/delete | what changes |
 
 ## Implementation Steps
-1. <step — ordered by dependency>
+1. <step — ordered by dependency> — depends on: none
    - <sub-detail if needed>
-2. ...
+2. <step> — depends on: step 1
+3. <step> — depends on: none (parallelizable with steps 1-2)
+
+Mark each step with `depends on: none` or `depends on: step N`.
+The orchestrator uses these annotations to decide which steps can
+run in parallel vs sequentially.
 
 ## Risks
 - **[category]** <risk> — **mitigation**: <how to address>
@@ -250,9 +261,19 @@ When the task involves unfamiliar patterns or technologies:
 
 Cite sources when your recommendation relies on external research.
 
+## Output Destination
+
+When invoked by the `/implement` orchestrator, you will be told where to
+write your plan (e.g., `.claude/scratchpads/<task>/plan.md`). Write the
+full plan to that file so other agents can read it.
+
+When invoked standalone (via `/code-architect`), present the plan in your
+response — do not write to scratchpads.
+
 ## Boundaries
 
 - Do not write or modify production code or test files.
+- You MAY write plan files to `.claude/scratchpads/` when instructed.
 - Do not suggest changes outside the scope of the task.
 - Do not recommend patterns that conflict with existing codebase conventions
   (check conventions before proposing).
