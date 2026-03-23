@@ -32,10 +32,19 @@ Before starting, determine the task type:
 - **Review/Audit**: user wants to evaluate an existing artifact → use Review workflow
 - **Modify**: user wants to change an existing artifact → use Modify workflow
 - **Escalate**: user reports that Claude keeps ignoring an advisory instruction →
-  the instruction needs deterministic enforcement, not just advisory guidance.
-  Jump to Creation workflow with artifact type = Hook. Check whether the advisory
-  artifact (rule/skill/CLAUDE.md) should be kept as companion documentation
-  alongside the new hook.
+  diagnose the root cause before choosing a fix:
+  1. **Poorly worded?** Vague or ambiguous instructions get low adherence.
+     Fix: reformulate to be specific and testable (Modify workflow).
+  2. **Wrong location?** Instruction buried in a large CLAUDE.md or missing
+     path-scoping. Fix: move to a conditional rule or skill (Modify workflow).
+  3. **Conflicts?** Another artifact contradicts it. Fix: resolve the conflict
+     (Modify workflow).
+  4. **Inherently advisory?** The instruction is clear, well-placed, and
+     non-conflicting but still needs 100% enforcement. Check if it can be
+     expressed as a shell-checkable condition (file path pattern, command
+     pattern, syntax check). If yes → create a Hook (Creation workflow).
+     If not (e.g., "use descriptive names") → accept ~70% adherence or
+     reformulate as a more specific, checkable rule.
 
 If ambiguous, ask the user.
 
@@ -258,8 +267,8 @@ Report the results to the user with a summary of what was created.
   0% — Nothing configured
 ```
 
-If the user says "Claude keeps ignoring this" → escalate to hook
-(see Task type detection).
+If the user says "Claude keeps ignoring this" → diagnose before escalating
+(see Task type detection). A hook is one of four possible fixes, not the default.
 
 ## Anti-patterns to flag
 
