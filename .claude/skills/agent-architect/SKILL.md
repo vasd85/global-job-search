@@ -234,6 +234,14 @@ because the writer sees only its own artifacts while you see the full ecosystem:
   - Subagents: self-contained system prompt
 - [ ] Correct scope applied (project / user / local)
 - [ ] Artifacts follow existing project conventions
+- [ ] **Rules-specific** (when artifact includes a rule):
+  - Correct type: unconditional for project-wide, conditional (`paths:`) for area-specific
+  - `paths:` patterns match actual project file structure
+  - One topic per file, descriptive filename
+  - Specific, actionable language (not vague)
+  - No duplication with CLAUDE.md or existing rules
+  - No conflicts with existing rules or CLAUDE.md
+  - Critical rules have hook backstop
 - [ ] **Skills-specific** (when artifact includes a skill):
   - Description contains natural keywords + "when to use" triggers
   - Description does not overlap with existing skill descriptions
