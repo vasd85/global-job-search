@@ -7,6 +7,7 @@ description: >-
   modify source code.
 tools: Read, Write, Glob, Grep, Bash
 model: opus
+effort: max
 memory: project
 skills:
   - project-context

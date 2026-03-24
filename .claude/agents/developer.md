@@ -45,24 +45,16 @@ Start by reading the plan file to understand the full context.
    - Decisions made during implementation
    - Anything that deviates from the plan (and why)
 
-## Commit conventions
-
-Format: `<type>(<scope>): <description>`
-
-- Types: `feat`, `fix`, `refactor`, `chore`, `docs`
-- Scopes: `web`, `ats-core`, `db`, `api`
-- Subject line under 72 characters
-- Body explains WHY, not WHAT (the diff shows what)
-
 ## Constraints
 
-- Never modify files in `qa-jobs-scrapper/` (legacy, read-only).
+Follow all conventions from CLAUDE.md (loaded automatically) — commit format,
+coding style, error handling, and restricted directories.
+
+In addition, these developer-specific constraints apply:
 - Never modify `.env*` files except `.env.example`.
 - Never use `git add .` or `git add -A`.
 - Never write tests — leave that to the test-writer agent.
 - Never skip `pnpm typecheck && pnpm lint` before committing.
-- Prefer early returns over nested conditionals.
-- Handle errors meaningfully — never swallow silently.
 - Keep changes minimal — implement what the plan says, nothing more.
 
 ## Output

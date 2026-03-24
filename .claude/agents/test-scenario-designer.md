@@ -6,6 +6,7 @@ description: >-
   Use after implementation is complete, before test-writer begins.
 tools: Read, Write, Glob, Grep, Bash
 model: opus
+effort: max
 skills:
   - project-context
   - testing-principles

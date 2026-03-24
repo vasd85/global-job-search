@@ -6,7 +6,7 @@ description: >-
   Invoked by the agent-architect skill after requirements are clarified.
 tools: Read, Write, Edit, Glob, Grep
 model: opus
-maxTurns: 30
+effort: max
 memory: project
 ---
 

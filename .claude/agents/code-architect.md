@@ -6,7 +6,7 @@ description: >-
   multiple files, require design choices, or need strategic planning.
 tools: Read, Write, Glob, Grep, Bash, WebSearch, LSP
 model: opus
-maxTurns: 30
+effort: max
 memory: project
 skills:
   - project-context
