@@ -2,19 +2,24 @@
 
 ## What it is
 
-Markdown file loaded into context at every session start. Advisory, not enforced -
-Claude reads it and tries to follow, but ~70% adherence. Not a substitute for hooks
-when 100% compliance is needed.
+Markdown file loaded into context at every session start. Advisory, not enforced —
+Claude reads it and tries to follow, but adherence is not guaranteed, especially for
+vague or conflicting instructions. Not a substitute for hooks when 100% compliance
+is needed. Survives compaction: re-read from disk and re-injected fresh after /compact.
 
-## Hierarchy (all additive, higher = more priority)
+## Hierarchy (all additive)
 
-1. **Managed** (enterprise) - cannot be excluded
-2. **User** (`~/.claude/CLAUDE.md`) - personal, all projects
-3. **Project** (`./CLAUDE.md`) - committed to git
-4. **Local** (`./CLAUDE.local.md`) - personal, not committed
-5. **Subdirectory** (`subdir/CLAUDE.md`) - lazy-loaded when agent touches subdir files
+| Scope | Location | Loaded | Shared with |
+|-------|----------|--------|-------------|
+| Managed | OS-specific path (macOS: `/Library/Application Support/ClaudeCode/CLAUDE.md`) | Session start, cannot be excluded | All users in org |
+| Project | `./CLAUDE.md` or `./.claude/CLAUDE.md` | Session start | Team via source control |
+| User | `~/.claude/CLAUDE.md` | Session start | Just you (all projects) |
+| Subdirectory | `subdir/CLAUDE.md` | Lazily, when agent touches subdir files | Team via source control |
 
-Levels 1-4 load at session start. Level 5 loads lazily.
+All levels are additive — they don't override each other. When instructions conflict,
+Claude uses judgment; more specific instructions take precedence. Project > User
+(project-specific beats personal-all-projects). Managed always applies and cannot
+be excluded by individual settings.
 
 ## Size limit
 
@@ -139,7 +144,7 @@ loaded at startup.
 
 - **vs Rules**: Rules offload CLAUDE.md. Same priority, but modular. Conditional rules save context.
 - **vs Skills**: CLAUDE.md = every session. Skills = on demand. Move non-essential content to skills.
-- **vs Hooks**: CLAUDE.md is advisory (~70%). Hooks are deterministic (100%). Escalate critical rules to hooks.
+- **vs Hooks**: CLAUDE.md is advisory (approximate). Hooks are deterministic (100%). Escalate critical rules to hooks.
 - **vs Output Styles**: Styles affect system prompt directly. CLAUDE.md is added as user message after system prompt.
 - **vs Code Review**: Code Review reads CLAUDE.md and flags violations as nit-level findings.
 

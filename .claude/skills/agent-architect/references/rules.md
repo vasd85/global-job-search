@@ -4,7 +4,11 @@
 
 Markdown files in `.claude/rules/` - modular alternative to monolithic CLAUDE.md.
 Same high priority as CLAUDE.md, but support conditional loading via `paths:` frontmatter.
-Advisory (~70% adherence), not deterministic. For 100% enforcement use hooks.
+Advisory (approximate), not deterministic. For 100% enforcement use hooks.
+
+Solve the "high priority everywhere = priority nowhere" problem — when all instructions
+live in one CLAUDE.md, rules for React compete with API guidelines even during DB work.
+Rules distribute high-priority instructions to targeted files.
 
 ## Two types
 
@@ -186,6 +190,14 @@ monorepo/
 - **vs Subagents**: Subagents do NOT inherit rules. Include needed rules in subagent prompt
   or via `skills:` field.
 
+## Limits
+
+- One topic per file with descriptive filename (`testing.md`, `api-design.md`)
+- `paths:` frontmatter: `---` on line 1, no blank lines before it, spaces not tabs
+- Advisory adherence (approximate), not deterministic — for 100% use hooks
+- Files discovered recursively; subdirectories supported
+- Symlinks resolved normally; circular symlinks detected
+
 ## Debugging
 
 - `/memory` - shows all loaded CLAUDE.md and rules files
@@ -193,3 +205,28 @@ monorepo/
 - `InstructionsLoaded` hook - fires when rules load (path, type, reason)
 - Check glob patterns match actual file paths
 - Review for conflicts between rule files periodically
+
+## Creation checklist
+
+When creating a new rule, verify each item:
+
+1. [ ] **Type**: unconditional (project-wide topic) or conditional (`paths:` for area-specific) — correctly chosen
+2. [ ] **Scope**: project (`.claude/rules/`) or user (`~/.claude/rules/`) — appropriate for audience
+3. [ ] **One topic per file**: doesn't mix unrelated concerns
+4. [ ] **Paths patterns**: glob patterns match actual project file structure (if conditional)
+5. [ ] **Specific language**: concrete, testable instructions — not vague ("write good code")
+6. [ ] **No duplication**: doesn't repeat CLAUDE.md or other rules content
+7. [ ] **No conflicts**: doesn't contradict existing rules or CLAUDE.md
+8. [ ] **Critical enforcement**: if must be 100%, escalate to hook instead of rule
+
+## Common anti-patterns
+
+| Anti-pattern | Problem | Fix |
+|---|---|---|
+| Multiple topics in one file | Can't path-scope individually, hard to maintain | Split into separate files |
+| Vague instructions ("write good code") | Low adherence, unactionable | Be specific: "Descriptive names: 'should [action] when [condition]'" |
+| Unconditional for area-specific content | Wastes context on irrelevant sessions | Add `paths:` frontmatter |
+| Duplicating CLAUDE.md content | Confusion, potential conflicts | Rules supplement, not repeat |
+| Critical enforcement as advisory rule | ~70% adherence when 100% needed | Escalate to hook with exit code 2 |
+| Conflicting instructions across files | Claude picks arbitrarily | Review and resolve; single source of truth per topic |
+| Overly broad glob patterns | Rule loads too frequently, wastes context | Narrow patterns to actual code areas |
