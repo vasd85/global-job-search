@@ -249,6 +249,14 @@ because the writer sees only its own artifacts while you see the full ecosystem:
   - Task content with side effects has `disable-model-invocation: true`
   - Bundled scripts use `${CLAUDE_SKILL_DIR}` (not hardcoded paths)
   - `argument-hint` set if skill accepts arguments
+- [ ] **Subagents-specific** (when artifact includes a subagent):
+  - System prompt is self-contained (role, workflow, output format, constraints)
+  - Description specifies when Claude should delegate (specific keywords)
+  - Tools correctly restricted (allowlist OR denylist; `disallowedTools` applied first)
+  - Skills explicitly listed if domain knowledge needed (not inherited from parent)
+  - Model appropriate for task complexity (haiku/sonnet/opus/inherit)
+  - Prompt doesn't instruct spawning sub-subagents (nesting impossible)
+  - If plugin-sourced: no hooks/mcpServers/permissionMode (silently ignored)
 - [ ] **Plugins-specific** (when artifact is a plugin):
   - Only `plugin.json` inside `.claude-plugin/`; all components at plugin root
   - `${CLAUDE_PLUGIN_ROOT}` used for all paths (no absolute or `../` paths)
