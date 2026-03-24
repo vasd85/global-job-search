@@ -7,7 +7,7 @@ description: >-
   Read-only — does not create or modify files.
 tools: Read, Glob, Grep
 model: opus
-maxTurns: 20
+effort: max
 memory: project
 ---
 

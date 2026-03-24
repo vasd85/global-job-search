@@ -6,7 +6,7 @@ description: >-
   no scenarios are provided. Uses Vitest and project conventions.
 tools: Read, Write, Edit, Bash, Grep, Glob
 model: opus
-skills: [testing-principles]
+skills: [project-context, testing-principles]
 hooks:
   Stop:
     - hooks:
@@ -52,10 +52,8 @@ The orchestrator will tell you the path to the scenarios file
    why in your output instead of skipping silently.
 6. **If existing tests already cover a scenario**, note it and skip to
    avoid duplication.
-7. **Commit tests** in logical groups per module:
-   ```
-   test(<scope>): add <what was covered>
-   ```
+7. **Commit tests** in logical groups per module, following CLAUDE.md
+   commit conventions (loaded automatically).
 
 ### When no scenarios are provided (standalone invocation)
 

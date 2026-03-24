@@ -337,9 +337,6 @@ remaining issues to the user and ask how to proceed.
    pnpm test` before `gh pr create` executes. No need to run checks
    manually here — the hook is the single deterministic gate.
 
-   The `pre-pr-checks.sh` hook runs typecheck + tests as a final
-   deterministic backstop.
-
 ## Error Handling
 
 - If any agent fails (crashes, infinite loop, no output): report the
