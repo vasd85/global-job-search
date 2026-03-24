@@ -241,6 +241,13 @@ because the writer sees only its own artifacts while you see the full ecosystem:
   - Task content with side effects has `disable-model-invocation: true`
   - Bundled scripts use `${CLAUDE_SKILL_DIR}` (not hardcoded paths)
   - `argument-hint` set if skill accepts arguments
+- [ ] **Plugins-specific** (when artifact is a plugin):
+  - Only `plugin.json` inside `.claude-plugin/`; all components at plugin root
+  - `${CLAUDE_PLUGIN_ROOT}` used for all paths (no absolute or `../` paths)
+  - `${CLAUDE_PLUGIN_DATA}` used for persistent state (not `${CLAUDE_PLUGIN_ROOT}`)
+  - Agent frontmatter uses only supported fields (no hooks/mcpServers/permissionMode)
+  - `skills/` used for new skills (not legacy `commands/`)
+  - Version bumped if updating an existing plugin
 
 Report the results to the user with a summary of what was created.
 
