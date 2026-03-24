@@ -12,7 +12,6 @@ description: >-
   "set up Claude Code", "create a skill/hook/rule", "review my rules",
   "audit this hook", "check my CLAUDE.md", "architect the agent system",
   or asks "where should I put this instruction".
-argument-hint: "<create|review|modify> <description>"
 ---
 
 # Agent Architect — Orchestrator
@@ -196,6 +195,10 @@ REQUIREMENT: <what behavior/knowledge needs to be added>
 ADHERENCE: <advisory ~70% | deterministic 100%>
 SCOPE: <project | user | local>
 CONTEXT: <relevant context from conversation, existing patterns, user preferences>
+  Include type-specific details the writer needs — e.g., for Skills: reference vs task
+  content type, invocation preferences, argument handling, supporting files needed.
+  For Hooks: trigger event, matcher pattern, what to validate. For Subagents: tool
+  restrictions, model choice, whether skills should be preloaded.
 ```
 
 Example spec for a hook + companion skill:
@@ -231,6 +234,13 @@ because the writer sees only its own artifacts while you see the full ecosystem:
   - Subagents: self-contained system prompt
 - [ ] Correct scope applied (project / user / local)
 - [ ] Artifacts follow existing project conventions
+- [ ] **Skills-specific** (when artifact includes a skill):
+  - Description contains natural keywords + "when to use" triggers
+  - Description does not overlap with existing skill descriptions
+  - Reference content is inline (no `context: fork`)
+  - Task content with side effects has `disable-model-invocation: true`
+  - Bundled scripts use `${CLAUDE_SKILL_DIR}` (not hardcoded paths)
+  - `argument-hint` set if skill accepts arguments
 
 Report the results to the user with a summary of what was created.
 
