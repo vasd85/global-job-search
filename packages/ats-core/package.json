@@ -8,6 +8,7 @@
     "./extractors": "./src/extractors/index.ts",
     "./discovery": "./src/discovery/index.ts",
     "./normalizer": "./src/normalizer/index.ts",
+    "./classifier": "./src/classifier/index.ts",
     "./utils": "./src/utils/index.ts"
   },
   "scripts": {

@@ -34,6 +34,10 @@ export {
 // Normalizer
 export { buildJob, dedupeJobs } from "./normalizer/index";
 
+// Classifier
+export type { RoleFamilyDef, ClassificationInput, ClassificationResult } from "./classifier/index";
+export { normalizeTitle, classifyJob, classifyJobMulti } from "./classifier/index";
+
 // Utils
 export { sha1, sha256 } from "./utils/hash";
 export { normalizeUrl, canonicalizeHttpUrl, sameRegistrableHost } from "./utils/url";
