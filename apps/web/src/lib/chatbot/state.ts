@@ -110,10 +110,11 @@ export function goToStep(
   const index = getStepIndex(stepSlug);
   if (index === -1) return state;
 
+  const step = STEPS[index];
   return {
     ...state,
     currentStepIndex: index,
-    status: "in_progress",
+    status: step?.slug === "review" ? "review" : "in_progress",
     updatedAt: new Date().toISOString(),
   };
 }

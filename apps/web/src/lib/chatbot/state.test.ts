@@ -259,15 +259,11 @@ describe("goToStep", () => {
     expect(result).toBe(state);
   });
 
-  // TODO: goToStep to the review step sets status to "in_progress", which
-  // may prevent summary generation since buildAdvanceResponse checks
-  // `state.status === "review"` to generate the summary. If a user calls
-  // goToStep("review"), the summary path is broken.
-  test("goToStep to review step sets status to in_progress (potential bug)", () => {
+  test("goToStep to review step sets status to review", () => {
     const state = stateAtStep(0);
     const result = goToStep(state, "review");
     expect(result.currentStepIndex).toBe(16);
-    expect(result.status).toBe("in_progress");
+    expect(result.status).toBe("review");
   });
 });
 

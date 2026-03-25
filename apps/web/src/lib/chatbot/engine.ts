@@ -241,7 +241,7 @@ function parseStructuredInput(
   try {
     const parsed: unknown = JSON.parse(input);
 
-    if (typeof parsed !== "object" || parsed === null) {
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
       throw new EngineError(
         `Structured input for step "${step.slug}" must be a JSON object`,
       );

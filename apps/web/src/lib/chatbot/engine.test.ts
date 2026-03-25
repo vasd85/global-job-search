@@ -173,17 +173,11 @@ describe("processMessage: structured step", () => {
     );
   });
 
-  // TODO: JSON arrays pass the `typeof parsed !== "object"` check because
-  // `typeof [] === "object"`. The array [1,2,3] gets spread as {0:1, 1:2, 2:3}
-  // into the draft. The parseStructuredInput function should additionally check
-  // `Array.isArray(parsed)` to reject arrays. Documenting current behavior.
-  test("JSON array is accepted (typeof [] is object -- potential bug)", async () => {
+  test("rejects JSON arrays as structured input", async () => {
     const state = stateAtStep(1);
-    // This does NOT throw, even though it should arguably reject arrays
-    const result = await processMessage(state, "[1,2,3]", null);
-    // The array is spread into the draft as indexed keys
-    const draft = result.updatedState.draft as Record<string, unknown>;
-    expect(draft["0"]).toBe(1);
+    await expect(processMessage(state, "[1,2,3]", null)).rejects.toThrow(
+      EngineError,
+    );
   });
 });
 
