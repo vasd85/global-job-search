@@ -12,6 +12,11 @@ interface SeedRoleFamily {
 
 /**
  * Seed role families from a data array. Skips duplicates by slug (unique constraint).
+ *
+ * Note: The returned `inserted` count reflects rows attempted without error, not
+ * rows actually created. When a slug already exists, `onConflictDoNothing` resolves
+ * successfully without inserting, so `inserted` is incremented even though no row
+ * was created. On re-runs the count will equal `data.length` despite no new rows.
  */
 export async function seedRoleFamilies(
   db: Database,
