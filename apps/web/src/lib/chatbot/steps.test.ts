@@ -137,7 +137,7 @@ describe("toOptions label formatting", () => {
     const options = step!.structuredConfig?.options;
     expect(options).toBeDefined();
 
-    const seriesA = options!.find((o) => o.value === "series_a");
+    const seriesA = options!.find((o: { value: string }) => o.value === "series_a");
     expect(seriesA).toEqual({ value: "series_a", label: "Series A" });
   });
 
