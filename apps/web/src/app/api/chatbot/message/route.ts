@@ -8,6 +8,7 @@ import { STEPS } from "@/lib/chatbot/steps";
 import {
   deserializeState,
   serializeState,
+  goToStep,
 } from "@/lib/chatbot/state";
 import {
   processMessage,
@@ -86,11 +87,82 @@ export async function POST(request: Request) {
     }
 
     // Check if conversation is already completed
-    if (state.status === "completed") {
+    if (
+      state.status === "completed" &&
+      !parsed.data.message.startsWith("__EDIT__:")
+    ) {
       return NextResponse.json(
         { error: "Conversation already completed. Use the review page to edit preferences." },
         { status: 400 },
       );
+    }
+
+    // Handle edit navigation: __EDIT__:<stepSlug>
+    if (parsed.data.message.startsWith("__EDIT__:")) {
+      const stepSlug = parsed.data.message.slice("__EDIT__:".length);
+      const updatedState = goToStep(state, stepSlug);
+
+      if (updatedState === state) {
+        return NextResponse.json(
+          { error: `Unknown step: ${stepSlug}` },
+          { status: 400 },
+        );
+      }
+
+      // Save updated state
+      await db
+        .update(conversationStates)
+        .set({
+          state: serializeState(updatedState),
+          updatedAt: new Date(),
+        })
+        .where(eq(conversationStates.userId, session.user.id));
+
+      // Add system message about editing
+      const editStep = STEPS[updatedState.currentStepIndex];
+      const editMessage = editStep
+        ? `Editing: ${editStep.question}`
+        : "Navigating to step for editing.";
+
+      await db.insert(conversationMessages).values({
+        conversationStateId,
+        role: "assistant",
+        content: editMessage,
+      });
+
+      // Load full transcript
+      const transcript = await db
+        .select({
+          role: conversationMessages.role,
+          content: conversationMessages.content,
+          createdAt: conversationMessages.createdAt,
+        })
+        .from(conversationMessages)
+        .where(eq(conversationMessages.conversationStateId, conversationStateId))
+        .orderBy(conversationMessages.createdAt);
+
+      // Determine structured controls for the target step
+      let editControls = null;
+      if (
+        editStep &&
+        editStep.inputType !== "free_text" &&
+        editStep.structuredConfig
+      ) {
+        editControls = editStep.structuredConfig;
+      }
+
+      return NextResponse.json({
+        assistantMessage: editMessage,
+        state: {
+          currentStepIndex: updatedState.currentStepIndex,
+          currentStep: editStep?.slug ?? "review",
+          status: updatedState.status,
+          completedSteps: updatedState.completedSteps,
+          draft: updatedState.draft,
+        },
+        structuredControls: editControls,
+        transcript,
+      });
     }
 
     // Get user's decrypted API key (only needed for free-text/hybrid steps)

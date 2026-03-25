@@ -37,6 +37,7 @@ interface StateResponse {
   state: ConversationStateSummary;
   transcript: TranscriptMessage[];
   structuredControls: StructuredControlConfig | null;
+  initialMessage?: string;
   isNew: boolean;
 }
 
@@ -120,9 +121,15 @@ export function ChatInterface({ editMode = false }: ChatInterfaceProps) {
         setConversationState(data.state);
         setStructuredControls(data.structuredControls);
 
-        if (data.isNew) {
-          // New conversation -- need to send first message to initialize
-          await initializeConversation();
+        if (data.isNew && data.initialMessage) {
+          // New conversation -- show the initial greeting message locally
+          setTranscript([
+            {
+              role: "assistant",
+              content: data.initialMessage,
+              createdAt: new Date().toISOString(),
+            },
+          ]);
         } else {
           setTranscript(data.transcript);
         }
@@ -135,36 +142,6 @@ export function ChatInterface({ editMode = false }: ChatInterfaceProps) {
 
     void fetchState();
   }, []);
-
-  /** Initialize a new conversation by sending an empty trigger. */
-  const initializeConversation = async () => {
-    try {
-      const res = await fetch("/api/chatbot/message", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: "__INIT__" }),
-      });
-
-      if (!res.ok) {
-        // If __INIT__ fails (e.g., not a recognized message), just load state again
-        const stateRes = await fetch("/api/chatbot/state");
-        if (stateRes.ok) {
-          const stateData = (await stateRes.json()) as StateResponse;
-          setConversationState(stateData.state);
-          setTranscript(stateData.transcript);
-          setStructuredControls(stateData.structuredControls);
-        }
-        return;
-      }
-
-      const data = (await res.json()) as ChatResponse;
-      setConversationState(data.state);
-      setTranscript(data.transcript);
-      setStructuredControls(data.structuredControls);
-    } catch {
-      setError("Failed to start conversation");
-    }
-  };
 
   /** Send a message to the chatbot API. */
   const sendMessage = async (message: string) => {

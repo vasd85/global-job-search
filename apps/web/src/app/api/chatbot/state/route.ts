@@ -38,6 +38,7 @@ export async function GET(request: Request) {
         },
         transcript: [],
         structuredControls: init.structuredControls ?? null,
+        initialMessage: init.assistantMessage,
         isNew: true,
       });
     }
