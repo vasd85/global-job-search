@@ -40,7 +40,7 @@ const SENIORITY_PREFIXES = [
   "sr.",
   "jr ",
   "sr ",
-  "intern",
+  "intern ",
   "junior",
 ];
 

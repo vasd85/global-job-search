@@ -123,6 +123,13 @@ describe("normalizeTitle", () => {
     expect(normalizeTitle("Senior")).toBe("");
   });
 
+  test("does not strip 'intern' from 'Internal Tools Engineer'", () => {
+    // "intern " (with trailing space) prevents false stripping of "Internal", "Internship", etc.
+    expect(normalizeTitle("Internal Tools Engineer")).toBe(
+      "internal tools engineer",
+    );
+  });
+
   test("strips Lead from Lead Generation Specialist (known limitation)", () => {
     // TODO: Known false strip -- "Lead" is a seniority prefix but "Lead Generation Specialist"
     // is a non-seniority role. Mitigated by department_exclude in the broader system.
