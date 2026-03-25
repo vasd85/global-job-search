@@ -108,6 +108,9 @@ export const companies = pgTable(
     lastPolledAt: timestamp("last_polled_at", { withTimezone: true }),
     lastPollStatus: text("last_poll_status"), // ok | error | empty | not_found
     lastPollError: text("last_poll_error"),
+    consecutiveErrors: integer("consecutive_errors").notNull().default(0),
+    pollPriority: text("poll_priority").notNull().default("daily"), // daily | regular | weekly
+    nextPollAfter: timestamp("next_poll_after", { withTimezone: true }),
     jobsCount: integer("jobs_count").notNull().default(0),
 
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -177,19 +180,24 @@ export const userProfiles = pgTable("user_profile", {
   targetTitles: text("target_titles").array(),
   targetSeniority: text("target_seniority").array(),
 
-  primarySkills: text("primary_skills").array(),
-  secondarySkills: text("secondary_skills").array(),
+  coreSkills: text("core_skills").array(),
+  growthSkills: text("growth_skills").array(),
+  avoidSkills: text("avoid_skills").array(),
   yearsExperience: integer("years_experience"),
 
   preferredLocations: text("preferred_locations").array(),
   remotePreference: text("remote_preference").default("any"), // remote_only | hybrid_ok | onsite_ok | any
   minSalary: integer("min_salary"),
+  targetSalary: integer("target_salary"),
+  salaryCurrency: text("salary_currency").default("USD"),
   preferredIndustries: text("preferred_industries").array(),
+  dealBreakers: text("deal_breakers").array(),
 
-  weightMobility: real("weight_mobility").notNull().default(0.3),
-  weightDomain: real("weight_domain").notNull().default(0.15),
+  weightRole: real("weight_role").notNull().default(0.25), // Role Fit
   weightSkills: real("weight_skills").notNull().default(0.25),
-  weightCompensation: real("weight_compensation").notNull().default(0.3),
+  weightLocation: real("weight_location").notNull().default(0.2),
+  weightCompensation: real("weight_compensation").notNull().default(0.15),
+  weightDomain: real("weight_domain").notNull().default(0.15),
 
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -239,10 +247,11 @@ export const jobMatches = pgTable(
       .notNull()
       .references(() => jobs.id, { onDelete: "cascade" }),
 
-    scoreM: integer("score_m"), // Mobility
-    scoreD: integer("score_d"), // Domain
-    scoreS: integer("score_s"), // Skills
-    scoreC: integer("score_c"), // Compensation
+    scoreR: integer("score_r"), // Role Fit
+    scoreS: integer("score_s"), // Skills Fit
+    scoreL: integer("score_l"), // Location Fit
+    scoreC: integer("score_c"), // Compensation Fit
+    scoreD: integer("score_d"), // Domain Fit
     matchPercent: integer("match_percent"),
 
     matchReason: text("match_reason"),
@@ -306,4 +315,47 @@ export const companySubmissions = pgTable("company_submission", {
 
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+});
+
+// ─── app_config ────────────────────────────────────────────────────────────
+
+export const appConfig = pgTable("app_config", {
+  key: text("key").primaryKey(),
+  value: jsonb("value").notNull(),
+  description: text("description"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ─── role_family ───────────────────────────────────────────────────────────
+
+export const roleFamilies = pgTable("role_family", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  slug: text("slug").notNull().unique(),
+  name: text("name").notNull(),
+  strongMatch: text("strong_match").array(),
+  moderateMatch: text("moderate_match").array(),
+  departmentBoost: text("department_boost").array(),
+  departmentExclude: text("department_exclude").array(),
+  isSystemDefined: boolean("is_system_defined").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ─── user_company_preference ───────────────────────────────────────────────
+
+export const userCompanyPreferences = pgTable("user_company_preference", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id")
+    .notNull()
+    .unique()
+    .references(() => user.id, { onDelete: "cascade" }),
+  industries: text("industries").array(),
+  companySizes: text("company_sizes").array(),
+  companyStages: text("company_stages").array(),
+  workFormat: text("work_format"),
+  hqGeographies: text("hq_geographies").array(),
+  productTypes: text("product_types").array(),
+  exclusions: text("exclusions").array(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
