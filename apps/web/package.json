@@ -11,7 +11,10 @@
     "test": "vitest"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.64",
     "@gjs/ats-core": "workspace:*",
+    "@hookform/resolvers": "^5.2.2",
+    "ai": "^6.0.138",
     "better-auth": "^1.5.5",
     "dotenv": "^17.3.1",
     "drizzle-orm": "^0.45.1",
@@ -19,7 +22,9 @@
     "postgres": "^3.4.8",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "resend": "^6.9.4"
+    "react-hook-form": "^7.72.0",
+    "resend": "^6.9.4",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
