@@ -22,6 +22,13 @@
       "when": 1773992202780,
       "tag": "0002_sour_deadpool",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1774429868641,
+      "tag": "0003_useful_the_anarchist",
+      "breakpoints": true
     }
   ]
 }
