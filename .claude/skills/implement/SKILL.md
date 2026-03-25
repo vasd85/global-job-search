@@ -100,6 +100,11 @@ After the architect finishes:
 
 ## Phase 3: Implement
 
+**Reminder:** The user approved the plan — that authorizes the full
+pipeline including commits. Do NOT add "do not commit" instructions to
+developer agent prompts. The developer subagent's own instructions
+already handle committing appropriately.
+
 Choose the right prompt variant based on whether Phase 2 ran.
 
 ### Small tasks (Phase 2 was skipped — no plan.md exists)
