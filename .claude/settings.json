@@ -24,8 +24,8 @@
       "Bash(git commit -am *)",
       "Bash(git commit -am\"*)",
       "Bash(git commit -am'*)",
-      "Read(./.env)",
-      "Read(./.env.*)"
+      "Read(**/.env)",
+      "Read(**/.env.local)"
     ]
   },
   "hooks": {

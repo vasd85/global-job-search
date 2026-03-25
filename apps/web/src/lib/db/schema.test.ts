@@ -74,10 +74,10 @@ describe("roleFamilies table definition", () => {
     ["moderateMatch"],
     ["departmentBoost"],
     ["departmentExclude"],
-  ])("%s is a nullable text array", (colName) => {
+  ])("%s is a non-nullable text array", (colName) => {
     const col = cols[colName as keyof typeof cols];
     expect(col.dataType).toBe("array");
-    expect(col.notNull).toBe(false);
+    expect(col.notNull).toBe(true);
   });
 
   it("isSystemDefined defaults to true and is not null", () => {
