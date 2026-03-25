@@ -1,5 +1,5 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { generateObject, generateText } from "ai";
+import { generateText, Output } from "ai";
 import { z } from "zod";
 
 import type { PreferencesDraft } from "@/lib/chatbot/schemas";
@@ -91,14 +91,15 @@ export function createPreferenceLlm(apiKey: string): PreferenceCollectionLlm {
         currentDraft,
       );
 
-      const result = await generateObject({
+      const result = await generateText({
         model,
-        schema: step.extractionSchema,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- extraction schemas are heterogeneous; validated by Zod at runtime
+        output: Output.object({ schema: step.extractionSchema }),
         system,
         prompt,
       });
 
-      return result.object as Record<string, unknown>;
+      return result.output as Record<string, unknown>;
     },
 
     async summarizeDraft({ currentDraft }) {
@@ -142,14 +143,14 @@ export function createPreferenceLlm(apiKey: string): PreferenceCollectionLlm {
         existingFamilies,
       );
 
-      const result = await generateObject({
+      const result = await generateText({
         model,
-        schema: RoleFamilyExpansionSchema,
+        output: Output.object({ schema: RoleFamilyExpansionSchema }),
         system,
         prompt,
       });
 
-      return result.object;
+      return result.output as RoleFamilyExpansionResult;
     },
   };
 }
