@@ -371,6 +371,8 @@ export function ChatInterface({ editMode = false }: ChatInterfaceProps) {
                 const lineHeight = parseInt(getComputedStyle(el).lineHeight || "20", 10);
                 const maxHeight = lineHeight * 15;
                 el.style.height = `${Math.min(el.scrollHeight, maxHeight)}px`;
+                // Scroll messages so the input stays visible
+                scrollToBottom();
               }}
               onKeyDown={handleKeyDown}
               disabled={loading}

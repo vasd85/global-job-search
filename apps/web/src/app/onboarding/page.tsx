@@ -17,7 +17,7 @@ export default async function OnboardingPage() {
   const hasCompletedPreferences = existing.length > 0;
 
   return (
-    <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-zinc-950">
+    <div className="flex h-screen flex-col overflow-hidden bg-zinc-50 dark:bg-zinc-950">
       {/* Header */}
       <header className="border-b border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
         <div className="mx-auto max-w-3xl">
