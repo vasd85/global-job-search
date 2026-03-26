@@ -135,7 +135,7 @@ const REQUIRED_DRAFT_FIELDS: { field: keyof PreferencesDraft; stepSlug: string }
   { field: "targetTitles", stepSlug: "target_roles" },
   { field: "targetSeniority", stepSlug: "target_seniority" },
   { field: "coreSkills", stepSlug: "core_skills" },
-  { field: "preferredLocations", stepSlug: "location" },
+  { field: "locationPreferences", stepSlug: "location" },
   { field: "industries", stepSlug: "industries" },
   { field: "companySizes", stepSlug: "company_sizes" },
 ];
@@ -148,6 +148,14 @@ export function validateDraft(draft: PreferencesDraft): DraftValidationResult {
     const value = draft[field];
     if (value === undefined || value === null) {
       missingRequired.push(stepSlug);
+      continue;
+    }
+    // For locationPreferences, check that tiers array is non-empty
+    if (field === "locationPreferences" && typeof value === "object" && !Array.isArray(value)) {
+      const lp = value as { tiers?: unknown[] };
+      if (!lp.tiers || lp.tiers.length === 0) {
+        missingRequired.push(stepSlug);
+      }
       continue;
     }
     // For arrays, check they have at least one item
