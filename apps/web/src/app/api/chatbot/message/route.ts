@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
+import { APICallError } from "ai";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { conversationStates, conversationMessages } from "@/lib/db/schema";
@@ -232,6 +233,13 @@ export async function POST(request: Request) {
   } catch (error) {
     if (error instanceof EngineError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+    if (error instanceof APICallError) {
+      const status = error.statusCode ?? 502;
+      return NextResponse.json(
+        { error: error.message },
+        { status: status >= 400 && status < 500 ? 422 : 502 },
+      );
     }
     console.error("Chatbot message error:", error);
     return NextResponse.json(
