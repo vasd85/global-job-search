@@ -59,13 +59,6 @@ const SENIORITY_OPTIONS = toOptions([
   "vp",
 ]);
 
-const REMOTE_PREFERENCE_OPTIONS = toOptions([
-  "remote_only",
-  "hybrid_ok",
-  "onsite_ok",
-  "any",
-]);
-
 const COMPANY_SIZE_OPTIONS = toOptions(["startup", "scaleup", "enterprise"]);
 
 const COMPANY_STAGE_OPTIONS = toOptions([
@@ -179,18 +172,15 @@ export const STEPS: ConversationStep[] = [
 
   {
     slug: "location",
-    fields: ["preferredLocations", "remotePreference"],
-    question: "What are your location preferences?",
+    fields: ["locationPreferences"],
+    question:
+      "What are your location and work arrangement preferences? Feel free to describe multiple tiers of preference — for example, your ideal scenario, what you'd also consider, and what you'd accept as a backup.",
     helpText:
-      "Tell me which cities, regions, or countries you prefer, and whether you want remote, hybrid, or onsite work.",
+      "For example: 'I'd love to relocate to NYC or London, would also consider remote for any EU company, and as a last resort I'd relocate anywhere with good tech scene.' You can mention countries, regions, timezones, remote/onsite/hybrid preferences, and any exclusions.",
     required: true,
     skippable: false,
-    inputType: "hybrid",
+    inputType: "free_text",
     extractionSchema: LocationExtractionSchema,
-    structuredConfig: {
-      type: "single_select",
-      options: REMOTE_PREFERENCE_OPTIONS,
-    },
   },
 
   // --- Company Preferences ---
