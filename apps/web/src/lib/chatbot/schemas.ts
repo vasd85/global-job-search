@@ -47,6 +47,84 @@ export type ConversationStatus = z.infer<typeof ConversationStatus>;
 export const ExtractionConfidence = z.enum(["high", "medium", "low"]);
 export type ExtractionConfidence = z.infer<typeof ExtractionConfidence>;
 
+// ─── Location Preference Tiers ──────────────────────────────────────────────
+
+/** Work format per tier — more expressive than the global RemotePreference enum. */
+export const TierWorkFormat = z.enum([
+  "remote",
+  "relocation",
+  "hybrid",
+  "onsite",
+]);
+export type TierWorkFormat = z.infer<typeof TierWorkFormat>;
+
+/** How the geographic scope of a tier is expressed. */
+export const LocationScopeType = z.enum([
+  "countries",
+  "regions",
+  "timezones",
+  "cities",
+  "any",
+]);
+export type LocationScopeType = z.infer<typeof LocationScopeType>;
+
+/** Geographic scope for a single location preference tier. */
+export const LocationScopeSchema = z.object({
+  type: LocationScopeType,
+  /** Included locations/regions/timezone ranges */
+  include: z
+    .array(z.string())
+    .describe("List of included locations, regions, timezone ranges, or cities"),
+  /** Excluded locations within the scope (e.g., 'Cyprus' excluded from 'EU') */
+  exclude: z
+    .array(z.string())
+    .optional()
+    .describe("Locations explicitly excluded from the scope"),
+});
+export type LocationScope = z.infer<typeof LocationScopeSchema>;
+
+/** A single ranked location preference tier. */
+export const LocationPreferenceTierSchema = z.object({
+  /** 1-based rank: 1 = most preferred */
+  rank: z
+    .number()
+    .int()
+    .min(1)
+    .describe("Priority rank, 1 = most preferred"),
+  /** Work formats acceptable for this tier (can be multiple) */
+  workFormats: z
+    .array(TierWorkFormat)
+    .min(1)
+    .describe("Acceptable work formats for this tier"),
+  /** Geographic scope for this tier */
+  scope: LocationScopeSchema,
+  /** Free-text qualitative constraint, if any */
+  qualitativeConstraint: z
+    .string()
+    .optional()
+    .describe(
+      "Qualitative constraint like 'countries with similar living standards' or 'tech hub cities'",
+    ),
+  /** User's original phrasing for this tier (aids review and debugging) */
+  originalText: z
+    .string()
+    .optional()
+    .describe("The user's original phrasing that produced this tier"),
+});
+export type LocationPreferenceTier = z.infer<
+  typeof LocationPreferenceTierSchema
+>;
+
+/** Full location preferences: an ordered collection of tiers. */
+export const LocationPreferencesSchema = z.object({
+  tiers: z
+    .array(LocationPreferenceTierSchema)
+    .min(1)
+    .max(5)
+    .describe("Ranked location preference tiers, ordered by priority"),
+});
+export type LocationPreferences = z.infer<typeof LocationPreferencesSchema>;
+
 // ─── Preference Draft (all fields optional — filled incrementally) ─────────
 
 export const PreferencesDraftSchema = z.object({
@@ -60,6 +138,8 @@ export const PreferencesDraftSchema = z.object({
   minSalary: z.number().int().positive().optional(),
   targetSalary: z.number().int().positive().optional(),
   salaryCurrency: z.string().optional(),
+  locationPreferences: LocationPreferencesSchema.optional(),
+  // Deprecated: kept for backward compat with in-progress conversations
   preferredLocations: z.array(z.string()).optional(),
   remotePreference: RemotePreference.optional(),
 
@@ -187,11 +267,8 @@ export type DealBreakersExtraction = z.infer<
 >;
 
 export const LocationExtractionSchema = z.object({
-  preferredLocations: z
-    .array(z.string())
-    .describe("Cities, regions, or countries the user prefers"),
-  remotePreference: RemotePreference.optional().describe(
-    "User preference for remote/hybrid/onsite work",
+  locationPreferences: LocationPreferencesSchema.describe(
+    "Ranked location preference tiers extracted from the user's input",
   ),
   confidence: ExtractionConfidence.describe(
     "How confident you are in the extraction",
