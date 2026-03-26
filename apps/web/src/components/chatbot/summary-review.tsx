@@ -1,7 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import type { PreferencesDraft } from "@/lib/chatbot/schemas";
+import type {
+  PreferencesDraft,
+  LocationPreferences,
+  LocationPreferenceTier,
+} from "@/lib/chatbot/schemas";
 
 interface SummaryReviewProps {
   draft: PreferencesDraft;
@@ -80,16 +84,8 @@ export function SummaryReview({
             stepSlug="salary"
             onEdit={onEdit}
           />
-          <PreferenceField
-            label="Preferred Locations"
-            value={draft.preferredLocations}
-            stepSlug="location"
-            onEdit={onEdit}
-          />
-          <PreferenceField
-            label="Remote Preference"
-            value={formatEnum(draft.remotePreference)}
-            stepSlug="location"
+          <LocationTiersDisplay
+            locationPreferences={draft.locationPreferences}
             onEdit={onEdit}
           />
         </PreferenceSection>
@@ -248,6 +244,102 @@ function PreferenceField({
       </button>
     </div>
   );
+}
+
+function LocationTiersDisplay({
+  locationPreferences,
+  onEdit,
+}: {
+  locationPreferences: LocationPreferences | undefined;
+  onEdit: (stepSlug: string) => void;
+}) {
+  if (!locationPreferences || locationPreferences.tiers.length === 0) {
+    return null;
+  }
+
+  // Group tiers by rank for display
+  const grouped = new Map<number, LocationPreferenceTier[]>();
+  for (const tier of locationPreferences.tiers) {
+    const existing = grouped.get(tier.rank) ?? [];
+    existing.push(tier);
+    grouped.set(tier.rank, existing);
+  }
+
+  const ranks = Array.from(grouped.keys()).sort((a, b) => a - b);
+
+  return (
+    <div className="flex items-start justify-between gap-2">
+      <div className="min-w-0 flex-1">
+        <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+          Location Preferences
+        </span>
+        <div className="mt-1 space-y-2">
+          {ranks.map((rank) => {
+            const tiers = grouped.get(rank) ?? [];
+            const label =
+              rank === 1 && ranks.length > 1
+                ? "Most Preferred"
+                : ranks.length === 1
+                  ? ""
+                  : "";
+            return (
+              <div key={rank}>
+                <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">
+                  Tier {rank}
+                  {label ? ` (${label})` : ""}:
+                </span>
+                <ul className="ml-3 list-disc">
+                  {tiers.map((tier, i) => (
+                    <li
+                      key={i}
+                      className="text-sm text-zinc-900 dark:text-zinc-100"
+                    >
+                      {formatTierLine(tier)}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={() => onEdit("location")}
+        className="mt-1 shrink-0 text-xs font-medium text-zinc-500 underline transition-colors hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+      >
+        Edit
+      </button>
+    </div>
+  );
+}
+
+function formatTierLine(tier: LocationPreferenceTier): string {
+  const formats = tier.workFormats
+    .map((f) => f.charAt(0).toUpperCase() + f.slice(1))
+    .join("/");
+
+  const parts: string[] = [formats];
+
+  if (tier.scope.include.length > 0) {
+    const preposition =
+      tier.scope.type === "cities" || tier.scope.type === "timezones"
+        ? "in"
+        : "to";
+    parts.push(`${preposition} ${tier.scope.include.join(", ")}`);
+  } else if (tier.scope.type === "any") {
+    parts.push("anywhere");
+  }
+
+  if (tier.scope.exclude && tier.scope.exclude.length > 0) {
+    parts.push(`(except ${tier.scope.exclude.join(", ")})`);
+  }
+
+  if (tier.qualitativeConstraint) {
+    parts.push(`- "${tier.qualitativeConstraint}"`);
+  }
+
+  return parts.join(" ");
 }
 
 function WeightDisplay({
