@@ -290,6 +290,7 @@ export type ExclusionsExtraction = z.infer<typeof ExclusionsExtractionSchema>;
 
 export const MessageInputSchema = z.object({
   message: z.string().min(1),
+  displayText: z.string().optional(),
 });
 export type MessageInput = z.infer<typeof MessageInputSchema>;
 

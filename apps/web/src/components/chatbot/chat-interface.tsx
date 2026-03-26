@@ -144,7 +144,7 @@ export function ChatInterface({ editMode = false }: ChatInterfaceProps) {
   }, []);
 
   /** Send a message to the chatbot API. */
-  const sendMessage = async (message: string) => {
+  const sendMessage = async (message: string, displayText?: string) => {
     if (!message.trim() && message !== "__SKIP__") return;
 
     setLoading(true);
@@ -154,7 +154,7 @@ export function ChatInterface({ editMode = false }: ChatInterfaceProps) {
       const res = await fetch("/api/chatbot/message", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({ message, displayText }),
       });
 
       const data = (await res.json()) as ChatResponse & { error?: string };
@@ -187,8 +187,8 @@ export function ChatInterface({ editMode = false }: ChatInterfaceProps) {
   };
 
   /** Handle structured control submission. */
-  const handleStructuredSubmit = async (value: string) => {
-    await sendMessage(value);
+  const handleStructuredSubmit = async (value: string, displayText: string) => {
+    await sendMessage(value, displayText);
   };
 
   /** Handle edit from summary review -- send a goToStep message. */

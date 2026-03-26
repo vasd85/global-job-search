@@ -202,8 +202,17 @@ export async function POST(request: Request) {
       })
       .where(eq(conversationStates.userId, session.user.id));
 
+    // Use displayText for the user message in the transcript when provided
+    const messagesToPersist = parsed.data.displayText
+      ? result.messages.map((msg) =>
+          msg.role === "user"
+            ? { ...msg, content: parsed.data.displayText as string }
+            : msg,
+        )
+      : result.messages;
+
     // Save messages to conversation_messages table
-    await persistMessages(conversationStateId, result.messages);
+    await persistMessages(conversationStateId, messagesToPersist);
 
     // Load full transcript
     const transcript = await db

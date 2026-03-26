@@ -7,7 +7,7 @@ import { STEPS } from "@/lib/chatbot/steps";
 interface StructuredControlsProps {
   config: StructuredControlConfig;
   currentStepSlug: string;
-  onSubmit: (value: string) => void;
+  onSubmit: (value: string, displayText: string) => void;
   disabled?: boolean;
 }
 
@@ -65,7 +65,7 @@ export function StructuredControls({
 interface MultiSelectControlProps {
   options: { value: string; label: string }[];
   fields: string[];
-  onSubmit: (value: string) => void;
+  onSubmit: (value: string, displayText: string) => void;
   disabled: boolean;
 }
 
@@ -88,7 +88,10 @@ function MultiSelectControl({
   const handleSubmit = () => {
     if (selected.length === 0) return;
     const fieldName = fields[0] ?? "value";
-    onSubmit(JSON.stringify({ [fieldName]: selected }));
+    const labels = selected.map(
+      (v) => options.find((o) => o.value === v)?.label ?? v,
+    );
+    onSubmit(JSON.stringify({ [fieldName]: selected }), labels.join(", "));
   };
 
   return (
@@ -127,7 +130,7 @@ function MultiSelectControl({
 interface SingleSelectControlProps {
   options: { value: string; label: string }[];
   fields: string[];
-  onSubmit: (value: string) => void;
+  onSubmit: (value: string, displayText: string) => void;
   disabled: boolean;
 }
 
@@ -142,7 +145,8 @@ function SingleSelectControl({
   const handleSubmit = () => {
     if (!selected) return;
     const fieldName = fields[0] ?? "value";
-    onSubmit(JSON.stringify({ [fieldName]: selected }));
+    const label = options.find((o) => o.value === selected)?.label ?? selected;
+    onSubmit(JSON.stringify({ [fieldName]: selected }), label);
   };
 
   return (
@@ -180,7 +184,7 @@ function SingleSelectControl({
 
 interface RangeControlProps {
   fields: string[];
-  onSubmit: (value: string) => void;
+  onSubmit: (value: string, displayText: string) => void;
   disabled: boolean;
 }
 
@@ -205,7 +209,11 @@ function RangeControl({ onSubmit, disabled }: RangeControlProps) {
     }
     result.salaryCurrency = currency;
 
-    onSubmit(JSON.stringify(result));
+    const parts: string[] = [];
+    if (result.minSalary) parts.push(`Min: ${currency} ${Number(result.minSalary).toLocaleString()}`);
+    if (result.targetSalary) parts.push(`Target: ${currency} ${Number(result.targetSalary).toLocaleString()}`);
+    if (parts.length === 0) parts.push(currency);
+    onSubmit(JSON.stringify(result), parts.join(", "));
   };
 
   return (
@@ -282,7 +290,7 @@ function RangeControl({ onSubmit, disabled }: RangeControlProps) {
 // ─── Slider Group (Dimension Weights) ───────────────────────────────────────
 
 interface SliderGroupControlProps {
-  onSubmit: (value: string) => void;
+  onSubmit: (value: string, displayText: string) => void;
   disabled: boolean;
 }
 
@@ -322,7 +330,10 @@ function SliderGroupControl({ onSubmit, disabled }: SliderGroupControlProps) {
           ? Math.round((value / currentTotal) * 100) / 100
           : DEFAULT_WEIGHT;
     }
-    onSubmit(JSON.stringify(normalized));
+    const display = WEIGHT_DIMENSIONS.map(
+      (d) => `${d.label}: ${((normalized[d.field] ?? DEFAULT_WEIGHT) * 100).toFixed(0)}%`,
+    ).join(", ");
+    onSubmit(JSON.stringify(normalized), display);
   };
 
   return (
