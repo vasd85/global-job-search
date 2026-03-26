@@ -595,10 +595,13 @@ describe("integration: complete happy path through all required steps", () => {
     result = await processMessage(state, "__SKIP__", mockLlm);
     state = result.updatedState;
 
-    // Step 7: location (hybrid)
+    // Step 7: location (free_text)
     extractMock.mockResolvedValueOnce({
-      preferredLocations: ["NYC"],
-      remotePreference: "remote_only",
+      locationPreferences: {
+        tiers: [
+          { rank: 1, workFormats: ["remote"], scope: { type: "cities", include: ["NYC"] } },
+        ],
+      },
       confidence: "high",
       clarificationNeeded: false,
     });
@@ -647,7 +650,11 @@ describe("integration: complete happy path through all required steps", () => {
     expect(state.draft.targetTitles).toEqual(["Senior QA Engineer"]);
     expect(state.draft.targetSeniority).toEqual(["senior"]);
     expect(state.draft.coreSkills).toEqual(["Selenium", "Python"]);
-    expect(state.draft.preferredLocations).toEqual(["NYC"]);
+    expect(state.draft.locationPreferences).toEqual({
+      tiers: [
+        { rank: 1, workFormats: ["remote"], scope: { type: "cities", include: ["NYC"] } },
+      ],
+    });
     expect(state.draft.industries).toEqual(["fintech"]);
     expect(state.draft.companySizes).toEqual(["startup", "scaleup"]);
 
@@ -733,7 +740,11 @@ describe("integration: goToStep during review, edit, then re-advance", () => {
       targetTitles: ["SWE"],
       targetSeniority: ["senior"],
       coreSkills: ["JS"],
-      preferredLocations: ["NYC"],
+      locationPreferences: {
+        tiers: [
+          { rank: 1, workFormats: ["remote"], scope: { type: "cities", include: ["NYC"] } },
+        ],
+      },
       industries: ["fintech"],
       companySizes: ["startup"],
       weightRole: 0.25,
@@ -833,9 +844,13 @@ describe("integration: all skippable steps skipped reaches review", () => {
       state = result.updatedState;
     }
 
-    // Step 7: location (required, hybrid)
+    // Step 7: location (required, free_text)
     extractMock.mockResolvedValueOnce({
-      preferredLocations: ["Remote"],
+      locationPreferences: {
+        tiers: [
+          { rank: 1, workFormats: ["remote"], scope: { type: "any", include: [] } },
+        ],
+      },
       confidence: "high",
       clarificationNeeded: false,
     });

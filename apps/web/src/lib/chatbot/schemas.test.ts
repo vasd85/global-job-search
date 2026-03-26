@@ -34,6 +34,11 @@ describe("PreferencesDraftSchema", () => {
       minSalary: 100000,
       targetSalary: 150000,
       salaryCurrency: "USD",
+      locationPreferences: {
+        tiers: [
+          { rank: 1, workFormats: ["remote"], scope: { type: "cities", include: ["NYC", "London"] } },
+        ],
+      },
       preferredLocations: ["NYC", "London"],
       remotePreference: "remote_only",
       weightRole: 0.25,
@@ -146,7 +151,7 @@ describe("extraction schemas all share the same meta-fields structure", () => {
     { name: "GrowthSkillsExtraction", schema: GrowthSkillsExtractionSchema, field: { growthSkills: ["Rust"] } },
     { name: "AvoidSkillsExtraction", schema: AvoidSkillsExtractionSchema, field: { avoidSkills: ["PHP"] } },
     { name: "DealBreakersExtraction", schema: DealBreakersExtractionSchema, field: { dealBreakers: ["Travel"] } },
-    { name: "LocationExtraction", schema: LocationExtractionSchema, field: { preferredLocations: ["NYC"] } },
+    { name: "LocationExtraction", schema: LocationExtractionSchema, field: { locationPreferences: { tiers: [{ rank: 1, workFormats: ["remote"], scope: { type: "cities", include: ["NYC"] } }] } } },
     { name: "IndustriesExtraction", schema: IndustriesExtractionSchema, field: { industries: ["fintech"] } },
     { name: "HqGeographiesExtraction", schema: HqGeographiesExtractionSchema, field: { hqGeographies: ["US"] } },
     { name: "ProductTypesExtraction", schema: ProductTypesExtractionSchema, field: { productTypes: ["B2B"] } },

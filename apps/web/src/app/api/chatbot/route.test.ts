@@ -1136,7 +1136,11 @@ describe("POST /api/chatbot/save", () => {
         companySizes: [],
         targetSeniority: ["senior"],
         coreSkills: ["test"],
-        preferredLocations: ["US"],
+        locationPreferences: {
+          tiers: [
+            { rank: 1, workFormats: ["remote"], scope: { type: "countries", include: ["US"] } },
+          ],
+        },
         industries: ["fintech"],
       },
     });
@@ -1161,7 +1165,11 @@ describe("POST /api/chatbot/save", () => {
       targetTitles: ["QA Lead"],
       targetSeniority: ["senior"],
       coreSkills: ["Selenium"],
-      preferredLocations: ["Israel"],
+      locationPreferences: {
+        tiers: [
+          { rank: 1, workFormats: ["remote"], scope: { type: "countries", include: ["Israel"] } },
+        ],
+      },
       industries: ["fintech"],
       companySizes: ["startup"],
       growthSkills: ["AI testing"],
@@ -1170,7 +1178,6 @@ describe("POST /api/chatbot/save", () => {
       minSalary: 120000,
       targetSalary: 150000,
       salaryCurrency: "USD",
-      remotePreference: "remote_only",
       weightRole: 0.3,
       weightSkills: 0.25,
       weightLocation: 0.2,
@@ -1215,8 +1222,11 @@ describe("POST /api/chatbot/save", () => {
       growthSkills: ["AI testing"],
       avoidSkills: ["manual"],
       dealBreakers: ["travel"],
-      preferredLocations: ["Tel Aviv"],
-      remotePreference: "hybrid_ok",
+      locationPreferences: {
+        tiers: [
+          { rank: 1, workFormats: ["remote", "hybrid"], scope: { type: "cities", include: ["Tel Aviv"] } },
+        ],
+      },
       minSalary: 120000,
       targetSalary: 150000,
       salaryCurrency: "EUR",
@@ -1248,6 +1258,11 @@ describe("POST /api/chatbot/save", () => {
     expect(profileValues.growthSkills).toEqual(["AI testing"]);
     expect(profileValues.avoidSkills).toEqual(["manual"]);
     expect(profileValues.dealBreakers).toEqual(["travel"]);
+    expect(profileValues.locationPreferences).toEqual({
+      tiers: [
+        { rank: 1, workFormats: ["remote", "hybrid"], scope: { type: "cities", include: ["Tel Aviv"] } },
+      ],
+    });
     expect(profileValues.preferredLocations).toEqual(["Tel Aviv"]);
     expect(profileValues.remotePreference).toBe("hybrid_ok");
     expect(profileValues.minSalary).toBe(120000);
@@ -1262,7 +1277,11 @@ describe("POST /api/chatbot/save", () => {
       targetTitles: ["QA"],
       targetSeniority: ["senior"],
       coreSkills: ["test"],
-      preferredLocations: ["US"],
+      locationPreferences: {
+        tiers: [
+          { rank: 1, workFormats: ["remote"], scope: { type: "countries", include: ["US"] } },
+        ],
+      },
       industries: ["fintech", "healthtech"],
       companySizes: ["startup"],
       companyStages: ["series_a"],
@@ -1299,7 +1318,11 @@ describe("POST /api/chatbot/save", () => {
       targetTitles: ["QA"],
       targetSeniority: ["senior"],
       coreSkills: ["test"],
-      preferredLocations: ["US"],
+      locationPreferences: {
+        tiers: [
+          { rank: 1, workFormats: ["remote"], scope: { type: "countries", include: ["US"] } },
+        ],
+      },
       industries: ["fintech", "healthtech"],
       companySizes: ["startup"],
     };
@@ -1331,7 +1354,11 @@ describe("POST /api/chatbot/save", () => {
       targetTitles: ["QA"],
       targetSeniority: ["senior"],
       coreSkills: ["test"],
-      preferredLocations: ["US"],
+      locationPreferences: {
+        tiers: [
+          { rank: 1, workFormats: ["remote"], scope: { type: "countries", include: ["US"] } },
+        ],
+      },
       industries: ["fintech"],
       companySizes: ["startup"],
       // All optional fields left undefined
@@ -1355,7 +1382,7 @@ describe("POST /api/chatbot/save", () => {
     expect(profileValues.avoidSkills).toEqual([]);
     expect(profileValues.dealBreakers).toEqual([]);
     expect(profileValues.salaryCurrency).toBe("USD");
-    expect(profileValues.remotePreference).toBe("any");
+    expect(profileValues.remotePreference).toBe("remote_only");
     expect(profileValues.minSalary).toBeNull();
     expect(profileValues.targetSalary).toBeNull();
     expect(profileValues.weightRole).toBe(0.25);
@@ -1379,7 +1406,11 @@ describe("POST /api/chatbot/save", () => {
       targetTitles: ["QA"],
       targetSeniority: ["senior"],
       coreSkills: ["test"],
-      preferredLocations: ["US"],
+      locationPreferences: {
+        tiers: [
+          { rank: 1, workFormats: ["remote"], scope: { type: "countries", include: ["US"] } },
+        ],
+      },
       industries: ["fintech"],
       companySizes: ["startup"],
     };
@@ -1412,7 +1443,11 @@ describe("POST /api/chatbot/save", () => {
         targetTitles: ["QA"],
         targetSeniority: ["senior"],
         coreSkills: ["test"],
-        preferredLocations: ["US"],
+        locationPreferences: {
+          tiers: [
+            { rank: 1, workFormats: ["remote"], scope: { type: "countries", include: ["US"] } },
+          ],
+        },
         industries: ["fintech"],
         companySizes: ["startup"],
       },

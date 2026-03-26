@@ -49,17 +49,13 @@ describe("STEPS", () => {
     }
   });
 
-  test("hybrid steps with structuredConfig include it correctly", () => {
-    // Only 'location' among hybrid steps has a structuredConfig.
-    // Other hybrid steps (core_skills, growth_skills, avoid_skills, industries,
-    // product_types) rely on free-text input with optional LLM extraction.
+  test("no hybrid step currently uses structuredConfig", () => {
+    // Location step was previously the only hybrid step with structuredConfig
+    // but was converted to free_text for the tier-based location model.
     const hybridWithConfig = STEPS.filter(
       (s) => s.inputType === "hybrid" && s.structuredConfig,
     );
-    expect(hybridWithConfig.length).toBeGreaterThan(0);
-    for (const step of hybridWithConfig) {
-      expect(step.structuredConfig).toBeTruthy();
-    }
+    expect(hybridWithConfig.length).toBe(0);
   });
 
   test("the review step is last and has no fields", () => {

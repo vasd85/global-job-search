@@ -285,7 +285,11 @@ describe("validateDraft", () => {
       targetTitles: ["SWE"],
       targetSeniority: ["senior"],
       coreSkills: ["JS"],
-      preferredLocations: ["NYC"],
+      locationPreferences: {
+        tiers: [
+          { rank: 1, workFormats: ["remote"], scope: { type: "cities", include: ["NYC"] } },
+        ],
+      },
       industries: ["fintech"],
       companySizes: ["startup"],
     };
