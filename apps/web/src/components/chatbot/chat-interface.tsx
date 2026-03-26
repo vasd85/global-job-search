@@ -96,6 +96,7 @@ export function ChatInterface({ editMode = false }: ChatInterfaceProps) {
   const [saved, setSaved] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Auto-scroll to newest message
   const scrollToBottom = useCallback(() => {
@@ -179,6 +180,16 @@ export function ChatInterface({ editMode = false }: ChatInterfaceProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     await sendMessage(inputValue);
+  };
+
+  /** Handle keyboard shortcuts in textarea: Enter to submit, Shift+Enter for newline. */
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      if (inputValue.trim() && !loading) {
+        void sendMessage(inputValue);
+      }
+    }
   };
 
   /** Handle skip button. */
@@ -347,14 +358,24 @@ export function ChatInterface({ editMode = false }: ChatInterfaceProps) {
 
         {/* Text input for free-text / hybrid steps */}
         {showTextInput && !isReview && (
-          <form onSubmit={handleSubmit} className="flex gap-2">
-            <input
-              type="text"
-              placeholder="Type your answer..."
+          <form onSubmit={handleSubmit} className="flex items-end gap-2">
+            <textarea
+              ref={textareaRef}
+              placeholder="Type your answer... (Shift+Enter for new line)"
               value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
+              onChange={(e) => {
+                setInputValue(e.target.value);
+                // Auto-resize: reset to auto then set to scrollHeight, clamped to 15 lines
+                const el = e.target;
+                el.style.height = "auto";
+                const lineHeight = parseInt(getComputedStyle(el).lineHeight || "20", 10);
+                const maxHeight = lineHeight * 15;
+                el.style.height = `${Math.min(el.scrollHeight, maxHeight)}px`;
+              }}
+              onKeyDown={handleKeyDown}
               disabled={loading}
-              className="flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 outline-none transition-colors focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
+              rows={2}
+              className="flex-1 resize-none rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 outline-none transition-colors focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500 dark:focus:border-zinc-400 dark:focus:ring-zinc-400"
             />
             <button
               type="submit"
