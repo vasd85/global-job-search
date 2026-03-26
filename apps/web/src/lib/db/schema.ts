@@ -185,8 +185,9 @@ export const userProfiles = pgTable("user_profile", {
   avoidSkills: text("avoid_skills").array(),
   yearsExperience: integer("years_experience"),
 
-  preferredLocations: text("preferred_locations").array(),
-  remotePreference: text("remote_preference").default("any"), // remote_only | hybrid_ok | onsite_ok | any
+  locationPreferences: jsonb("location_preferences"), // LocationPreferences JSONB (ranked tiers)
+  preferredLocations: text("preferred_locations").array(), // derived from locationPreferences tiers
+  remotePreference: text("remote_preference").default("any"), // derived from locationPreferences tiers — remote_only | hybrid_ok | onsite_ok | any
   minSalary: integer("min_salary"),
   targetSalary: integer("target_salary"),
   salaryCurrency: text("salary_currency").default("USD"),
