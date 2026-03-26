@@ -34,6 +34,66 @@ If the title clearly fits an existing family, indicate that instead of creating 
 
 // ─── Prompt Builders ────────────────────────────────────────────────────────
 
+interface LocationTier {
+  rank: number;
+  workFormats: string[];
+  scope: { type: string; include: string[]; exclude?: string[] };
+  qualitativeConstraint?: string;
+}
+
+interface LocationPrefs {
+  tiers: LocationTier[];
+}
+
+function isLocationPreferences(value: unknown): value is LocationPrefs {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "tiers" in value &&
+    Array.isArray((value as LocationPrefs).tiers)
+  );
+}
+
+function formatLocationTier(tier: LocationTier): string {
+  const formats = tier.workFormats
+    .map((f) => f.charAt(0).toUpperCase() + f.slice(1))
+    .join("/");
+
+  const scopeParts: string[] = [];
+  if (tier.scope.include.length > 0) {
+    const preposition = tier.scope.type === "cities" ? "in" : "to";
+    scopeParts.push(`${preposition} ${tier.scope.include.join(", ")}`);
+  } else if (tier.scope.type === "any") {
+    scopeParts.push("anywhere");
+  }
+  if (tier.scope.exclude && tier.scope.exclude.length > 0) {
+    scopeParts.push(`(except ${tier.scope.exclude.join(", ")})`);
+  }
+  if (tier.qualitativeConstraint) {
+    scopeParts.push(`— ${tier.qualitativeConstraint}`);
+  }
+
+  return `${formats} ${scopeParts.join(" ")}`.trim();
+}
+
+function formatLocationPreferences(lp: LocationPrefs): string {
+  const grouped = new Map<number, LocationTier[]>();
+  for (const tier of lp.tiers) {
+    const existing = grouped.get(tier.rank) ?? [];
+    existing.push(tier);
+    grouped.set(tier.rank, existing);
+  }
+
+  const ranks = Array.from(grouped.keys()).sort((a, b) => a - b);
+  return ranks
+    .map((rank) => {
+      const tiers = grouped.get(rank) ?? [];
+      const tierLines = tiers.map((t) => formatLocationTier(t)).join("; ");
+      return `    Tier ${String(rank)}: ${tierLines}`;
+    })
+    .join("\n");
+}
+
 function formatDraftContext(draft: PreferencesDraft): string {
   const entries = Object.entries(draft).filter(
     ([, value]) => value !== undefined && value !== null,
@@ -45,6 +105,9 @@ function formatDraftContext(draft: PreferencesDraft): string {
 
   return entries
     .map(([key, value]) => {
+      if (key === "locationPreferences" && isLocationPreferences(value)) {
+        return `- locationPreferences:\n${formatLocationPreferences(value)}`;
+      }
       if (Array.isArray(value)) {
         return `- ${key}: ${value.join(", ")}`;
       }
@@ -65,15 +128,44 @@ function getStepDescription(step: ConversationStep): string {
   return parts.join("\n");
 }
 
+const LOCATION_EXTRACTION_GUIDANCE = `
+For the "location" step, decompose the user's preferences into ranked tiers:
+- Each tier has a rank (1 = most preferred), work formats, and a geographic scope.
+- Scope types: "countries" (specific countries), "regions" (broad like EU, Asia),
+  "timezones" (timezone-range based), "cities" (specific cities), "any" (anywhere
+  with optional qualitative constraints).
+- If the user mentions exclusions ("EU except Cyprus"), put them in scope.exclude.
+- If the user mentions qualitative criteria ("countries with good living standards"),
+  put them in qualitativeConstraint.
+- Preserve the user's prioritization order as rank values.
+- If the user doesn't specify explicit priority, assign rank 1 to all (equal preference).
+- Split different scope types at the same priority into separate tiers
+  (e.g., "USA, Canada, EU except Cyprus" -> two tiers at rank 1: one for
+  countries [USA, Canada], one for regions [EU] with exclude [Cyprus]).
+
+Example: "I'd love to relocate to NYC or London, would also consider remote anywhere in the EU, and as a last resort I'd relocate anywhere with good tech scene."
+Result tiers:
+  Tier rank 1: workFormats=["relocation"], scope type="cities", include=["NYC", "London"]
+  Tier rank 2: workFormats=["remote"], scope type="regions", include=["EU"]
+  Tier rank 3: workFormats=["relocation"], scope type="any", include=[], qualitativeConstraint="good tech scene"
+
+Example: "Remote, anywhere"
+Result tiers:
+  Tier rank 1: workFormats=["remote"], scope type="any", include=[]
+`;
+
 /** Build the prompt for extracting structured data from user free-text input. */
 export function buildExtractionPrompt(
   userText: string,
   step: ConversationStep,
   currentDraft: PreferencesDraft,
 ): { system: string; prompt: string } {
+  const stepGuidance =
+    step.slug === "location" ? `\n${LOCATION_EXTRACTION_GUIDANCE}\n` : "";
+
   const prompt = `Current onboarding step:
 ${getStepDescription(step)}
-
+${stepGuidance}
 Previously collected preferences:
 ${formatDraftContext(currentDraft)}
 
