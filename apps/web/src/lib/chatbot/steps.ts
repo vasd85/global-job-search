@@ -59,7 +59,7 @@ const SENIORITY_OPTIONS = toOptions([
   "vp",
 ]);
 
-const COMPANY_SIZE_OPTIONS = toOptions(["startup", "scaleup", "enterprise"]);
+const COMPANY_SIZE_OPTIONS = toOptions(["startup", "scaleup", "enterprise", "any"]);
 
 const COMPANY_STAGE_OPTIONS = toOptions([
   "seed",
@@ -68,6 +68,7 @@ const COMPANY_STAGE_OPTIONS = toOptions([
   "series_c",
   "late_stage",
   "public",
+  "any",
 ]);
 
 const WORK_FORMAT_OPTIONS = toOptions(["remote_first", "hybrid", "onsite"]);

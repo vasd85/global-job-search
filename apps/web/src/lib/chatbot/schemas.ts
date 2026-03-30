@@ -21,7 +21,7 @@ export const RemotePreference = z.enum([
 ]);
 export type RemotePreference = z.infer<typeof RemotePreference>;
 
-export const CompanySize = z.enum(["startup", "scaleup", "enterprise"]);
+export const CompanySize = z.enum(["startup", "scaleup", "enterprise", "any"]);
 export type CompanySize = z.infer<typeof CompanySize>;
 
 export const CompanyStage = z.enum([
@@ -31,6 +31,7 @@ export const CompanyStage = z.enum([
   "series_c",
   "late_stage",
   "public",
+  "any",
 ]);
 export type CompanyStage = z.infer<typeof CompanyStage>;
 

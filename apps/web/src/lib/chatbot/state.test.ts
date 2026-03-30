@@ -337,13 +337,16 @@ describe("deserializeState", () => {
     expect(result.status).toBe("in_progress");
   });
 
-  test("throws on invalid/corrupt JSONB", () => {
-    expect(() =>
-      deserializeState({
-        currentStepIndex: "not a number",
-        draft: {},
-      }),
-    ).toThrow();
+  test("falls back to raw state on schema mismatch instead of throwing", () => {
+    const corrupt = {
+      currentStepIndex: "not a number",
+      draft: {},
+    };
+    const consoleSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const result = deserializeState(corrupt);
+    expect(result).toBe(corrupt);
+    expect(consoleSpy).toHaveBeenCalled();
+    consoleSpy.mockRestore();
   });
 });
 

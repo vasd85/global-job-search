@@ -172,9 +172,19 @@ export function validateDraft(draft: PreferencesDraft): DraftValidationResult {
 
 // ─── Serialization ─────────────────────────────────────────────────────────
 
-/** Parse and validate a JSONB state value from the database. */
+/**
+ * Parse a JSONB state value from the database.
+ * Uses lenient parsing: if the strict schema fails (e.g., enum values
+ * changed between deploys), falls back to casting the raw value.
+ * This prevents schema evolution from crashing in-progress conversations.
+ */
 export function deserializeState(raw: unknown): ConversationState {
-  return ConversationStateSchema.parse(raw);
+  const result = ConversationStateSchema.safeParse(raw);
+  if (result.success) return result.data;
+
+  // Fallback: trust the JSONB structure, which was valid when it was written
+  console.warn("Conversation state schema mismatch, using raw state:", result.error.message);
+  return raw as ConversationState;
 }
 
 /** Serialize state for storage — returns a plain object safe for JSONB. */
