@@ -3,6 +3,11 @@ import {
   ConversationStateSchema,
   MessageInputSchema,
   SeniorityLevel,
+  CompanySize,
+  CompanyStage,
+  LocationPreferenceTierSchema,
+  LocationPreferencesSchema,
+  LocationScopeSchema,
   TargetRolesExtractionSchema,
   CoreSkillsExtractionSchema,
   GrowthSkillsExtractionSchema,
@@ -176,4 +181,307 @@ describe("extraction schemas all share the same meta-fields structure", () => {
       }
     },
   );
+});
+
+// ─── LocationPreferenceTierSchema ──────────────────────────────────────────
+
+describe("LocationPreferenceTierSchema", () => {
+  const validTier = {
+    rank: 1,
+    workFormats: ["remote"],
+    scope: { type: "any", include: [] },
+  };
+
+  test("rejects rank of 0 (below min 1)", () => {
+    const result = LocationPreferenceTierSchema.safeParse({
+      ...validTier,
+      rank: 0,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  test("rejects empty workFormats array", () => {
+    const result = LocationPreferenceTierSchema.safeParse({
+      ...validTier,
+      workFormats: [],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  test("rejects non-integer rank", () => {
+    const result = LocationPreferenceTierSchema.safeParse({
+      ...validTier,
+      rank: 1.5,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  test("rejects negative rank", () => {
+    const result = LocationPreferenceTierSchema.safeParse({
+      ...validTier,
+      rank: -1,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  test("rejects invalid TierWorkFormat value", () => {
+    const result = LocationPreferenceTierSchema.safeParse({
+      ...validTier,
+      workFormats: ["telecommute"],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  test.each<[string]>([["remote"], ["relocation"], ["hybrid"], ["onsite"]])(
+    "accepts valid TierWorkFormat value %s",
+    (format) => {
+      const result = LocationPreferenceTierSchema.safeParse({
+        ...validTier,
+        workFormats: [format],
+      });
+      expect(result.success).toBe(true);
+    },
+  );
+
+  test("accepts optional qualitativeConstraint and originalText", () => {
+    const result = LocationPreferenceTierSchema.safeParse({
+      ...validTier,
+      qualitativeConstraint: "good tech scene",
+      originalText: "anywhere with good tech scene",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.qualitativeConstraint).toBe("good tech scene");
+      expect(result.data.originalText).toBe("anywhere with good tech scene");
+    }
+  });
+
+  test("accepts minimal tier without optional fields", () => {
+    const result = LocationPreferenceTierSchema.safeParse(validTier);
+    expect(result.success).toBe(true);
+  });
+});
+
+// ─── LocationPreferencesSchema ──────────────────────────────────────────────
+
+describe("LocationPreferencesSchema", () => {
+  function makeTier(rank: number) {
+    return {
+      rank,
+      workFormats: ["remote"],
+      scope: { type: "any", include: [] },
+    };
+  }
+
+  test("rejects empty tiers array", () => {
+    const result = LocationPreferencesSchema.safeParse({ tiers: [] });
+    expect(result.success).toBe(false);
+  });
+
+  test("rejects more than 5 tiers", () => {
+    const result = LocationPreferencesSchema.safeParse({
+      tiers: [
+        makeTier(1),
+        makeTier(2),
+        makeTier(3),
+        makeTier(4),
+        makeTier(5),
+        makeTier(6),
+      ],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  test("accepts exactly 5 tiers (max boundary)", () => {
+    const result = LocationPreferencesSchema.safeParse({
+      tiers: [
+        makeTier(1),
+        makeTier(2),
+        makeTier(3),
+        makeTier(4),
+        makeTier(5),
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  test("accepts multiple tiers at same rank (equal priority)", () => {
+    const result = LocationPreferencesSchema.safeParse({
+      tiers: [
+        { rank: 1, workFormats: ["remote"], scope: { type: "any", include: [] } },
+        { rank: 1, workFormats: ["onsite"], scope: { type: "cities", include: ["NYC"] } },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  test("accepts tiers in non-ascending rank order (3, 2, 1)", () => {
+    const result = LocationPreferencesSchema.safeParse({
+      tiers: [makeTier(3), makeTier(2), makeTier(1)],
+    });
+    expect(result.success).toBe(true);
+  });
+});
+
+// ─── LocationScopeSchema ────────────────────────────────────────────────────
+
+describe("LocationScopeSchema", () => {
+  test.each<[string]>([
+    ["countries"],
+    ["regions"],
+    ["timezones"],
+    ["cities"],
+    ["any"],
+  ])("accepts valid scope type %s", (scopeType) => {
+    const result = LocationScopeSchema.safeParse({
+      type: scopeType,
+      include: [],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  test("accepts optional exclude array", () => {
+    const result = LocationScopeSchema.safeParse({
+      type: "regions",
+      include: ["EU"],
+      exclude: ["Cyprus"],
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.exclude).toEqual(["Cyprus"]);
+    }
+  });
+
+  test("accepts absent exclude (undefined)", () => {
+    const result = LocationScopeSchema.safeParse({
+      type: "regions",
+      include: ["EU"],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  test("accepts empty include array with type 'any' (remote anywhere)", () => {
+    const result = LocationScopeSchema.safeParse({
+      type: "any",
+      include: [],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  test("accepts empty strings in include (no min-length on items)", () => {
+    // TODO: Empty strings in location include arrays are semantically invalid
+    // but the schema does not validate individual string quality. Consider
+    // adding .min(1) to individual items if empty strings cause downstream issues.
+    const result = LocationScopeSchema.safeParse({
+      type: "cities",
+      include: [""],
+    });
+    expect(result.success).toBe(true);
+  });
+});
+
+// ─── CompanySize enum expansion ─────────────────────────────────────────────
+
+describe("CompanySize", () => {
+  test("accepts 'any' value", () => {
+    const result = CompanySize.safeParse("any");
+    expect(result.success).toBe(true);
+  });
+
+  test.each<[string]>([["small"], ["Any"], ["ANY"], ["medium"]])(
+    "rejects invalid value %s",
+    (value) => {
+      const result = CompanySize.safeParse(value);
+      expect(result.success).toBe(false);
+    },
+  );
+});
+
+// ─── CompanyStage enum expansion ────────────────────────────────────────────
+
+describe("CompanyStage", () => {
+  test("accepts 'any' value", () => {
+    const result = CompanyStage.safeParse("any");
+    expect(result.success).toBe(true);
+  });
+
+  test.each<[string]>([["pre_seed"], ["ANY"], ["Any"], ["ipo"]])(
+    "rejects invalid value %s",
+    (value) => {
+      const result = CompanyStage.safeParse(value);
+      expect(result.success).toBe(false);
+    },
+  );
+});
+
+// ─── PreferencesDraftSchema: company enum expansion ─────────────────────────
+
+describe("PreferencesDraftSchema: company enums with 'any'", () => {
+  test("accepts companySizes containing 'any'", () => {
+    const result = PreferencesDraftSchema.safeParse({ companySizes: ["any"] });
+    expect(result.success).toBe(true);
+  });
+
+  test("accepts companyStages containing 'any'", () => {
+    const result = PreferencesDraftSchema.safeParse({ companyStages: ["any"] });
+    expect(result.success).toBe(true);
+  });
+
+  test("accepts companySizes with 'any' alongside specific values", () => {
+    const result = PreferencesDraftSchema.safeParse({
+      companySizes: ["startup", "any"],
+    });
+    expect(result.success).toBe(true);
+  });
+});
+
+// ─── ConversationStateSchema: editingFromReview ─────────────────────────────
+
+describe("ConversationStateSchema: editingFromReview field", () => {
+  const validState = {
+    currentStepIndex: 2,
+    draft: {},
+    completedSteps: [],
+    status: "in_progress",
+    createdAt: "2026-01-15T12:00:00.000Z",
+    updatedAt: "2026-01-15T12:00:00.000Z",
+  };
+
+  test("accepts editingFromReview: true", () => {
+    const result = ConversationStateSchema.safeParse({
+      ...validState,
+      editingFromReview: true,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  test("accepts absent editingFromReview (optional)", () => {
+    const result = ConversationStateSchema.safeParse(validState);
+    expect(result.success).toBe(true);
+  });
+
+  test("rejects non-boolean editingFromReview", () => {
+    const result = ConversationStateSchema.safeParse({
+      ...validState,
+      editingFromReview: "true",
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+// ─── MessageInputSchema: displayText ────────────────────────────────────────
+
+describe("MessageInputSchema: displayText field", () => {
+  test("accepts message with optional displayText", () => {
+    const result = MessageInputSchema.safeParse({
+      message: "some json",
+      displayText: "user-friendly text",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  test("accepts message without displayText", () => {
+    const result = MessageInputSchema.safeParse({ message: "hello" });
+    expect(result.success).toBe(true);
+  });
 });

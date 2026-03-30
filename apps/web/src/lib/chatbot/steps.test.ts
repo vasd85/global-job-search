@@ -150,3 +150,85 @@ describe("toOptions label formatting", () => {
     expect(vp).toEqual({ value: "vp", label: "Vp" });
   });
 });
+
+// ─── Location step configuration ────────────────────────────────────────────
+
+describe("location step configuration", () => {
+  test("has inputType 'free_text' (not hybrid)", () => {
+    const step = getStepBySlug("location");
+    expect(step).toBeDefined();
+    expect(step!.inputType).toBe("free_text");
+  });
+
+  test("has no structuredConfig", () => {
+    const step = getStepBySlug("location");
+    expect(step).toBeDefined();
+    expect(step!.structuredConfig).toBeUndefined();
+  });
+
+  test("fields array contains only 'locationPreferences'", () => {
+    const step = getStepBySlug("location");
+    expect(step).toBeDefined();
+    expect(step!.fields).toEqual(["locationPreferences"]);
+  });
+
+  test("uses LocationExtractionSchema as extractionSchema", () => {
+    const step = getStepBySlug("location");
+    expect(step).toBeDefined();
+    expect(step!.extractionSchema).toBeDefined();
+    // Verify it accepts a valid location extraction payload
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access -- extractionSchema typed as any for heterogeneity
+    const result = step!.extractionSchema.safeParse({
+      locationPreferences: {
+        tiers: [
+          {
+            rank: 1,
+            workFormats: ["remote"],
+            scope: { type: "any", include: [] },
+          },
+        ],
+      },
+      confidence: "high",
+      clarificationNeeded: false,
+    });
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access -- extractionSchema typed as any
+    expect(result.success).toBe(true);
+  });
+
+  test("question text references tiers or multiple preferences", () => {
+    const step = getStepBySlug("location");
+    expect(step).toBeDefined();
+    expect(step!.question).toMatch(/tier/i);
+  });
+});
+
+// ─── Company sizes/stages structured options ────────────────────────────────
+
+describe("company sizes and stages options include 'any'", () => {
+  test("company_sizes structured options include 'any'", () => {
+    const step = getStepBySlug("company_sizes");
+    expect(step).toBeDefined();
+    const options = step!.structuredConfig?.options;
+    expect(options).toBeDefined();
+    expect(options!.some((o) => o.value === "any")).toBe(true);
+  });
+
+  test("company_stages structured options include 'any'", () => {
+    const step = getStepBySlug("company_stages");
+    expect(step).toBeDefined();
+    const options = step!.structuredConfig?.options;
+    expect(options).toBeDefined();
+    expect(options!.some((o) => o.value === "any")).toBe(true);
+  });
+});
+
+// ─── Salary step question clarification ─────────────────────────────────────
+
+describe("salary step question", () => {
+  test("includes '(annual, gross)' clarification", () => {
+    const step = getStepBySlug("salary");
+    expect(step).toBeDefined();
+    expect(step!.question).toContain("annual");
+    expect(step!.question).toContain("gross");
+  });
+});

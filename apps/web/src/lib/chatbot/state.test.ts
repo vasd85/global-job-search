@@ -1,5 +1,5 @@
 import type { ConversationState, PreferencesDraft } from "./schemas";
-import { STEPS } from "./steps";
+import { STEPS, getStepIndex } from "./steps";
 import {
   createInitialState,
   applyExtraction,
@@ -409,5 +409,324 @@ describe("applyDefaultWeights", () => {
     const result = applyDefaultWeights(draft);
     expect(result.weightRole).toBe(DEFAULT_WEIGHTS.weightRole);
     expect(result.weightSkills).toBe(DEFAULT_WEIGHTS.weightSkills);
+  });
+});
+
+// ─── advanceStep: editingFromReview behavior ──────────────────────────────
+
+describe("advanceStep: editingFromReview", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(FROZEN_TIME));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("returns to review when editingFromReview is true", () => {
+    const reviewIndex = getStepIndex("review");
+    const state = stateAtStep(2, { editingFromReview: true });
+    const result = advanceStep(state);
+    expect(result.currentStepIndex).toBe(reviewIndex);
+    expect(result.status).toBe("review");
+  });
+
+  test("clears editingFromReview flag after returning to review", () => {
+    const state = stateAtStep(2, { editingFromReview: true });
+    const result = advanceStep(state);
+    expect(result.editingFromReview).toBeUndefined();
+  });
+
+  test("advances normally when editingFromReview is absent", () => {
+    const state = stateAtStep(2);
+    const result = advanceStep(state);
+    expect(result.currentStepIndex).toBe(3);
+  });
+
+  test("advances normally when editingFromReview is explicitly undefined", () => {
+    const state = stateAtStep(2, { editingFromReview: undefined });
+    const result = advanceStep(state);
+    expect(result.currentStepIndex).toBe(3);
+  });
+
+  test("uses getStepIndex('review') result for target index", () => {
+    const reviewIndex = getStepIndex("review");
+    const state = stateAtStep(5, { editingFromReview: true });
+    const result = advanceStep(state);
+    expect(result.currentStepIndex).toBe(reviewIndex);
+  });
+
+  test("updates the timestamp when returning to review", () => {
+    const oldTime = "2026-01-01T12:00:00.000Z";
+    const state = stateAtStep(2, {
+      editingFromReview: true,
+      updatedAt: oldTime,
+    });
+    const result = advanceStep(state);
+    expect(result.updatedAt).toBe(FROZEN_TIME);
+    expect(result.updatedAt).not.toBe(oldTime);
+  });
+});
+
+// ─── advanceStep: editingFromReview corner case ───────────────────────────
+
+describe("advanceStep: editingFromReview corner case", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(FROZEN_TIME));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("returns to review even when status is in_progress (flag is authority)", () => {
+    // The advanceStep function only checks state.editingFromReview,
+    // not state.status. If something sets the flag incorrectly on an
+    // in_progress state, advanceStep still jumps to review.
+    const state = stateAtStep(2, {
+      status: "in_progress",
+      editingFromReview: true,
+    });
+    const result = advanceStep(state);
+    expect(result.currentStepIndex).toBe(getStepIndex("review"));
+    expect(result.status).toBe("review");
+  });
+});
+
+// ─── goToStep: editingFromReview flag setting ─────────────────────────────
+
+describe("goToStep: editingFromReview", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(FROZEN_TIME));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("from review to non-review step sets editingFromReview: true", () => {
+    const state = stateAtStep(16, { status: "review" });
+    const result = goToStep(state, "core_skills");
+    expect(result.editingFromReview).toBe(true);
+    expect(result.status).toBe("in_progress");
+    expect(result.currentStepIndex).toBe(2);
+  });
+
+  test("from review to review step does NOT set editingFromReview", () => {
+    const state = stateAtStep(16, { status: "review" });
+    const result = goToStep(state, "review");
+    expect(result.editingFromReview).toBeUndefined();
+    expect(result.status).toBe("review");
+  });
+
+  test("from in_progress status does NOT set editingFromReview", () => {
+    const state = stateAtStep(0, { status: "in_progress" });
+    const result = goToStep(state, "core_skills");
+    expect(result.editingFromReview).toBeUndefined();
+  });
+
+  test("from in_progress to review sets status without editingFromReview", () => {
+    const state = stateAtStep(0, { status: "in_progress" });
+    const result = goToStep(state, "review");
+    expect(result.status).toBe("review");
+    expect(result.editingFromReview).toBeUndefined();
+  });
+
+  test("unknown slug returns state unchanged (no editingFromReview leak)", () => {
+    const state = stateAtStep(16, { status: "review" });
+    const result = goToStep(state, "nonexistent");
+    expect(result).toBe(state);
+    expect(result.editingFromReview).toBeUndefined();
+  });
+});
+
+// ─── validateDraft: locationPreferences special case ──────────────────────
+
+describe("validateDraft: locationPreferences", () => {
+  // Base draft with all required fields except locationPreferences
+  const baseDraft: PreferencesDraft = {
+    targetTitles: ["SWE"],
+    targetSeniority: ["senior"],
+    coreSkills: ["JS"],
+    industries: ["fintech"],
+    companySizes: ["startup"],
+  };
+
+  test("treats locationPreferences with empty tiers as missing", () => {
+    const result = validateDraft({
+      ...baseDraft,
+      locationPreferences: { tiers: [] },
+    });
+    expect(result.missingRequired).toContain("location");
+  });
+
+  test("accepts locationPreferences with at least one tier", () => {
+    const result = validateDraft({
+      ...baseDraft,
+      locationPreferences: {
+        tiers: [
+          {
+            rank: 1,
+            workFormats: ["remote"],
+            scope: { type: "any", include: [] },
+          },
+        ],
+      },
+    });
+    expect(result.missingRequired).not.toContain("location");
+  });
+
+  test("treats locationPreferences without tiers property as missing", () => {
+    const result = validateDraft({
+      ...baseDraft,
+      // Cast needed: simulating corrupt state where tiers key is absent
+      locationPreferences: {} as PreferencesDraft["locationPreferences"],
+    });
+    expect(result.missingRequired).toContain("location");
+  });
+
+  // TODO: A flat array in locationPreferences (old-style data) passes
+  // validation because the typeof-object/isArray check rejects it, then
+  // it falls through to the array check which sees a non-empty array.
+  // This is a false-negative: semantically invalid data passes as valid.
+  test("locationPreferences as array (wrong shape) is not flagged as missing", () => {
+    const draft = {
+      ...baseDraft,
+      locationPreferences: ["NYC", "London"],
+    };
+    const result = validateDraft(
+      draft as unknown as PreferencesDraft,
+    );
+    // Falls through typeof-object check (arrays are objects but
+    // Array.isArray rejects), then the generic array check sees
+    // length > 0, so it is NOT flagged as missing.
+    expect(result.missingRequired).not.toContain("location");
+  });
+
+  test("locationPreferences as non-object string does not crash", () => {
+    const draft = {
+      ...baseDraft,
+      locationPreferences: "NYC",
+    };
+    const result = validateDraft(
+      draft as unknown as PreferencesDraft,
+    );
+    // typeof "NYC" === "string", so the object check fails.
+    // Then Array.isArray("NYC") is false, so it is NOT flagged.
+    expect(result.missingRequired).not.toContain("location");
+  });
+});
+
+// ─── deserializeState: lenient fallback ───────────────────────────────────
+
+describe("deserializeState: lenient fallback", () => {
+  test("returns parsed data when schema is valid", () => {
+    const raw = {
+      currentStepIndex: 0,
+      draft: {},
+      completedSteps: [],
+      status: "in_progress",
+      createdAt: "2026-01-15T12:00:00.000Z",
+      updatedAt: "2026-01-15T12:00:00.000Z",
+    };
+    const result = deserializeState(raw);
+    expect(result.currentStepIndex).toBe(0);
+    expect(result.status).toBe("in_progress");
+    // Parsed through Zod, not raw reference
+    expect(result).not.toBe(raw);
+  });
+
+  test("returns raw value as-is when schema validation fails", () => {
+    const corrupt = {
+      currentStepIndex: "not a number",
+      draft: {},
+    };
+    const consoleSpy = vi
+      .spyOn(console, "warn")
+      .mockImplementation(() => {});
+    const result = deserializeState(corrupt);
+    expect(result).toBe(corrupt);
+    consoleSpy.mockRestore();
+  });
+
+  test("logs warning message containing 'schema mismatch'", () => {
+    const corrupt = { currentStepIndex: "bad" };
+    const consoleSpy = vi
+      .spyOn(console, "warn")
+      .mockImplementation(() => {});
+    deserializeState(corrupt);
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining("schema mismatch"),
+      expect.any(String),
+    );
+    consoleSpy.mockRestore();
+  });
+
+  test("falls back for future enum values not in current schema", () => {
+    const futureState = {
+      currentStepIndex: 0,
+      draft: {},
+      completedSteps: [],
+      status: "paused", // future value not in ConversationStatus
+      createdAt: "2026-01-15T12:00:00.000Z",
+      updatedAt: "2026-01-15T12:00:00.000Z",
+    };
+    const consoleSpy = vi
+      .spyOn(console, "warn")
+      .mockImplementation(() => {});
+    const result = deserializeState(futureState);
+    // safeParse fails, returns raw cast
+    expect(result).toBe(futureState);
+    expect(consoleSpy).toHaveBeenCalled();
+    consoleSpy.mockRestore();
+  });
+
+  test.each([null, "hello", 42])(
+    "falls back for completely non-object input: %s",
+    (input) => {
+      const consoleSpy = vi
+        .spyOn(console, "warn")
+        .mockImplementation(() => {});
+      const result = deserializeState(input);
+      // Returns raw as ConversationState regardless
+      expect(result).toBe(input);
+      expect(consoleSpy).toHaveBeenCalled();
+      consoleSpy.mockRestore();
+    },
+  );
+
+  test("preserves editingFromReview field when schema is valid", () => {
+    const raw = {
+      currentStepIndex: 2,
+      draft: {},
+      completedSteps: [],
+      status: "in_progress",
+      editingFromReview: true,
+      createdAt: "2026-01-15T12:00:00.000Z",
+      updatedAt: "2026-01-15T12:00:00.000Z",
+    };
+    const result = deserializeState(raw);
+    expect(result.editingFromReview).toBe(true);
+  });
+
+  test("fallback returns structurally invalid data (crash-at-use tradeoff)", () => {
+    const corrupt = {
+      draft: null,
+      currentStepIndex: -5,
+      completedSteps: "not an array",
+    };
+    const consoleSpy = vi
+      .spyOn(console, "warn")
+      .mockImplementation(() => {});
+    const result = deserializeState(corrupt);
+    // Does not throw at deserialization time
+    expect(result).toBe(corrupt);
+    // But downstream usage would crash:
+    // e.g., result.draft.targetTitles -> TypeError: Cannot read properties of null
+    expect(result.draft).toBeNull();
+    consoleSpy.mockRestore();
   });
 });

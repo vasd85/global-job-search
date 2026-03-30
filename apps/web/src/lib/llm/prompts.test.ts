@@ -172,3 +172,267 @@ describe("system prompts", () => {
     expect(system).toContain("NEVER invent");
   });
 });
+
+// ─── Location extraction guidance ───────────────────────────────────────────
+
+describe("buildExtractionPrompt: location guidance", () => {
+  test("includes LOCATION_EXTRACTION_GUIDANCE for location step", () => {
+    const step = getStep("location");
+    const { prompt } = buildExtractionPrompt("NYC remote", step, {});
+    expect(prompt).toContain("decompose the user's preferences into ranked tiers");
+    expect(prompt).toContain("scope types");
+  });
+
+  test("does NOT include location guidance for non-location steps", () => {
+    const step = getStep("target_roles");
+    const { prompt } = buildExtractionPrompt("SWE", step, {});
+    expect(prompt).not.toContain("decompose");
+    expect(prompt).not.toContain("ranked tiers");
+  });
+});
+
+// ─── formatDraftContext: locationPreferences rendering ──────────────────────
+
+describe("formatDraftContext: locationPreferences", () => {
+  test("renders locationPreferences as tiered output", () => {
+    const draft: PreferencesDraft = {
+      locationPreferences: {
+        tiers: [
+          {
+            rank: 1,
+            workFormats: ["remote"],
+            scope: { type: "cities", include: ["NYC", "London"] },
+          },
+        ],
+      },
+    };
+    const { prompt } = buildSummaryPrompt(draft);
+    expect(prompt).toContain("locationPreferences:");
+    expect(prompt).toContain("Tier 1:");
+    expect(prompt).toContain("NYC");
+    expect(prompt).toContain("London");
+  });
+
+  test("renders multi-tier preferences with correct rank grouping", () => {
+    const draft: PreferencesDraft = {
+      locationPreferences: {
+        tiers: [
+          {
+            rank: 1,
+            workFormats: ["relocation"],
+            scope: { type: "cities", include: ["NYC"] },
+          },
+          {
+            rank: 1,
+            workFormats: ["remote"],
+            scope: { type: "regions", include: ["EU"] },
+          },
+          {
+            rank: 2,
+            workFormats: ["relocation"],
+            scope: { type: "any", include: [] },
+          },
+        ],
+      },
+    };
+    const { prompt } = buildSummaryPrompt(draft);
+    // Both rank-1 tiers joined by ";" on one line
+    expect(prompt).toContain("Tier 1:");
+    expect(prompt).toContain("Tier 2:");
+    // Verify both rank-1 entries appear in the Tier 1 line
+    const tier1Match = prompt.match(/Tier 1:.*$/m);
+    expect(tier1Match).not.toBeNull();
+    expect(tier1Match![0]).toContain("NYC");
+    expect(tier1Match![0]).toContain("EU");
+  });
+
+  test("renders locationPreferences alongside legacy preferredLocations", () => {
+    const draft: PreferencesDraft = {
+      locationPreferences: {
+        tiers: [
+          {
+            rank: 1,
+            workFormats: ["remote"],
+            scope: { type: "any", include: [] },
+          },
+        ],
+      },
+      preferredLocations: ["NYC"],
+    };
+    const { prompt } = buildSummaryPrompt(draft);
+    expect(prompt).toContain("locationPreferences:");
+    expect(prompt).toContain("preferredLocations: NYC");
+  });
+
+  test("renders 'anywhere' for scope type 'any' with empty include", () => {
+    const draft: PreferencesDraft = {
+      locationPreferences: {
+        tiers: [
+          {
+            rank: 1,
+            workFormats: ["remote"],
+            scope: { type: "any", include: [] },
+          },
+        ],
+      },
+    };
+    const { prompt } = buildSummaryPrompt(draft);
+    expect(prompt).toContain("anywhere");
+  });
+});
+
+// ─── formatLocationTier: preposition and formatting ─────────────────────────
+
+describe("formatLocationTier behavior (via formatDraftContext)", () => {
+  test("uses 'in' preposition for cities scope type", () => {
+    const draft: PreferencesDraft = {
+      locationPreferences: {
+        tiers: [
+          {
+            rank: 1,
+            workFormats: ["onsite"],
+            scope: { type: "cities", include: ["NYC"] },
+          },
+        ],
+      },
+    };
+    const { prompt } = buildSummaryPrompt(draft);
+    expect(prompt).toContain("in NYC");
+  });
+
+  test("uses 'to' preposition for non-cities scope type", () => {
+    const draft: PreferencesDraft = {
+      locationPreferences: {
+        tiers: [
+          {
+            rank: 1,
+            workFormats: ["relocation"],
+            scope: { type: "countries", include: ["USA"] },
+          },
+        ],
+      },
+    };
+    const { prompt } = buildSummaryPrompt(draft);
+    expect(prompt).toContain("to USA");
+  });
+
+  test("includes exclude list in parentheses", () => {
+    const draft: PreferencesDraft = {
+      locationPreferences: {
+        tiers: [
+          {
+            rank: 1,
+            workFormats: ["remote"],
+            scope: { type: "regions", include: ["EU"], exclude: ["Cyprus"] },
+          },
+        ],
+      },
+    };
+    const { prompt } = buildSummaryPrompt(draft);
+    expect(prompt).toContain("(except Cyprus)");
+  });
+
+  test("includes qualitativeConstraint with dash", () => {
+    const draft: PreferencesDraft = {
+      locationPreferences: {
+        tiers: [
+          {
+            rank: 1,
+            workFormats: ["relocation"],
+            scope: { type: "any", include: [] },
+            qualitativeConstraint: "good tech scene",
+          },
+        ],
+      },
+    };
+    const { prompt } = buildSummaryPrompt(draft);
+    // The code uses em dash (—)
+    expect(prompt).toMatch(/[—–-]\s*good tech scene/);
+  });
+
+  test("multiple tiers at same rank with different scope types joined by ';'", () => {
+    const draft: PreferencesDraft = {
+      locationPreferences: {
+        tiers: [
+          {
+            rank: 1,
+            workFormats: ["onsite"],
+            scope: { type: "cities", include: ["NYC"] },
+          },
+          {
+            rank: 1,
+            workFormats: ["remote"],
+            scope: { type: "regions", include: ["EU"] },
+          },
+        ],
+      },
+    };
+    const { prompt } = buildSummaryPrompt(draft);
+    const tier1Match = prompt.match(/Tier 1:.*$/m);
+    expect(tier1Match).not.toBeNull();
+    expect(tier1Match![0]).toContain(";");
+  });
+
+  test("empty workFormats array does not crash", () => {
+    // Schema rejects this via .min(1), but lenient deserialization
+    // could produce this shape. Verify no crash.
+    const draft = {
+      locationPreferences: {
+        tiers: [
+          {
+            rank: 1,
+            workFormats: [],
+            scope: { type: "any", include: [] },
+          },
+        ],
+      },
+    } as unknown as PreferencesDraft;
+    expect(() => buildSummaryPrompt(draft)).not.toThrow();
+  });
+});
+
+// ─── isLocationPreferences type guard (via formatDraftContext) ──────────────
+
+describe("isLocationPreferences type guard", () => {
+  // The guard is not exported directly, but we can test it through
+  // formatDraftContext by observing whether locationPreferences gets
+  // the tiered rendering or falls through to generic rendering.
+
+  test("non-object values fall through to generic rendering", () => {
+    // When isLocationPreferences returns false, the value is rendered
+    // with the generic String() renderer instead of the tiered format.
+    const testValues = [null, undefined, "string", 42] as const;
+    for (const val of testValues) {
+      const draft = { locationPreferences: val } as unknown as PreferencesDraft;
+      const { prompt } = buildSummaryPrompt(draft);
+      // If the guard worked, we'd see "Tier X:", otherwise generic
+      expect(prompt).not.toContain("Tier 1:");
+    }
+  });
+
+  test("object without tiers key falls through to generic rendering", () => {
+    const draft = {
+      locationPreferences: { notTiers: [] },
+    } as unknown as PreferencesDraft;
+    const { prompt } = buildSummaryPrompt(draft);
+    expect(prompt).not.toContain("Tier 1:");
+  });
+
+  test("object where tiers is not an array falls through to generic rendering", () => {
+    const draft = {
+      locationPreferences: { tiers: "not an array" },
+    } as unknown as PreferencesDraft;
+    const { prompt } = buildSummaryPrompt(draft);
+    expect(prompt).not.toContain("Tier 1:");
+  });
+
+  test("array value falls through to generic rendering", () => {
+    const draft = {
+      locationPreferences: ["NYC"],
+    } as unknown as PreferencesDraft;
+    const { prompt } = buildSummaryPrompt(draft);
+    // Arrays are handled by the generic array branch, not the tier branch
+    expect(prompt).not.toContain("Tier 1:");
+    expect(prompt).toContain("locationPreferences: NYC");
+  });
+});

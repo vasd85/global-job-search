@@ -1,6 +1,6 @@
 import type { ConversationState, PreferencesDraft } from "./schemas";
 import type { PreferenceCollectionLlm } from "@/lib/llm/preference-llm";
-import { STEPS } from "./steps";
+import { STEPS, getStepIndex } from "./steps";
 import { DEFAULT_WEIGHTS, validateDraft, goToStep } from "./state";
 import {
   initializeConversation,
@@ -904,5 +904,192 @@ describe("corner case: completed status", () => {
     await expect(
       processMessage(state, '{"something": true}', null),
     ).resolves.toBeDefined();
+  });
+});
+
+// ─── Integration: editingFromReview round-trip via processMessage ──────────
+
+describe("integration: editingFromReview round-trip", () => {
+  const reviewIndex = getStepIndex("review");
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(FROZEN_TIME));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("processMessage on free_text step with editingFromReview returns to review", async () => {
+    const mockLlm = createMockLlm();
+    const extractMock = mockLlm.extractPartialPreferences as ReturnType<
+      typeof vi.fn
+    >;
+    const summarizeMock = mockLlm.summarizeDraft as ReturnType<typeof vi.fn>;
+    summarizeMock.mockResolvedValue("Updated summary...");
+    extractMock.mockResolvedValueOnce({
+      coreSkills: ["TypeScript", "React"],
+      confidence: "high",
+      clarificationNeeded: false,
+    });
+
+    // State at core_skills (index 2) with editingFromReview flag
+    const state = stateAtStep(2, {
+      editingFromReview: true,
+      draft: { targetTitles: ["SWE"], coreSkills: ["JS"] },
+    });
+
+    const result = await processMessage(
+      state,
+      "TypeScript, React",
+      mockLlm,
+    );
+
+    // Should return to review, not advance to step 3
+    expect(result.updatedState.currentStepIndex).toBe(reviewIndex);
+    expect(result.updatedState.status).toBe("review");
+    expect(result.updatedState.editingFromReview).toBeUndefined();
+    // Draft should be updated
+    expect(result.updatedState.draft.coreSkills).toEqual([
+      "TypeScript",
+      "React",
+    ]);
+    // Other draft fields preserved
+    expect(result.updatedState.draft.targetTitles).toEqual(["SWE"]);
+    // summarizeDraft called for review message
+    expect(summarizeMock).toHaveBeenCalled();
+  });
+
+  test("processMessage on structured step with editingFromReview returns to review", async () => {
+    const mockLlm = createMockLlm();
+    const summarizeMock = mockLlm.summarizeDraft as ReturnType<typeof vi.fn>;
+    summarizeMock.mockResolvedValue("Updated summary...");
+
+    // target_seniority is at index 1, structured
+    const state = stateAtStep(1, {
+      editingFromReview: true,
+      draft: { targetTitles: ["SWE"] },
+    });
+
+    const result = await processMessage(
+      state,
+      '{"targetSeniority": ["lead"]}',
+      mockLlm,
+    );
+
+    expect(result.updatedState.currentStepIndex).toBe(reviewIndex);
+    expect(result.updatedState.status).toBe("review");
+    expect(result.updatedState.editingFromReview).toBeUndefined();
+    expect(result.updatedState.draft.targetSeniority).toEqual(["lead"]);
+  });
+
+  test("processMessage skip on step with editingFromReview returns to review", async () => {
+    const mockLlm = createMockLlm();
+    const summarizeMock = mockLlm.summarizeDraft as ReturnType<typeof vi.fn>;
+    summarizeMock.mockResolvedValue("Summary after skip...");
+
+    // growth_skills is at index 3, skippable
+    const state = stateAtStep(3, { editingFromReview: true });
+
+    const result = await processMessage(state, "__SKIP__", mockLlm);
+
+    expect(result.updatedState.currentStepIndex).toBe(reviewIndex);
+    expect(result.updatedState.status).toBe("review");
+  });
+
+  test("clarification on step with editingFromReview does NOT return to review", async () => {
+    const mockLlm = createMockLlm();
+    const extractMock = mockLlm.extractPartialPreferences as ReturnType<
+      typeof vi.fn
+    >;
+    extractMock.mockResolvedValueOnce({
+      targetTitles: [],
+      confidence: "low",
+      clarificationNeeded: true,
+      clarificationQuestion: "Could you be more specific?",
+    });
+
+    // target_roles at index 0, with editingFromReview
+    const state = stateAtStep(0, { editingFromReview: true });
+
+    const result = await processMessage(state, "hmm", mockLlm);
+
+    // Should stay at current step, flag persists
+    expect(result.updatedState.currentStepIndex).toBe(0);
+    expect(result.updatedState.editingFromReview).toBe(true);
+    expect(result.assistantMessage).toBe("Could you be more specific?");
+  });
+});
+
+// ─── Integration: location step as free_text ──────────────────────────────
+
+describe("integration: location step as free_text", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(FROZEN_TIME));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("processMessage on location step invokes LLM extraction", async () => {
+    const mockLlm = createMockLlm();
+    const extractMock = mockLlm.extractPartialPreferences as ReturnType<
+      typeof vi.fn
+    >;
+    extractMock.mockResolvedValueOnce({
+      locationPreferences: {
+        tiers: [
+          {
+            rank: 1,
+            workFormats: ["remote"],
+            scope: { type: "regions", include: ["EU"] },
+          },
+          {
+            rank: 2,
+            workFormats: ["relocation"],
+            scope: { type: "cities", include: ["NYC"] },
+          },
+        ],
+      },
+      confidence: "high",
+      clarificationNeeded: false,
+    });
+
+    // location step is at index 7
+    const state = stateAtStep(7);
+    const result = await processMessage(
+      state,
+      "Remote anywhere in EU, would also relocate to NYC",
+      mockLlm,
+    );
+
+    // LLM extraction should have been called for the free_text step
+    expect(extractMock).toHaveBeenCalledWith({
+      userText: "Remote anywhere in EU, would also relocate to NYC",
+      currentStep: "location",
+      currentDraft: {},
+    });
+
+    // Extraction result with tiers applied to draft
+    expect(result.updatedState.draft.locationPreferences).toEqual({
+      tiers: [
+        {
+          rank: 1,
+          workFormats: ["remote"],
+          scope: { type: "regions", include: ["EU"] },
+        },
+        {
+          rank: 2,
+          workFormats: ["relocation"],
+          scope: { type: "cities", include: ["NYC"] },
+        },
+      ],
+    });
+
+    // Should advance to next step
+    expect(result.updatedState.currentStepIndex).toBe(8);
   });
 });
