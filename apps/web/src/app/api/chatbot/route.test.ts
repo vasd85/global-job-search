@@ -1466,6 +1466,367 @@ describe("POST /api/chatbot/save", () => {
     expect(res.status).toBe(500);
     expect(json.error).toBe("Failed to save preferences");
   });
+
+  // ---- Location preference resolution (R2 scenarios) ----
+
+  describe("location preference resolution", () => {
+    /** Minimal valid draft with required fields for save route. */
+    function makeValidDraft(locationOverrides: Record<string, unknown> = {}) {
+      return {
+        targetTitles: ["QA"],
+        targetSeniority: ["senior"],
+        coreSkills: ["test"],
+        industries: ["fintech"],
+        companySizes: ["startup"],
+        ...locationOverrides,
+      };
+    }
+
+    function setupSaveRoute(draft: Record<string, unknown>) {
+      const state = makeState({ draft });
+      selectResult.push({ id: "conv-1", state: {}, userId: "u1" });
+      deserializeStateMock.mockReturnValue(state);
+      validateDraftMock.mockReturnValue({ valid: true, missingRequired: [] });
+      markCompletedMock.mockReturnValue(makeState({ draft, status: "completed" }));
+    }
+
+    test("multi-tier locationPreferences persists JSONB and derives flat columns", async () => {
+      const locationPreferences = {
+        tiers: [
+          { rank: 1, workFormats: ["remote"], scope: { type: "countries", include: ["US"] } },
+          { rank: 2, workFormats: ["onsite"], scope: { type: "cities", include: ["NYC", "SF"] } },
+        ],
+      };
+      setupSaveRoute(makeValidDraft({ locationPreferences }));
+
+      await savePost(jsonRequest("POST"));
+
+      const profileValues = txInsertValuesCalls[0] as Record<string, unknown>;
+      expect(profileValues.locationPreferences).toEqual(locationPreferences);
+      // Derived flat: remote + onsite across tiers -> "any"
+      expect(profileValues.remotePreference).toBe("any");
+      // Derived locations: all includes flattened
+      expect(profileValues.preferredLocations).toEqual(["US", "NYC", "SF"]);
+    });
+
+    test("legacy draft (no locationPreferences, has preferredLocations) is auto-converted", async () => {
+      setupSaveRoute(makeValidDraft({
+        preferredLocations: ["Israel"],
+        remotePreference: "hybrid_ok",
+        // No locationPreferences field
+      }));
+
+      await savePost(jsonRequest("POST"));
+
+      const profileValues = txInsertValuesCalls[0] as Record<string, unknown>;
+      expect(profileValues.locationPreferences).toEqual({
+        tiers: [
+          {
+            rank: 1,
+            workFormats: ["remote", "hybrid"],
+            scope: { type: "countries", include: ["Israel"] },
+          },
+        ],
+      });
+      expect(profileValues.preferredLocations).toEqual(["Israel"]);
+      expect(profileValues.remotePreference).toBe("hybrid_ok");
+    });
+
+    test("draft with neither locationPreferences nor preferredLocations uses fallback defaults", async () => {
+      setupSaveRoute(makeValidDraft());
+
+      await savePost(jsonRequest("POST"));
+
+      const profileValues = txInsertValuesCalls[0] as Record<string, unknown>;
+      expect(profileValues.locationPreferences).toBeNull();
+      expect(profileValues.preferredLocations).toEqual([]);
+      expect(profileValues.remotePreference).toBe("any");
+    });
+
+    test("when both locationPreferences and legacy fields exist, tiers take precedence", async () => {
+      const locationPreferences = {
+        tiers: [
+          { rank: 1, workFormats: ["remote"], scope: { type: "any", include: [] } },
+        ],
+      };
+      setupSaveRoute(makeValidDraft({
+        locationPreferences,
+        preferredLocations: ["US"],
+        remotePreference: "onsite_ok",
+      }));
+
+      await savePost(jsonRequest("POST"));
+
+      const profileValues = txInsertValuesCalls[0] as Record<string, unknown>;
+      // Uses tiers, not legacy fields
+      expect(profileValues.locationPreferences).toEqual(locationPreferences);
+      // Derived from tiers (empty include -> []), not from legacy ["US"]
+      expect(profileValues.preferredLocations).toEqual([]);
+      // Derived from tiers (remote only -> "remote_only"), not legacy "onsite_ok"
+      expect(profileValues.remotePreference).toBe("remote_only");
+    });
+
+    test("locationPreferences is persisted to BOTH insert values AND onConflictDoUpdate set", async () => {
+      const locationPreferences = {
+        tiers: [
+          { rank: 1, workFormats: ["remote"], scope: { type: "countries", include: ["US"] } },
+        ],
+      };
+      setupSaveRoute(makeValidDraft({ locationPreferences }));
+
+      // Capture the onConflictDoUpdate set calls
+      const onConflictSetCalls: unknown[] = [];
+      txInsert.mockReturnValue({
+        values: vi.fn().mockImplementation((vals: unknown) => {
+          txInsertValuesCalls.push(vals);
+          return {
+            onConflictDoUpdate: vi.fn().mockImplementation((opts: Record<string, unknown>) => {
+              onConflictSetCalls.push(opts.set);
+              return Promise.resolve(undefined);
+            }),
+          };
+        }),
+      });
+
+      await savePost(jsonRequest("POST"));
+
+      // Insert values (first call = userProfiles)
+      const insertValues = txInsertValuesCalls[0] as Record<string, unknown>;
+      expect(insertValues.locationPreferences).toEqual(locationPreferences);
+
+      // onConflictDoUpdate set (first call = userProfiles)
+      const updateSet = onConflictSetCalls[0] as Record<string, unknown>;
+      expect(updateSet.locationPreferences).toEqual(locationPreferences);
+    });
+  });
+});
+
+// ===========================================================================
+// POST /api/chatbot/message -- displayText support (R2)
+// ===========================================================================
+
+describe("POST /api/chatbot/message -- displayText", () => {
+  function setupMessageRoute(messages: Array<{ role: string; content: string }>) {
+    const state = makeState({ currentStepIndex: 1 }); // structured step
+    selectResult.push({ id: "conv-1", state: {}, userId: "u1" });
+    deserializeStateMock.mockReturnValue(state);
+    processMessageMock.mockResolvedValue(
+      makeProcessMessageResult({ messages }),
+    );
+  }
+
+  test("when displayText is provided, persisted user messages use displayText instead of raw message", async () => {
+    const engineMessages = [
+      { role: "user", content: '{"targetSeniority":["senior","lead"]}' },
+      { role: "assistant", content: "Great!" },
+    ];
+    setupMessageRoute(engineMessages);
+
+    await messagePost(
+      jsonRequest("POST", {
+        message: '{"targetSeniority":["senior","lead"]}',
+        displayText: "Senior, Lead",
+      }),
+    );
+
+    // Find the insert call for conversation_messages (array of messages with role)
+    const messagesInsert = insertValuesCalls.find((call) => {
+      if (!Array.isArray(call)) return false;
+      return (
+        call.length === 2 &&
+        (call as Array<Record<string, unknown>>)[0]?.role === "user"
+      );
+    }) as Array<Record<string, unknown>> | undefined;
+
+    expect(messagesInsert).toBeDefined();
+    expect(messagesInsert![0]).toEqual(
+      expect.objectContaining({
+        role: "user",
+        content: "Senior, Lead",
+      }),
+    );
+    expect(messagesInsert![1]).toEqual(
+      expect.objectContaining({
+        role: "assistant",
+        content: "Great!",
+      }),
+    );
+  });
+
+  test("when displayText is NOT provided, persisted user messages use the raw message content", async () => {
+    const engineMessages = [
+      { role: "user", content: "I want to be a QA Engineer" },
+      { role: "assistant", content: "Great!" },
+    ];
+    setupMessageRoute(engineMessages);
+
+    await messagePost(
+      jsonRequest("POST", { message: "I want to be a QA Engineer" }),
+    );
+
+    const messagesInsert = insertValuesCalls.find((call) => {
+      if (!Array.isArray(call)) return false;
+      return (
+        call.length === 2 &&
+        (call as Array<Record<string, unknown>>)[0]?.role === "user"
+      );
+    }) as Array<Record<string, unknown>> | undefined;
+
+    expect(messagesInsert).toBeDefined();
+    expect(messagesInsert![0]).toEqual(
+      expect.objectContaining({
+        role: "user",
+        content: "I want to be a QA Engineer",
+      }),
+    );
+  });
+
+  test("displayText only replaces user messages, not assistant messages", async () => {
+    const engineMessages = [
+      { role: "user", content: '{"data":"value"}' },
+      { role: "assistant", content: "Response" },
+    ];
+    setupMessageRoute(engineMessages);
+
+    await messagePost(
+      jsonRequest("POST", {
+        message: '{"data":"value"}',
+        displayText: "Human text",
+      }),
+    );
+
+    const messagesInsert = insertValuesCalls.find((call) => {
+      if (!Array.isArray(call)) return false;
+      return (
+        call.length === 2 &&
+        (call as Array<Record<string, unknown>>)[0]?.role === "user"
+      );
+    }) as Array<Record<string, unknown>> | undefined;
+
+    expect(messagesInsert).toBeDefined();
+    expect(messagesInsert![0]!.content).toBe("Human text");
+    expect(messagesInsert![1]!.content).toBe("Response");
+  });
+
+  // TODO: Consider whether displayText: "" should be rejected by Zod (add .min(1))
+  // or treated as "no displayText". Currently empty string is falsy, so the raw
+  // message is persisted instead. This is probably fine but undocumented.
+  test('empty string displayText is treated as absent (falsy in JS)', async () => {
+    const engineMessages = [
+      { role: "user", content: '{"skip":true}' },
+      { role: "assistant", content: "Noted." },
+    ];
+    setupMessageRoute(engineMessages);
+
+    await messagePost(
+      jsonRequest("POST", {
+        message: '{"skip":true}',
+        displayText: "",
+      }),
+    );
+
+    const messagesInsert = insertValuesCalls.find((call) => {
+      if (!Array.isArray(call)) return false;
+      return (
+        call.length === 2 &&
+        (call as Array<Record<string, unknown>>)[0]?.role === "user"
+      );
+    }) as Array<Record<string, unknown>> | undefined;
+
+    expect(messagesInsert).toBeDefined();
+    // Empty string displayText is falsy -> raw message is used
+    expect(messagesInsert![0]!.content).toBe('{"skip":true}');
+  });
+
+  test("displayText replaces ALL user messages when engine returns multiple", async () => {
+    const engineMessages = [
+      { role: "user", content: "test" },
+      { role: "assistant", content: "Clarify?" },
+      { role: "user", content: "test" },
+    ];
+    setupMessageRoute(engineMessages);
+
+    await messagePost(
+      jsonRequest("POST", {
+        message: "test",
+        displayText: "Human version",
+      }),
+    );
+
+    const messagesInsert = insertValuesCalls.find((call) => {
+      if (!Array.isArray(call)) return false;
+      return (
+        call.length === 3 &&
+        (call as Array<Record<string, unknown>>)[0]?.role === "user"
+      );
+    }) as Array<Record<string, unknown>> | undefined;
+
+    expect(messagesInsert).toBeDefined();
+    expect(messagesInsert![0]!.content).toBe("Human version");
+    expect(messagesInsert![1]!.content).toBe("Clarify?");
+    expect(messagesInsert![2]!.content).toBe("Human version");
+  });
+
+  // ---- Corner case: displayText with __SKIP__ sentinel ----
+
+  test("__SKIP__ message with displayText -- displayText used for persisted user message", async () => {
+    const state = makeState({ currentStepIndex: 0 }); // free_text step
+    selectResult.push({ id: "conv-1", state: {}, userId: "u1" });
+    deserializeStateMock.mockReturnValue(state);
+
+    const engineMessages = [
+      { role: "user", content: "__SKIP__" },
+      { role: "assistant", content: "Skipped." },
+    ];
+    processMessageMock.mockResolvedValue(
+      makeProcessMessageResult({ messages: engineMessages }),
+    );
+
+    await messagePost(
+      jsonRequest("POST", {
+        message: "__SKIP__",
+        displayText: "Skipped",
+      }),
+    );
+
+    // __SKIP__ should NOT trigger API key fetch
+    expect(getUserAnthropicKeyMock).not.toHaveBeenCalled();
+
+    const messagesInsert = insertValuesCalls.find((call) => {
+      if (!Array.isArray(call)) return false;
+      return (
+        call.length === 2 &&
+        (call as Array<Record<string, unknown>>)[0]?.role === "user"
+      );
+    }) as Array<Record<string, unknown>> | undefined;
+
+    expect(messagesInsert).toBeDefined();
+    expect(messagesInsert![0]!.content).toBe("Skipped");
+  });
+
+  // ---- Corner case: displayText with __EDIT__ sentinel ----
+
+  test("__EDIT__ with displayText -- displayText is irrelevant, edit path persists its own message", async () => {
+    const state = makeState({ currentStepIndex: 3, status: "review" });
+    selectResult.push({ id: "conv-1", state: {}, userId: "u1" });
+    deserializeStateMock.mockReturnValue(state);
+
+    const editedState = makeState({ currentStepIndex: 0, status: "in_progress" });
+    goToStepMock.mockReturnValue(editedState);
+
+    const res = await messagePost(
+      jsonRequest("POST", {
+        message: "__EDIT__:target_roles",
+        displayText: "Edit roles",
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    // The __EDIT__ path persists its own assistant message, not engine messages
+    expect(goToStepMock).toHaveBeenCalledWith(state, "target_roles");
+    // processMessage is NOT called for __EDIT__
+    expect(processMessageMock).not.toHaveBeenCalled();
+  });
 });
 
 // ===========================================================================
