@@ -99,6 +99,9 @@ export function createPreferenceLlm(apiKey: string): PreferenceCollectionLlm {
         prompt,
       });
 
+      if (!result.output) {
+        throw new Error("LLM returned no structured output for extraction");
+      }
       return result.output as Record<string, unknown>;
     },
 

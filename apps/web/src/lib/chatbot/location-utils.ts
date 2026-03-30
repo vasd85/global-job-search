@@ -23,7 +23,7 @@ export function derivePreferredLocations(
 ): string[] {
   const locations = new Set<string>();
   for (const tier of tiers) {
-    for (const loc of tier.scope.include) {
+    for (const loc of tier.scope.include ?? []) {
       locations.add(loc);
     }
   }
