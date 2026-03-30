@@ -19,11 +19,20 @@ export interface ClassificationResult {
   matchedPattern: string | null;
 }
 
+export type SeniorityLevel =
+  | "junior"
+  | "mid"
+  | "senior"
+  | "lead"
+  | "manager"
+  | "director"
+  | "vp";
+
 /**
  * Seniority prefixes stripped from the beginning of job titles.
  * Ordered longest-first so "vice president of" is tried before "vp of", etc.
  */
-const SENIORITY_PREFIXES = [
+export const SENIORITY_PREFIXES = [
   "vice president of",
   "director of",
   "mid-level",
@@ -173,4 +182,56 @@ export function classifyJobMulti(
   }
 
   return best;
+}
+
+/**
+ * Mapping from seniority prefix patterns to canonical seniority levels.
+ * Ordered longest-first to match the SENIORITY_PREFIXES ordering.
+ */
+const SENIORITY_MAP: ReadonlyArray<[string, SeniorityLevel]> = [
+  ["vice president of", "vp"],
+  ["director of", "director"],
+  ["mid-level", "mid"],
+  ["mid level", "mid"],
+  ["principal", "senior"],
+  ["associate", "junior"],
+  ["head of", "director"],
+  ["vp of", "vp"],
+  ["senior", "senior"],
+  ["staff", "senior"],
+  ["chief", "vp"],
+  ["lead", "lead"],
+  ["jr.", "junior"],
+  ["sr.", "senior"],
+  ["jr ", "junior"],
+  ["sr ", "senior"],
+  ["intern ", "junior"],
+  ["junior", "junior"],
+  ["manager", "manager"],
+];
+
+/**
+ * Extract the seniority level from a job title by matching known seniority
+ * prefix patterns. Returns the first matched seniority level, or null if
+ * no seniority marker is detected.
+ *
+ * Uses the same prefix-matching approach as normalizeTitle() -- operates
+ * on the lowercased title and checks for prefix patterns at the start.
+ */
+export function extractSeniority(title: string): SeniorityLevel | null {
+  const lower = title.toLowerCase().trim();
+
+  for (const [pattern, level] of SENIORITY_MAP) {
+    if (lower.startsWith(pattern)) {
+      return level;
+    }
+  }
+
+  // Also check for "manager" anywhere in the title (not just as a prefix)
+  // since titles like "Engineering Manager" have it as a suffix.
+  if (lower.includes("manager")) {
+    return "manager";
+  }
+
+  return null;
 }

@@ -35,8 +35,8 @@ export {
 export { buildJob, dedupeJobs } from "./normalizer/index";
 
 // Classifier
-export type { RoleFamilyDef, ClassificationInput, ClassificationResult } from "./classifier/index";
-export { normalizeTitle, classifyJob, classifyJobMulti } from "./classifier/index";
+export type { RoleFamilyDef, ClassificationInput, ClassificationResult, SeniorityLevel } from "./classifier/index";
+export { SENIORITY_PREFIXES, normalizeTitle, classifyJob, classifyJobMulti, extractSeniority } from "./classifier/index";
 
 // Utils
 export { sha1, sha256 } from "./utils/hash";
