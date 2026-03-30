@@ -137,7 +137,7 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 
-import { searchJobs } from "./filter-pipeline";
+import { searchJobs, normalizeIndustryTerms } from "./filter-pipeline";
 import type { Database } from "@/lib/db";
 import { db } from "@/lib/db";
 
@@ -1399,5 +1399,48 @@ describe("searchJobs -- seniority extraction calls", () => {
 
     // Single call: result is reused for both the seniority filter and result metadata
     expect(extractSeniorityMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// normalizeIndustryTerms
+// ---------------------------------------------------------------------------
+
+describe("normalizeIndustryTerms", () => {
+  test("splits compound labels on '/' and lowercases", () => {
+    const result = normalizeIndustryTerms(["Web3/Blockchain/Crypto"]);
+    expect(result).toEqual(
+      expect.arrayContaining(["web3", "blockchain", "crypto"]),
+    );
+    expect(result).toHaveLength(3);
+  });
+
+  test("lowercases simple terms", () => {
+    expect(normalizeIndustryTerms(["Fintech"])).toEqual(["fintech"]);
+  });
+
+  test("deduplicates across multiple inputs", () => {
+    const result = normalizeIndustryTerms([
+      "Web3/Crypto",
+      "Crypto/DeFi",
+    ]);
+    expect(result.filter((t) => t === "crypto")).toHaveLength(1);
+    expect(result).toEqual(
+      expect.arrayContaining(["web3", "crypto", "defi"]),
+    );
+  });
+
+  test("trims whitespace around parts", () => {
+    const result = normalizeIndustryTerms(["AI / ML / Data"]);
+    expect(result).toEqual(expect.arrayContaining(["ai", "ml", "data"]));
+  });
+
+  test("skips empty segments", () => {
+    const result = normalizeIndustryTerms(["/Fintech/", ""]);
+    expect(result).toEqual(["fintech"]);
+  });
+
+  test("returns empty array for empty input", () => {
+    expect(normalizeIndustryTerms([])).toEqual([]);
   });
 });

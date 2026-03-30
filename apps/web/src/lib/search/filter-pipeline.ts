@@ -160,6 +160,24 @@ function resolveRoleFamilies(
 }
 
 /**
+ * Normalize user industry preferences into tags comparable with company
+ * industry values. Splits compound labels (e.g., "Web3/Blockchain/Crypto")
+ * on "/" delimiter, lowercases, and trims whitespace.
+ */
+export function normalizeIndustryTerms(industries: string[]): string[] {
+  const terms = new Set<string>();
+  for (const industry of industries) {
+    for (const part of industry.split("/")) {
+      const normalized = part.trim().toLowerCase();
+      if (normalized.length > 0) {
+        terms.add(normalized);
+      }
+    }
+  }
+  return [...terms];
+}
+
+/**
  * Build SQL WHERE conditions for the pre-filter query.
  * Always filters on status = 'open'. Optionally adds industry overlap
  * and workplace type conditions.
@@ -171,10 +189,13 @@ function buildSqlConditions(
   const conditions: SQL[] = [eq(jobs.status, "open")];
 
   // Raw SQL: Drizzle pg-core lacks an arrayOverlaps operator for text arrays.
-  if (industries.length > 0) {
+  // Industry terms are normalized (split on "/", lowercased) to bridge the
+  // vocabulary gap between chatbot labels and company industry tags.
+  const normalizedIndustries = normalizeIndustryTerms(industries);
+  if (normalizedIndustries.length > 0) {
     conditions.push(
       sql`${companies.industry} && ARRAY[${sql.join(
-        industries.map((i) => sql`${i}`),
+        normalizedIndustries.map((i) => sql`${i}`),
         sql`, `,
       )}]::text[]`,
     );
