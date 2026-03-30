@@ -169,6 +169,7 @@ export const ConversationStateSchema = z.object({
   draft: PreferencesDraftSchema,
   completedSteps: z.array(z.string()),
   status: ConversationStatus,
+  editingFromReview: z.boolean().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });

@@ -54,6 +54,18 @@ export function applyExtraction(
 
 /** Advance to the next step in the sequence. */
 export function advanceStep(state: ConversationState): ConversationState {
+  // If editing from review, return to review instead of advancing sequentially
+  if (state.editingFromReview) {
+    const reviewIndex = getStepIndex("review");
+    return {
+      ...state,
+      currentStepIndex: reviewIndex >= 0 ? reviewIndex : STEPS.length - 1,
+      status: "review",
+      editingFromReview: undefined,
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
   const nextIndex = state.currentStepIndex + 1;
 
   // If we've passed the last step, move to review
@@ -111,10 +123,13 @@ export function goToStep(
   if (index === -1) return state;
 
   const step = STEPS[index];
+  const isReview = step?.slug === "review";
   return {
     ...state,
     currentStepIndex: index,
-    status: step?.slug === "review" ? "review" : "in_progress",
+    status: isReview ? "review" : "in_progress",
+    // Track that this edit originated from review, so advanceStep returns there
+    editingFromReview: !isReview && state.status === "review" ? true : undefined,
     updatedAt: new Date().toISOString(),
   };
 }
