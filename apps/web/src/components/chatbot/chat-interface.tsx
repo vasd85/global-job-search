@@ -302,23 +302,36 @@ export function ChatInterface({ editMode = false }: ChatInterfaceProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Messages area */}
+      {/* Scrollable content area */}
       <div className="flex-1 space-y-3 overflow-y-auto p-4">
-        {transcript.map((msg, i) => (
-          <MessageBubble key={i} role={msg.role} content={msg.content} />
-        ))}
+        {/* In review mode, show the review form in the scrollable area */}
+        {isReview && conversationState ? (
+          <SummaryReview
+            draft={conversationState.draft}
+            onEdit={handleEdit}
+            onSave={handleSave}
+            saving={saving}
+            error={saveError}
+          />
+        ) : (
+          <>
+            {transcript.map((msg, i) => (
+              <MessageBubble key={i} role={msg.role} content={msg.content} />
+            ))}
 
-        {/* Loading indicator */}
-        {loading && (
-          <div className="flex justify-start">
-            <div className="rounded-2xl bg-zinc-100 px-4 py-3 dark:bg-zinc-800">
-              <div className="flex items-center gap-1.5">
-                <div className="h-2 w-2 animate-bounce rounded-full bg-zinc-400 [animation-delay:0ms]" />
-                <div className="h-2 w-2 animate-bounce rounded-full bg-zinc-400 [animation-delay:150ms]" />
-                <div className="h-2 w-2 animate-bounce rounded-full bg-zinc-400 [animation-delay:300ms]" />
+            {/* Loading indicator */}
+            {loading && (
+              <div className="flex justify-start">
+                <div className="rounded-2xl bg-zinc-100 px-4 py-3 dark:bg-zinc-800">
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-2 w-2 animate-bounce rounded-full bg-zinc-400 [animation-delay:0ms]" />
+                    <div className="h-2 w-2 animate-bounce rounded-full bg-zinc-400 [animation-delay:150ms]" />
+                    <div className="h-2 w-2 animate-bounce rounded-full bg-zinc-400 [animation-delay:300ms]" />
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
+            )}
+          </>
         )}
 
         <div ref={messagesEndRef} />
@@ -331,21 +344,11 @@ export function ChatInterface({ editMode = false }: ChatInterfaceProps) {
         </div>
       )}
 
-      {/* Controls area */}
-      <div className="border-t border-zinc-200 p-4 dark:border-zinc-800">
-        {/* Review mode */}
-        {isReview && conversationState && (
-          <SummaryReview
-            draft={conversationState.draft}
-            onEdit={handleEdit}
-            onSave={handleSave}
-            saving={saving}
-            error={saveError}
-          />
-        )}
+      {/* Controls area (not shown in review mode) */}
+      {!isReview && <div className="border-t border-zinc-200 p-4 dark:border-zinc-800">
 
-        {/* Structured controls for non-review steps */}
-        {!isReview && structuredControls && (
+        {/* Structured controls */}
+        {structuredControls && (
           <div className="mb-3">
             <StructuredControls
               config={structuredControls}
@@ -357,7 +360,7 @@ export function ChatInterface({ editMode = false }: ChatInterfaceProps) {
         )}
 
         {/* Text input for free-text / hybrid steps */}
-        {showTextInput && !isReview && (
+        {showTextInput && (
           <form onSubmit={handleSubmit} className="flex items-end gap-2">
             <textarea
               ref={textareaRef}
@@ -390,7 +393,7 @@ export function ChatInterface({ editMode = false }: ChatInterfaceProps) {
         )}
 
         {/* Skip button for skippable steps */}
-        {!isReview && isSkippable && (
+        {isSkippable && (
           <button
             type="button"
             onClick={handleSkip}
@@ -400,7 +403,7 @@ export function ChatInterface({ editMode = false }: ChatInterfaceProps) {
             Skip this step
           </button>
         )}
-      </div>
+      </div>}
     </div>
   );
 }
