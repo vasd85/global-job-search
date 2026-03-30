@@ -35,7 +35,7 @@ export default async function OnboardingPage() {
       </header>
 
       {/* Chat area */}
-      <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col">
+      <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col min-h-0">
         <ChatInterface editMode={hasCompletedPreferences} />
       </main>
     </div>
