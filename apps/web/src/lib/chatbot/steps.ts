@@ -157,9 +157,9 @@ export const STEPS: ConversationStep[] = [
   {
     slug: "salary",
     fields: ["minSalary", "targetSalary", "salaryCurrency"],
-    question: "What are your salary expectations?",
+    question: "What are your salary expectations (annual, gross)?",
     helpText:
-      "Enter your minimum acceptable salary, your target salary, and the currency. Leave blank if you prefer not to specify.",
+      "Enter your minimum acceptable and target annual gross salary, and the currency. Leave blank if you prefer not to specify.",
     required: false,
     skippable: true,
     inputType: "structured",
