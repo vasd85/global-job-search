@@ -41,7 +41,6 @@ describe("SearchQuerySchema", () => {
       [{ limit: 2.5 }, "numeric float limit"],
       [{ limit: "2.5" }, "string float limit"],
       [{ offset: 1.1 }, "numeric float offset"],
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     ])("%s (%s)", (input, _desc) => {
       const result = SearchQuerySchema.safeParse(input);
       expect(result.success).toBe(false);
@@ -65,7 +64,6 @@ describe("SearchQuerySchema", () => {
       [{ limit: "abc" }, "alphabetic string"],
       [{ limit: "NaN" }, "NaN string"],
       [{ limit: "" }, "empty string"],
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     ])("%s (%s)", (input, _desc) => {
       const result = SearchQuerySchema.safeParse(input);
       expect(result.success).toBe(false);
