@@ -185,8 +185,9 @@ export const userProfiles = pgTable("user_profile", {
   avoidSkills: text("avoid_skills").array(),
   yearsExperience: integer("years_experience"),
 
-  preferredLocations: text("preferred_locations").array(),
-  remotePreference: text("remote_preference").default("any"), // remote_only | hybrid_ok | onsite_ok | any
+  locationPreferences: jsonb("location_preferences"), // LocationPreferences JSONB (ranked tiers)
+  preferredLocations: text("preferred_locations").array(), // derived from locationPreferences tiers
+  remotePreference: text("remote_preference").default("any"), // derived from locationPreferences tiers — remote_only | hybrid_ok | onsite_ok | any
   minSalary: integer("min_salary"),
   targetSalary: integer("target_salary"),
   salaryCurrency: text("salary_currency").default("USD"),
@@ -359,3 +360,36 @@ export const userCompanyPreferences = pgTable("user_company_preference", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// ─── conversation_state ────────────────────────────────────────────────────
+
+export const conversationStates = pgTable("conversation_state", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id")
+    .notNull()
+    .unique() // one active conversation per user
+    .references(() => user.id, { onDelete: "cascade" }),
+  state: jsonb("state").notNull(), // ConversationState JSONB (draft, currentStepIndex, completedSteps, status)
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ─── conversation_message ──────────────────────────────────────────────────
+
+export const conversationMessages = pgTable(
+  "conversation_message",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    conversationStateId: uuid("conversation_state_id")
+      .notNull()
+      .references(() => conversationStates.id, { onDelete: "cascade" }),
+    role: text("role").notNull(), // user | assistant | system
+    content: text("content").notNull(),
+    metadata: jsonb("metadata"), // structured controls config, extraction results, etc.
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("conversation_message_state_idx").on(table.conversationStateId),
+    index("conversation_message_created_idx").on(table.conversationStateId, table.createdAt),
+  ]
+);
