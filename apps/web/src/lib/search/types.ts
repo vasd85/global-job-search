@@ -1,14 +1,3 @@
-import type { RoleFamilyDef } from "@gjs/ats-core";
-
-/** Resolved filter context derived from the user's profile and preferences. */
-export interface SearchFilters {
-  roleFamilies: RoleFamilyDef[];
-  targetSeniority: string[] | null;
-  remotePreference: string;
-  preferredLocations: string[];
-  preferredIndustries: string[];
-}
-
 /** A single job result with classification metadata. */
 export interface SearchResultJob {
   // Job fields from DB

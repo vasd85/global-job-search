@@ -236,12 +236,14 @@ async function processInBatches(
 
       if (classified.score < CLASSIFICATION_THRESHOLD) continue;
 
+      // Seniority extraction (reused for both filter and result metadata)
+      const seniority = extractSeniority(row.title);
+
       // Seniority filter
       if (targetSeniority.length > 0) {
-        const detected = extractSeniority(row.title);
         // Pass jobs with no seniority marker (could be any level) or
         // where detected seniority overlaps with user's target
-        if (detected !== null && !targetSeniority.includes(detected)) {
+        if (seniority !== null && !targetSeniority.includes(seniority)) {
           continue;
         }
       }
@@ -258,8 +260,6 @@ async function processInBatches(
         );
         if (!locationMatch) continue;
       }
-
-      const seniority = extractSeniority(row.title);
 
       allPassing.push({
         id: row.id,

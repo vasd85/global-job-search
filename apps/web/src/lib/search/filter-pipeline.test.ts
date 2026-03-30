@@ -1317,7 +1317,7 @@ describe("searchJobs -- data shape edge cases", () => {
 // ---------------------------------------------------------------------------
 
 describe("searchJobs -- database failures", () => {
-  test("DB error during batch fetch propagates", async () => {
+  test("DB error during profile load propagates", async () => {
     setupStandardFlow({
       batches: [],
     });
@@ -1379,15 +1379,11 @@ describe("searchJobs -- database failures", () => {
 });
 
 // ---------------------------------------------------------------------------
-// extractSeniority called twice per passing job (Nice-to-have)
+// extractSeniority called once per passing job (result reused)
 // ---------------------------------------------------------------------------
 
 describe("searchJobs -- seniority extraction calls", () => {
-  // TODO: extractSeniority is called twice per passing job: once during the
-  // seniority filter (line 241) and once when building the result object
-  // (line 262). The result from the filter check could be reused to avoid
-  // the redundant call. Not a correctness issue but a minor inefficiency.
-  test("extractSeniority is called twice per passing job when seniority filter is active", async () => {
+  test("extractSeniority is called once per passing job (result reused for filter and metadata)", async () => {
     setupStandardFlow({
       profile: { targetSeniority: ["senior"] },
       batches: [[makeCandidateRow()]],
@@ -1401,7 +1397,7 @@ describe("searchJobs -- seniority extraction calls", () => {
       defaultPagination,
     );
 
-    // Once during filter check + once during result building = 2 calls
-    expect(extractSeniorityMock).toHaveBeenCalledTimes(2);
+    // Single call: result is reused for both the seniority filter and result metadata
+    expect(extractSeniorityMock).toHaveBeenCalledTimes(1);
   });
 });
