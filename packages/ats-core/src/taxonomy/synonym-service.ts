@@ -116,5 +116,5 @@ export function canonicalize(
   const reverseLookup = buildReverseLookup(groups);
   const key = term.toLowerCase();
   const group = reverseLookup.get(key);
-  return group ? group.canonical : key;
+  return group ? group.canonical.toLowerCase() : key;
 }

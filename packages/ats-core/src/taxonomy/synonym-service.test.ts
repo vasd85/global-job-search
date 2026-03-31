@@ -73,6 +73,17 @@ describe("canonicalize", () => {
   test("handles empty groups array", () => {
     expect(canonicalize([], "crypto")).toBe("crypto");
   });
+
+  test("lowercases even if canonical is mixed-case in data", () => {
+    const groups: SynonymGroup[] = [
+      {
+        canonical: "FinTech",
+        synonyms: ["fintech", "financial_technology"],
+        umbrellaKey: null,
+      },
+    ];
+    expect(canonicalize(groups, "financial_technology")).toBe("fintech");
+  });
 });
 
 // ---------------------------------------------------------------------------
