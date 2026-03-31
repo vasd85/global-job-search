@@ -48,5 +48,7 @@ docs/
 .claude/worktrees/
 .claude/scratchpads/
 
-# Scraper pipeline (local only)
+# User specific files
 qa-jobs-scrapper/
+sql-scripts/
+docs/
