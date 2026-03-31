@@ -72,6 +72,25 @@ export function geoMatch(
     }
   }
 
+  // City-scoped tier guard: when a tier has city names but NO country codes,
+  // it is city-scoped and must not leak to country-level matching. A user who
+  // selected city = Berlin should not match all jobs in Germany.
+  const isCityScoped =
+    resolved.resolvedCityNames.size > 0 &&
+    resolved.resolvedCountryCodes.size === 0;
+  if (isCityScoped) {
+    // Skip country-level matching -- only city names and unresolved fallback apply
+    if (resolved.unresolvedEntries.length > 0 && locationRaw) {
+      const haystack = locationRaw.toLowerCase();
+      for (const needle of resolved.unresolvedEntries) {
+        if (wordBoundaryMatch(haystack, needle.toLowerCase())) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   // Country-level matching (hierarchy-aware)
   if (parsed.countryCode !== null) {
     if (resolved.resolvedCountryCodes.has(parsed.countryCode)) {
