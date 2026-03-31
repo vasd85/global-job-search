@@ -217,6 +217,7 @@ describe("GET /api/search -- happy path", () => {
           classificationFamily: "qa_testing",
           classificationMatchType: "strong",
           detectedSeniority: null,
+          matchedLocationTier: null,
         },
       ],
       total: 1,
@@ -234,6 +235,10 @@ describe("GET /api/search -- happy path", () => {
     expect(body.hasMore).toBe(false);
     expect(Array.isArray(body.jobs)).toBe(true);
     expect((body.jobs as unknown[]).length).toBe(1);
+    // matchedLocationTier is included in the serialized response
+    const firstJob = (body.jobs as Record<string, unknown>[])[0];
+    expect(firstJob).toHaveProperty("matchedLocationTier");
+    expect(firstJob.matchedLocationTier).toBeNull();
   });
 
   test("searchJobs is called with correct profile ID and pagination", async () => {
@@ -244,6 +249,42 @@ describe("GET /api/search -- happy path", () => {
       "profile-1",
       { limit: 10, offset: 20 },
     );
+  });
+
+  test("matchedLocationTier with numeric value is propagated in response", async () => {
+    const mockResponse = makeSearchResponse({
+      jobs: [
+        {
+          id: "job-2",
+          title: "Backend Engineer",
+          url: "https://example.com/jobs/2",
+          applyUrl: null,
+          locationRaw: "Berlin, Germany",
+          departmentRaw: "Engineering",
+          workplaceType: "hybrid",
+          salaryRaw: null,
+          firstSeenAt: new Date("2025-06-15T12:00:00Z"),
+          lastSeenAt: new Date("2025-06-20T12:00:00Z"),
+          companyName: "Acme",
+          companySlug: "acme",
+          companyIndustry: ["fintech"],
+          classificationScore: 0.85,
+          classificationFamily: "backend",
+          classificationMatchType: "strong",
+          detectedSeniority: "senior",
+          matchedLocationTier: 2,
+        },
+      ],
+      total: 1,
+      hasMore: false,
+    });
+    searchJobsMock.mockResolvedValueOnce(mockResponse);
+
+    const { status, body } = await getJsonResponse();
+
+    expect(status).toBe(200);
+    const firstJob = (body.jobs as Record<string, unknown>[])[0];
+    expect(firstJob.matchedLocationTier).toBe(2);
   });
 });
 

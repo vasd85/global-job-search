@@ -7,12 +7,16 @@
 const {
   classifyJobMultiMock,
   extractSeniorityMock,
+  resolveAllTiersMock,
+  matchJobToTiersMock,
   queryResults,
   batchResults,
   selectCallCount,
 } = vi.hoisted(() => {
   const classifyJobMultiMock = vi.fn();
   const extractSeniorityMock = vi.fn();
+  const resolveAllTiersMock = vi.fn();
+  const matchJobToTiersMock = vi.fn();
   // Queue for simple select queries (profile, companyPrefs, roleFamilies).
   const queryResults: unknown[][] = [];
   // Queue for batch-fetch queries.
@@ -23,6 +27,8 @@ const {
   return {
     classifyJobMultiMock,
     extractSeniorityMock,
+    resolveAllTiersMock,
+    matchJobToTiersMock,
     queryResults,
     batchResults,
     selectCallCount,
@@ -78,6 +84,10 @@ vi.mock("@gjs/ats-core", () => ({
   classifyJobMulti: (...args: unknown[]) => classifyJobMultiMock(...args),
   // eslint-disable-next-line @typescript-eslint/no-unsafe-return
   extractSeniority: (...args: unknown[]) => extractSeniorityMock(...args),
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+  resolveAllTiers: (...args: unknown[]) => resolveAllTiersMock(...args),
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+  matchJobToTiers: (...args: unknown[]) => matchJobToTiersMock(...args),
 }));
 
 // ---------------------------------------------------------------------------
@@ -261,6 +271,11 @@ beforeEach(() => {
 
   // Default seniority: null (no seniority marker)
   extractSeniorityMock.mockReturnValue(null);
+
+  // Default geo mocks: no tiers resolved (location filter skipped)
+  resolveAllTiersMock.mockReturnValue([]);
+  // Default: all jobs pass location filter
+  matchJobToTiersMock.mockReturnValue({ passes: true, matchedTier: null });
 });
 
 // ---------------------------------------------------------------------------
@@ -533,6 +548,8 @@ describe("searchJobs -- in-memory classification filter", () => {
     expect(result.jobs[0].classificationScore).toBe(0.8);
     expect(result.jobs[0].classificationFamily).toBe("qa_testing");
     expect(result.jobs[0].classificationMatchType).toBe("strong");
+    // No location tiers configured in default profile, so matchedLocationTier is null
+    expect(result.jobs[0].matchedLocationTier).toBeNull();
   });
 
   test("department exclusion causes score 0 -- job is excluded", async () => {
@@ -656,21 +673,376 @@ describe("searchJobs -- seniority filter", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Location Filter
+// Location Filter (structured geo matching via resolveAllTiers / matchJobToTiers)
 // ---------------------------------------------------------------------------
 
-describe("searchJobs -- location filter", () => {
-  test("location substring match passes the filter", async () => {
+describe("searchJobs -- location tier resolution", () => {
+  test("profile with valid locationPreferences resolves tiers via resolveAllTiers", async () => {
+    const tiers = [
+      {
+        rank: 1,
+        workFormats: ["remote"],
+        scope: { type: "countries", include: ["US"] },
+      },
+    ];
+    const resolvedTier = { rank: 1, countries: new Set(["US"]) };
+    resolveAllTiersMock.mockReturnValue([resolvedTier]);
+    matchJobToTiersMock.mockReturnValue({ passes: true, matchedTier: 1 });
+
+    setupStandardFlow({
+      profile: { locationPreferences: { tiers } },
+      batches: [[makeCandidateRow()]],
+    });
+
+    await searchJobs(
+      db as unknown as Database,
+      "profile-1",
+      defaultPagination,
+    );
+
+    expect(resolveAllTiersMock).toHaveBeenCalledWith(tiers);
+  });
+
+  test("profile with null locationPreferences skips resolveAllTiers", async () => {
+    setupStandardFlow({
+      profile: { locationPreferences: null },
+      batches: [[makeCandidateRow()]],
+    });
+
+    await searchJobs(
+      db as unknown as Database,
+      "profile-1",
+      defaultPagination,
+    );
+
+    expect(resolveAllTiersMock).not.toHaveBeenCalled();
+  });
+
+  test("profile with undefined locationPreferences skips resolveAllTiers", async () => {
+    setupStandardFlow({
+      // locationPreferences key is absent from the profile object
+      batches: [[makeCandidateRow()]],
+    });
+
+    await searchJobs(
+      db as unknown as Database,
+      "profile-1",
+      defaultPagination,
+    );
+
+    expect(resolveAllTiersMock).not.toHaveBeenCalled();
+  });
+
+  test("locationPreferences with unexpected shape (no tiers key) degrades gracefully", async () => {
+    setupStandardFlow({
+      profile: { locationPreferences: { wrongKey: [] } },
+      batches: [[makeCandidateRow()]],
+    });
+
+    const result = await searchJobs(
+      db as unknown as Database,
+      "profile-1",
+      defaultPagination,
+    );
+
+    expect(resolveAllTiersMock).not.toHaveBeenCalled();
+    // No location filtering -- job passes through
+    expect(result.jobs.length).toBe(1);
+  });
+
+  test("locationPreferences with empty tiers array calls resolveAllTiers", async () => {
+    resolveAllTiersMock.mockReturnValue([]);
+
+    setupStandardFlow({
+      profile: { locationPreferences: { tiers: [] } },
+      batches: [[makeCandidateRow()]],
+    });
+
+    await searchJobs(
+      db as unknown as Database,
+      "profile-1",
+      defaultPagination,
+    );
+
+    expect(resolveAllTiersMock).toHaveBeenCalledWith([]);
+    // Empty resolved tiers means no location filter
+    expect(matchJobToTiersMock).not.toHaveBeenCalled();
+  });
+
+  test("locationPreferences with null tiers skips resolveAllTiers", async () => {
+    setupStandardFlow({
+      profile: { locationPreferences: { tiers: null } },
+      batches: [[makeCandidateRow()]],
+    });
+
+    const result = await searchJobs(
+      db as unknown as Database,
+      "profile-1",
+      defaultPagination,
+    );
+
+    expect(resolveAllTiersMock).not.toHaveBeenCalled();
+    expect(result.jobs.length).toBe(1);
+  });
+
+  test("locationPreferences is a string (non-object JSONB) degrades gracefully", async () => {
+    setupStandardFlow({
+      profile: { locationPreferences: "remote" },
+      batches: [[makeCandidateRow()]],
+    });
+
+    const result = await searchJobs(
+      db as unknown as Database,
+      "profile-1",
+      defaultPagination,
+    );
+
+    // "remote".tiers is undefined, so resolvedTiers is []
+    expect(resolveAllTiersMock).not.toHaveBeenCalled();
+    expect(result.jobs.length).toBe(1);
+  });
+
+  test("locationPreferences is an array (non-object JSONB) degrades gracefully", async () => {
     setupStandardFlow({
       profile: {
-        remotePreference: "hybrid_ok",
-        preferredLocations: ["United States"],
+        locationPreferences: [
+          { rank: 1, workFormats: [], scope: { type: "any", include: [] } },
+        ],
       },
+      batches: [[makeCandidateRow()]],
+    });
+
+    const result = await searchJobs(
+      db as unknown as Database,
+      "profile-1",
+      defaultPagination,
+    );
+
+    // Array.tiers is undefined, so resolvedTiers is []
+    expect(resolveAllTiersMock).not.toHaveBeenCalled();
+    expect(result.jobs.length).toBe(1);
+  });
+});
+
+describe("searchJobs -- location filter (processInBatches)", () => {
+  const resolvedTier = { rank: 1, countries: new Set(["US"]) };
+
+  function setupWithLocationTiers(
+    overrides: {
+      profile?: Record<string, unknown>;
+      batches?: Array<Array<Record<string, unknown>>>;
+    } = {},
+  ) {
+    const tiers = [
+      {
+        rank: 1,
+        workFormats: ["remote"],
+        scope: { type: "countries", include: ["US"] },
+      },
+    ];
+    resolveAllTiersMock.mockReturnValue([resolvedTier]);
+
+    setupStandardFlow({
+      profile: { locationPreferences: { tiers }, ...overrides.profile },
+      batches: overrides.batches ?? [[makeCandidateRow()]],
+    });
+  }
+
+  test("matchJobToTiers returns passes:true -- job is included with tier rank", async () => {
+    setupWithLocationTiers();
+    matchJobToTiersMock.mockReturnValue({ passes: true, matchedTier: 1 });
+
+    const result = await searchJobs(
+      db as unknown as Database,
+      "profile-1",
+      defaultPagination,
+    );
+
+    expect(result.jobs.length).toBe(1);
+    expect(result.jobs[0].matchedLocationTier).toBe(1);
+  });
+
+  test("matchJobToTiers returns passes:false -- job is excluded", async () => {
+    setupWithLocationTiers();
+    matchJobToTiersMock.mockReturnValue({ passes: false, matchedTier: null });
+
+    const result = await searchJobs(
+      db as unknown as Database,
+      "profile-1",
+      defaultPagination,
+    );
+
+    expect(result.jobs).toEqual([]);
+    expect(result.total).toBe(0);
+  });
+
+  test("empty resolvedTiers skips location filter -- matchJobToTiers not called", async () => {
+    resolveAllTiersMock.mockReturnValue([]);
+    setupStandardFlow({
+      profile: { locationPreferences: { tiers: [] } },
+      batches: [[makeCandidateRow()]],
+    });
+
+    const result = await searchJobs(
+      db as unknown as Database,
+      "profile-1",
+      defaultPagination,
+    );
+
+    expect(matchJobToTiersMock).not.toHaveBeenCalled();
+    expect(result.jobs.length).toBe(1);
+    expect(result.jobs[0].matchedLocationTier).toBeNull();
+  });
+
+  test("matchJobToTiers receives correct arguments from the row", async () => {
+    setupWithLocationTiers({
       batches: [
         [
           makeCandidateRow({
-            locationRaw: "San Francisco, CA, United States",
+            locationRaw: "Berlin, Germany",
+            workplaceType: "hybrid",
           }),
+        ],
+      ],
+    });
+    matchJobToTiersMock.mockReturnValue({ passes: true, matchedTier: 1 });
+
+    await searchJobs(
+      db as unknown as Database,
+      "profile-1",
+      defaultPagination,
+    );
+
+    expect(matchJobToTiersMock).toHaveBeenCalledWith(
+      "Berlin, Germany",
+      "hybrid",
+      [resolvedTier],
+    );
+  });
+
+  test("job with null locationRaw -- matchJobToTiers receives null", async () => {
+    setupWithLocationTiers({
+      batches: [[makeCandidateRow({ locationRaw: null })]],
+    });
+    matchJobToTiersMock.mockReturnValue({ passes: true, matchedTier: null });
+
+    const result = await searchJobs(
+      db as unknown as Database,
+      "profile-1",
+      defaultPagination,
+    );
+
+    expect(matchJobToTiersMock).toHaveBeenCalledWith(
+      null,
+      "remote",
+      [resolvedTier],
+    );
+    expect(result.jobs.length).toBe(1);
+    expect(result.jobs[0].matchedLocationTier).toBeNull();
+  });
+
+  test("job with null workplaceType -- pipeline passes null to matchJobToTiers", async () => {
+    setupWithLocationTiers({
+      batches: [
+        [
+          makeCandidateRow({
+            locationRaw: "London, UK",
+            workplaceType: null,
+          }),
+        ],
+      ],
+    });
+    matchJobToTiersMock.mockReturnValue({ passes: true, matchedTier: 1 });
+
+    await searchJobs(
+      db as unknown as Database,
+      "profile-1",
+      defaultPagination,
+    );
+
+    expect(matchJobToTiersMock).toHaveBeenCalledWith(
+      "London, UK",
+      null,
+      [resolvedTier],
+    );
+  });
+
+  test("multiple tiers -- matchedTier reflects the matching tier rank", async () => {
+    const tier1 = { rank: 1, countries: new Set(["DE"]) };
+    const tier2 = { rank: 2, countries: new Set(["GB"]) };
+    const tier3 = { rank: 3, countries: new Set(["US"]) };
+    resolveAllTiersMock.mockReturnValue([tier1, tier2, tier3]);
+
+    setupStandardFlow({
+      profile: {
+        locationPreferences: {
+          tiers: [
+            {
+              rank: 1,
+              workFormats: ["onsite"],
+              scope: { type: "countries", include: ["DE"] },
+            },
+            {
+              rank: 2,
+              workFormats: ["hybrid"],
+              scope: { type: "countries", include: ["GB"] },
+            },
+            {
+              rank: 3,
+              workFormats: ["remote"],
+              scope: { type: "countries", include: ["US"] },
+            },
+          ],
+        },
+      },
+      batches: [[makeCandidateRow()]],
+    });
+    // Matched tier 2, not tier 1
+    matchJobToTiersMock.mockReturnValue({ passes: true, matchedTier: 2 });
+
+    const result = await searchJobs(
+      db as unknown as Database,
+      "profile-1",
+      defaultPagination,
+    );
+
+    expect(result.jobs[0].matchedLocationTier).toBe(2);
+  });
+
+  test("matchedLocationTier can be any positive integer (tier rank 5)", async () => {
+    resolveAllTiersMock.mockReturnValue([{ rank: 5 }]);
+
+    setupStandardFlow({
+      profile: {
+        locationPreferences: {
+          tiers: [
+            {
+              rank: 5,
+              workFormats: ["remote"],
+              scope: { type: "any", include: [] },
+            },
+          ],
+        },
+      },
+      batches: [[makeCandidateRow()]],
+    });
+    matchJobToTiersMock.mockReturnValue({ passes: true, matchedTier: 5 });
+
+    const result = await searchJobs(
+      db as unknown as Database,
+      "profile-1",
+      defaultPagination,
+    );
+
+    expect(result.jobs[0].matchedLocationTier).toBe(5);
+  });
+
+  test("matchedLocationTier is present in all result jobs (never undefined)", async () => {
+    setupStandardFlow({
+      batches: [
+        [
+          makeCandidateRow({ id: "job-1" }),
+          makeCandidateRow({ id: "job-2" }),
         ],
       ],
     });
@@ -681,22 +1053,140 @@ describe("searchJobs -- location filter", () => {
       defaultPagination,
     );
 
-    expect(result.jobs.length).toBe(1);
+    for (const job of result.jobs) {
+      expect(job).toHaveProperty("matchedLocationTier");
+      // Must be number | null, never undefined
+      expect(
+        job.matchedLocationTier === null ||
+          typeof job.matchedLocationTier === "number",
+      ).toBe(true);
+    }
   });
+});
 
-  test("location does NOT match -- job is excluded", async () => {
+describe("searchJobs -- location filter error handling", () => {
+  test("resolveAllTiers throws -- error propagates from searchJobs", async () => {
+    resolveAllTiersMock.mockImplementation(() => {
+      throw new Error("invalid tier structure");
+    });
+
     setupStandardFlow({
       profile: {
-        remotePreference: "hybrid_ok",
-        preferredLocations: ["Germany"],
+        locationPreferences: {
+          tiers: [
+            {
+              rank: 1,
+              workFormats: ["remote"],
+              scope: { type: "countries", include: ["US"] },
+            },
+          ],
+        },
       },
-      batches: [
-        [
-          makeCandidateRow({
-            locationRaw: "San Francisco, CA, United States",
-          }),
-        ],
-      ],
+      batches: [[makeCandidateRow()]],
+    });
+
+    await expect(
+      searchJobs(db as unknown as Database, "profile-1", defaultPagination),
+    ).rejects.toThrow("invalid tier structure");
+  });
+
+  test("matchJobToTiers throws -- error propagates from processInBatches", async () => {
+    resolveAllTiersMock.mockReturnValue([{ rank: 1 }]);
+    matchJobToTiersMock.mockImplementation(() => {
+      throw new Error("unexpected location format");
+    });
+
+    setupStandardFlow({
+      profile: {
+        locationPreferences: {
+          tiers: [
+            {
+              rank: 1,
+              workFormats: ["remote"],
+              scope: { type: "countries", include: ["US"] },
+            },
+          ],
+        },
+      },
+      batches: [[makeCandidateRow()]],
+    });
+
+    await expect(
+      searchJobs(db as unknown as Database, "profile-1", defaultPagination),
+    ).rejects.toThrow("unexpected location format");
+  });
+});
+
+describe("searchJobs -- preferredLocations vs locationPreferences", () => {
+  test("both present -- only locationPreferences drives filtering; preferredLocations used in response", async () => {
+    const resolvedTier = { rank: 1, countries: new Set(["DE", "GB"]) };
+    resolveAllTiersMock.mockReturnValue([resolvedTier]);
+    matchJobToTiersMock.mockReturnValue({ passes: true, matchedTier: 1 });
+
+    setupStandardFlow({
+      profile: {
+        preferredLocations: ["Berlin", "London"],
+        locationPreferences: {
+          tiers: [
+            {
+              rank: 1,
+              workFormats: ["remote"],
+              scope: { type: "countries", include: ["DE", "GB"] },
+            },
+          ],
+        },
+      },
+      batches: [[makeCandidateRow()]],
+    });
+
+    const result = await searchJobs(
+      db as unknown as Database,
+      "profile-1",
+      defaultPagination,
+    );
+
+    // Filter was driven by locationPreferences (matchJobToTiers called)
+    expect(matchJobToTiersMock).toHaveBeenCalled();
+    // Response reflects preferredLocations, not resolved tiers
+    expect(result.filters.locations).toEqual(["Berlin", "London"]);
+  });
+
+  test("no locationPreferences and no preferredLocations -- all jobs pass", async () => {
+    setupStandardFlow({
+      profile: {
+        locationPreferences: null,
+        preferredLocations: [],
+      },
+      batches: [[makeCandidateRow()]],
+    });
+
+    const result = await searchJobs(
+      db as unknown as Database,
+      "profile-1",
+      defaultPagination,
+    );
+
+    expect(result.jobs.length).toBe(1);
+    expect(result.filters.locations).toEqual([]);
+  });
+
+  test("location filter rejects all jobs -- produces clean empty response", async () => {
+    resolveAllTiersMock.mockReturnValue([{ rank: 1 }]);
+    matchJobToTiersMock.mockReturnValue({ passes: false, matchedTier: null });
+
+    setupStandardFlow({
+      profile: {
+        locationPreferences: {
+          tiers: [
+            {
+              rank: 1,
+              workFormats: ["onsite"],
+              scope: { type: "countries", include: ["JP"] },
+            },
+          ],
+        },
+      },
+      batches: [[makeCandidateRow()]],
     });
 
     const result = await searchJobs(
@@ -706,137 +1196,8 @@ describe("searchJobs -- location filter", () => {
     );
 
     expect(result.jobs).toEqual([]);
-  });
-
-  test("job with null locationRaw passes through", async () => {
-    setupStandardFlow({
-      profile: {
-        remotePreference: "hybrid_ok",
-        preferredLocations: ["United States"],
-      },
-      batches: [[makeCandidateRow({ locationRaw: null })]],
-    });
-
-    const result = await searchJobs(
-      db as unknown as Database,
-      "profile-1",
-      defaultPagination,
-    );
-
-    expect(result.jobs.length).toBe(1);
-  });
-
-  test("remotePreference 'any' skips location filter entirely", async () => {
-    setupStandardFlow({
-      profile: {
-        remotePreference: "any",
-        preferredLocations: ["Germany"],
-      },
-      batches: [
-        [
-          makeCandidateRow({
-            locationRaw: "New York, NY, United States",
-          }),
-        ],
-      ],
-    });
-
-    const result = await searchJobs(
-      db as unknown as Database,
-      "profile-1",
-      defaultPagination,
-    );
-
-    expect(result.jobs.length).toBe(1);
-  });
-
-  test("empty preferredLocations skips location filter", async () => {
-    setupStandardFlow({
-      profile: {
-        remotePreference: "hybrid_ok",
-        preferredLocations: [],
-      },
-      batches: [[makeCandidateRow({ locationRaw: "Tokyo, Japan" })]],
-    });
-
-    const result = await searchJobs(
-      db as unknown as Database,
-      "profile-1",
-      defaultPagination,
-    );
-
-    expect(result.jobs.length).toBe(1);
-  });
-
-  test("location matching is case-insensitive", async () => {
-    setupStandardFlow({
-      profile: {
-        remotePreference: "hybrid_ok",
-        preferredLocations: ["united states"],
-      },
-      batches: [
-        [
-          makeCandidateRow({
-            locationRaw: "San Francisco, UNITED STATES",
-          }),
-        ],
-      ],
-    });
-
-    const result = await searchJobs(
-      db as unknown as Database,
-      "profile-1",
-      defaultPagination,
-    );
-
-    expect(result.jobs.length).toBe(1);
-  });
-
-  // TODO: Short location strings cause false-positive substring matches.
-  // The pipeline uses simple .includes() matching, so "US" matches
-  // "Campus", "Zeus", etc. A location normalization layer is needed.
-  test("short location string causes false positive substring match", async () => {
-    setupStandardFlow({
-      profile: {
-        remotePreference: "hybrid_ok",
-        preferredLocations: ["US"],
-      },
-      batches: [
-        [makeCandidateRow({ locationRaw: "Campus Location, Austin, TX" })],
-      ],
-    });
-
-    const result = await searchJobs(
-      db as unknown as Database,
-      "profile-1",
-      defaultPagination,
-    );
-
-    // Documents current behavior: "us" is found in "campus"
-    expect(result.jobs.length).toBe(1);
-  });
-
-  // TODO: Same false-positive pattern. "EU" matches "reuters" because
-  // substring matching is too broad for short location codes.
-  test("location preference 'EU' matches 'Reuters' in location", async () => {
-    setupStandardFlow({
-      profile: {
-        remotePreference: "hybrid_ok",
-        preferredLocations: ["EU"],
-      },
-      batches: [
-        [makeCandidateRow({ locationRaw: "Reuters Building, London" })],
-      ],
-    });
-
-    const result = await searchJobs(
-      db as unknown as Database,
-      "profile-1",
-      defaultPagination,
-    );
-
-    // Documents current behavior: "eu" is found in "reuters"
-    expect(result.jobs.length).toBe(1);
+    expect(result.total).toBe(0);
+    expect(result.hasMore).toBe(false);
   });
 });
 
@@ -1064,11 +1425,23 @@ describe("searchJobs -- filter interactions", () => {
   });
 
   test("job passes classification and seniority but fails location", async () => {
+    resolveAllTiersMock.mockReturnValue([
+      { rank: 1, countries: new Set(["DE"]) },
+    ]);
+    matchJobToTiersMock.mockReturnValue({ passes: false, matchedTier: null });
+
     setupStandardFlow({
       profile: {
         targetSeniority: ["senior"],
-        remotePreference: "hybrid_ok",
-        preferredLocations: ["Germany"],
+        locationPreferences: {
+          tiers: [
+            {
+              rank: 1,
+              workFormats: ["hybrid"],
+              scope: { type: "countries", include: ["DE"] },
+            },
+          ],
+        },
       },
       batches: [
         [
@@ -1091,11 +1464,24 @@ describe("searchJobs -- filter interactions", () => {
     expect(result.jobs).toEqual([]);
   });
 
-  test("job passes all in-memory filters", async () => {
+  test("job passes all in-memory filters including location", async () => {
+    resolveAllTiersMock.mockReturnValue([
+      { rank: 1, countries: new Set(["US"]) },
+    ]);
+    matchJobToTiersMock.mockReturnValue({ passes: true, matchedTier: 1 });
+
     setupStandardFlow({
       profile: {
         targetSeniority: ["senior"],
-        remotePreference: "hybrid_ok",
+        locationPreferences: {
+          tiers: [
+            {
+              rank: 1,
+              workFormats: ["remote"],
+              scope: { type: "countries", include: ["US"] },
+            },
+          ],
+        },
         preferredLocations: ["United States"],
       },
       batches: [
@@ -1120,6 +1506,7 @@ describe("searchJobs -- filter interactions", () => {
     expect(result.jobs[0].title).toBe("Senior QA Engineer");
     expect(result.jobs[0].classificationScore).toBe(1.0);
     expect(result.jobs[0].detectedSeniority).toBe("senior");
+    expect(result.jobs[0].matchedLocationTier).toBe(1);
   });
 });
 
@@ -1277,6 +1664,7 @@ describe("searchJobs -- data shape edge cases", () => {
     expect(job.workplaceType).toBeNull();
     expect(job.salaryRaw).toBeNull();
     expect(job.companyIndustry).toBeNull();
+    expect(job.matchedLocationTier).toBeNull();
   });
 
   test("profile with single-element arrays", async () => {

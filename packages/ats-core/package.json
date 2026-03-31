@@ -9,12 +9,14 @@
     "./discovery": "./src/discovery/index.ts",
     "./normalizer": "./src/normalizer/index.ts",
     "./classifier": "./src/classifier/index.ts",
-    "./utils": "./src/utils/index.ts"
+    "./utils": "./src/utils/index.ts",
+    "./geo": "./src/geo/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "vitest"
+    "test": "vitest",
+    "build:city-index": "npx tsx scripts/build-city-index.ts"
   },
   "dependencies": {
     "cheerio": "^1.0.0",

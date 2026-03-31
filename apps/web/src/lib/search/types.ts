@@ -20,6 +20,8 @@ export interface SearchResultJob {
   classificationFamily: string;
   classificationMatchType: string;
   detectedSeniority: string | null;
+  /** Rank of the location preference tier this job matched, or null if no tier-based matching was used. */
+  matchedLocationTier: number | null;
 }
 
 /** Shape of the search API response. */

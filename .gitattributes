@@ -1,0 +1,2 @@
+# Mark generated files to exclude from GitHub stats/diffs
+packages/ats-core/src/geo/city-index.generated.json linguist-generated=true
