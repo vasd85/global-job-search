@@ -177,7 +177,9 @@ function resolveAsTimezone(
 }
 
 /**
- * Resolve entry as a city. Adds both city name and country code.
+ * Resolve entry as a city. Adds city name only (not the country code).
+ * City-scoped tiers must NOT leak to country-wide matching -- a user who
+ * selected city = Berlin should not match all jobs in Germany.
  */
 function resolveAsCity(
   entry: string,
@@ -188,7 +190,6 @@ function resolveAsCity(
   if (cityEntry) {
     if (direction === "include") {
       resolved.resolvedCityNames.add(cityEntry.name);
-      resolved.resolvedCountryCodes.add(cityEntry.countryCode);
     } else {
       resolved.excludedCountryCodes.add(cityEntry.countryCode);
     }
