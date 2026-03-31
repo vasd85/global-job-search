@@ -151,6 +151,11 @@ export function matchJobToTiers(
   workplaceType: string | null,
   resolvedTiers: ResolvedTierGeo[],
 ): LocationMatchResult {
+  // No tiers configured -> no location filter, everything passes
+  if (resolvedTiers.length === 0) {
+    return { passes: true, matchedTier: null };
+  }
+
   // Null/empty locationRaw -> passes (backward compat)
   if (locationRaw === null || locationRaw.trim().length === 0) {
     return { passes: true, matchedTier: null };
