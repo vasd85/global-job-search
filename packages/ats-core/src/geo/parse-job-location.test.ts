@@ -103,18 +103,13 @@ describe("parseJobLocation -- single locations", () => {
     expect(result.confidence).toBe("full");
   });
 
-  test('"Berlin, DE" triggers US state disambiguation because Berlin exists in the US', () => {
+  test('"Berlin, DE" resolves as Berlin, Germany (country preferred over US state)', () => {
     const [result] = parseJobLocation("Berlin, DE");
-    // TODO: BUG in disambiguation logic. DE is both Germany (country) and
-    // Delaware (US state). The disambiguation code checks whether Berlin
-    // exists as a US city (it does -- Berlin, CT/NH/NJ/etc). Since it finds
-    // a US city named Berlin, it falls through to the US state path, resolving
-    // "Berlin, DE" as Berlin, Delaware, USA. This is incorrect for the common
-    // European case. The fix would be to also check if the city exists in the
-    // country (lookupCityInCountry("berlin", "DE") = Berlin, Germany) and
-    // prefer that interpretation when both resolve.
-    expect(result.countryCode).toBe("US");
-    expect(result.stateOrRegion).toBe("DE");
+    // DE is both Germany (country) and Delaware (US state). Since Berlin
+    // exists in Germany, the country interpretation wins.
+    expect(result.countryCode).toBe("DE");
+    expect(result.city?.name).toBe("berlin");
+    expect(result.confidence).toBe("full");
   });
 
   test('"Austin, TX" resolves as US state (TX is not a country)', () => {
@@ -275,13 +270,10 @@ describe("parseJobLocation -- multi-location", () => {
   test('"Berlin, DE, London, UK" compound pattern splits into 2 locations', () => {
     const results = parseJobLocation("Berlin, DE, London, UK");
     expect(results).toHaveLength(2);
-    // The second location should resolve UK -> GB
     const countryCodes = results.map((r) => r.countryCode);
+    // Berlin, DE -> Germany; London, UK -> GB
+    expect(countryCodes).toContain("DE");
     expect(countryCodes).toContain("GB");
-    // TODO: The first location "Berlin, DE" triggers the US state
-    // disambiguation bug (see test above), resolving to US instead of DE.
-    // Once the disambiguation bug is fixed, this should contain "DE".
-    expect(countryCodes[0]).toBe("US");
   });
 
   test("odd-part count does NOT trigger compound: Berlin, DE, London", () => {

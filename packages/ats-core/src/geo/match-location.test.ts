@@ -419,9 +419,9 @@ describe("matchJobToTiers", () => {
 
   // -- Important scenarios --------------------------------------------------
 
-  test("empty resolved tiers array returns passes=false", () => {
+  test("empty resolved tiers array returns passes=true (no filter)", () => {
     const result = matchJobToTiers("Berlin, Germany", "remote", []);
-    expect(result.passes).toBe(false);
+    expect(result.passes).toBe(true);
     expect(result.matchedTier).toBeNull();
   });
 
