@@ -95,28 +95,28 @@ function resolveSingleLocation(
   // 5a. Try country lookup on the rightmost part
   const countryCode = tryCountry(rightmost);
   if (countryCode) {
-    result.countryCode = countryCode;
-    result.countryName = countryNameForCode(countryCode);
-
-    if (parts.length === 3) {
-      // [city, state/region, country]
-      result.city = resolveCityPart(parts[0], countryCode);
-      result.stateOrRegion = parts[1];
-      // Dedup: if stateOrRegion matches city name (e.g., "Berlin, Berlin, Germany")
-      if (result.stateOrRegion.toLowerCase() === parts[0].toLowerCase()) {
-        result.stateOrRegion = null;
+    // 5b. Disambiguate US state / country code collisions (GA, DE, IN, ME, AL, PA).
+    // When a 2-letter code matches both a country AND a US state abbreviation,
+    // and there is a preceding city part that validates as a US city, prefer
+    // the US state interpretation. Same logic for Canadian provinces.
+    const upperRight = rightmost.toUpperCase();
+    if (parts.length >= 2 && upperRight.length === 2) {
+      const cityPart = parts[parts.length - 2];
+      if (isUsState(upperRight) && lookupCityInCountry(cityPart, "US")) {
+        // Fall through to the US state resolution below (step 5c)
+      } else if (
+        isCanadianProvince(upperRight) &&
+        lookupCityInCountry(cityPart, "CA")
+      ) {
+        // Fall through to the Canadian province resolution below (step 5c)
+      } else {
+        // No ambiguity -- use country interpretation
+        return resolveAsCountryMatch(result, parts, countryCode);
       }
-      result.confidence = result.city ? "full" : "partial";
-    } else if (parts.length === 2) {
-      // [city, country]
-      result.city = resolveCityPart(parts[0], countryCode);
-      result.confidence = result.city ? "full" : "partial";
     } else {
-      // 1 part = just a country
-      result.confidence = "full";
+      // No ambiguity possible (single part or code length != 2)
+      return resolveAsCountryMatch(result, parts, countryCode);
     }
-
-    return result;
   }
 
   // 5c. Check if rightmost is a US state abbreviation (2 uppercase letters)
@@ -175,6 +175,39 @@ function resolveSingleLocation(
 
   // Nothing resolved
   result.confidence = "unresolved";
+  return result;
+}
+
+/**
+ * Fill in a ParsedJobLocation when the rightmost part resolved as a country code.
+ * Shared by the country-match path in resolveSingleLocation.
+ */
+function resolveAsCountryMatch(
+  result: ParsedJobLocation,
+  parts: string[],
+  countryCode: string,
+): ParsedJobLocation {
+  result.countryCode = countryCode;
+  result.countryName = countryNameForCode(countryCode);
+
+  if (parts.length === 3) {
+    // [city, state/region, country]
+    result.city = resolveCityPart(parts[0], countryCode);
+    result.stateOrRegion = parts[1];
+    // Dedup: if stateOrRegion matches city name (e.g., "Berlin, Berlin, Germany")
+    if (result.stateOrRegion.toLowerCase() === parts[0].toLowerCase()) {
+      result.stateOrRegion = null;
+    }
+    result.confidence = result.city ? "full" : "partial";
+  } else if (parts.length === 2) {
+    // [city, country]
+    result.city = resolveCityPart(parts[0], countryCode);
+    result.confidence = result.city ? "full" : "partial";
+  } else {
+    // 1 part = just a country
+    result.confidence = "full";
+  }
+
   return result;
 }
 
