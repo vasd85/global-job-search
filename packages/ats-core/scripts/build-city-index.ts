@@ -106,12 +106,36 @@ async function unzipFile(zipPath: string, outPath: string): Promise<void> {
 }
 
 /**
+ * Check if a string is primarily Latin script (including accented Latin chars).
+ * Filters out CJK, Cyrillic, Arabic, Devanagari, etc. which are not useful
+ * for matching ATS location strings (almost always Latin script).
+ */
+function isLatinScript(s: string): boolean {
+  // Allow Basic Latin, Latin Extended, and common punctuation/spaces.
+  // Reject if more than 30% of characters are non-Latin.
+  let nonLatin = 0;
+  for (const ch of s) {
+    const cp = ch.codePointAt(0) ?? 0;
+    // Basic Latin (0-7F), Latin-1 Supplement (80-FF), Latin Extended (100-24F),
+    // Latin Extended Additional (1E00-1EFF), common punctuation, spaces
+    const isLatin =
+      cp <= 0x024f ||
+      (cp >= 0x1e00 && cp <= 0x1eff) ||
+      cp === 0x20 || // space
+      (cp >= 0x2000 && cp <= 0x206f); // general punctuation
+    if (!isLatin) nonLatin++;
+  }
+  return nonLatin / s.length < 0.3;
+}
+
+/**
  * Filter alternate names to useful variants:
  * - Remove empty strings
- * - Remove names that are just numbers (postal codes)
+ * - Remove names that are just numbers (postal codes, IATA, ICAO codes)
  * - Remove very long names (> 80 chars, likely descriptions)
- * - Remove names with special characters that are not useful for matching
+ * - Remove non-Latin script names (CJK, Cyrillic, Arabic, etc.)
  * - Deduplicate and lowercase
+ * - Limit to 5 alternate names per city to keep index size manageable
  */
 function filterAlternateNames(raw: string, canonicalLower: string): string[] {
   if (!raw) return [];
@@ -123,10 +147,14 @@ function filterAlternateNames(raw: string, canonicalLower: string): string[] {
   const parts = raw.split(",");
 
   for (const part of parts) {
+    if (result.length >= 5) break; // Limit alternate names per city
+
     const trimmed = part.trim();
     if (trimmed.length === 0) continue;
     if (trimmed.length > 80) continue;
+    if (trimmed.length <= 2) continue; // Skip IATA/short codes
     if (/^\d+$/.test(trimmed)) continue;
+    if (!isLatinScript(trimmed)) continue;
 
     const lower = trimmed.toLowerCase();
     if (seen.has(lower)) continue;
