@@ -3,7 +3,10 @@ import type { SQL } from "drizzle-orm";
 import {
   classifyJobMulti,
   extractSeniority,
+  resolveAllTiers,
+  matchJobToTiers,
   type RoleFamilyDef,
+  type ResolvedTierGeo,
 } from "@gjs/ats-core";
 import type { Database } from "@/lib/db";
 import {
@@ -85,6 +88,23 @@ export async function searchJobs(
   const preferredLocations = profile.preferredLocations ?? [];
   const familySlugs = matchedFamilies.map((f) => f.slug);
 
+  // Resolve structured location tiers from the JSONB locationPreferences.
+  // If locationPreferences is null/undefined, resolvedTiers is empty (no location filter).
+  const locationPreferences = profile.locationPreferences as {
+    tiers: Array<{
+      rank: number;
+      workFormats: string[];
+      scope: {
+        type: "countries" | "regions" | "timezones" | "cities" | "any";
+        include: string[];
+        exclude?: string[];
+      };
+    }>;
+  } | null;
+  const resolvedTiers = locationPreferences?.tiers
+    ? resolveAllTiers(locationPreferences.tiers)
+    : [];
+
   // 5. Build SQL pre-filter conditions
   const conditions = buildSqlConditions(industries, remotePreference);
 
@@ -95,7 +115,7 @@ export async function searchJobs(
     matchedFamilies,
     targetSeniority,
     remotePreference,
-    preferredLocations,
+    resolvedTiers,
     pagination,
   );
 
@@ -235,8 +255,8 @@ async function processInBatches(
   conditions: SQL[],
   matchedFamilies: RoleFamilyDef[],
   targetSeniority: string[],
-  remotePreference: string,
-  preferredLocations: string[],
+  _remotePreference: string,
+  resolvedTiers: ResolvedTierGeo[],
   pagination: { limit: number; offset: number },
 ): Promise<{ results: SearchResultJob[]; total: number; hasMore: boolean }> {
   const needed = pagination.offset + pagination.limit;
@@ -269,17 +289,16 @@ async function processInBatches(
         }
       }
 
-      // Location filter (only when not "any" and user has location preferences)
-      if (
-        remotePreference !== "any" &&
-        preferredLocations.length > 0 &&
-        row.locationRaw !== null
-      ) {
-        const locationLower = row.locationRaw.toLowerCase();
-        const locationMatch = preferredLocations.some((loc) =>
-          locationLower.includes(loc.toLowerCase()),
+      // Location filter (structured geo matching)
+      let matchedTierRank: number | null = null;
+      if (resolvedTiers.length > 0) {
+        const locationResult = matchJobToTiers(
+          row.locationRaw,
+          row.workplaceType,
+          resolvedTiers,
         );
-        if (!locationMatch) continue;
+        if (!locationResult.passes) continue;
+        matchedTierRank = locationResult.matchedTier;
       }
 
       allPassing.push({
@@ -300,6 +319,7 @@ async function processInBatches(
         classificationFamily: classified.familySlug,
         classificationMatchType: classified.matchType,
         detectedSeniority: seniority,
+        matchedLocationTier: matchedTierRank,
       });
 
       // Once we have one more than needed, we know there are more results

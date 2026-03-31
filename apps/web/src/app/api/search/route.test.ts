@@ -217,6 +217,7 @@ describe("GET /api/search -- happy path", () => {
           classificationFamily: "qa_testing",
           classificationMatchType: "strong",
           detectedSeniority: null,
+          matchedLocationTier: null,
         },
       ],
       total: 1,
