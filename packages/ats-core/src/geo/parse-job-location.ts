@@ -96,21 +96,44 @@ function resolveSingleLocation(
   const countryCode = tryCountry(rightmost);
   if (countryCode) {
     // 5b. Disambiguate US state / country code collisions (GA, DE, IN, ME, AL, PA).
-    // When a 2-letter code matches both a country AND a US state abbreviation,
-    // and there is a preceding city part that validates as a US city, prefer
-    // the US state interpretation. Same logic for Canadian provinces.
+    // A 2-letter code can match both a country AND a US state (or Canadian province).
+    // Check BOTH interpretations:
+    //   - Does the city exist in the matched country? -> prefer country interpretation
+    //   - Does the city only exist in the US/CA? -> prefer state/province interpretation
+    //   - City exists in neither (or both) -> prefer country interpretation
     const upperRight = rightmost.toUpperCase();
     if (parts.length >= 2 && upperRight.length === 2) {
       const cityPart = parts[parts.length - 2];
-      if (isUsState(upperRight) && lookupCityInCountry(cityPart, "US")) {
-        // Fall through to the US state resolution below (step 5c)
-      } else if (
-        isCanadianProvince(upperRight) &&
-        lookupCityInCountry(cityPart, "CA")
-      ) {
-        // Fall through to the Canadian province resolution below (step 5c)
+      const cityExistsInCountry = lookupCityInCountry(cityPart, countryCode);
+
+      if (isUsState(upperRight)) {
+        const cityExistsInUS = lookupCityInCountry(cityPart, "US");
+        if (cityExistsInCountry) {
+          // City exists in the matched country -- prefer country (Berlin, DE -> Germany)
+          return resolveAsCountryMatch(result, parts, countryCode);
+        }
+        if (cityExistsInUS) {
+          // City only exists in the US -- prefer US state (Columbus, OH -> Ohio)
+          // Fall through to the US state resolution below (step 5c)
+        } else {
+          // City exists in neither -- prefer country interpretation
+          return resolveAsCountryMatch(result, parts, countryCode);
+        }
+      } else if (isCanadianProvince(upperRight)) {
+        const cityExistsInCA = lookupCityInCountry(cityPart, "CA");
+        if (cityExistsInCountry) {
+          // City exists in the matched country -- prefer country
+          return resolveAsCountryMatch(result, parts, countryCode);
+        }
+        if (cityExistsInCA) {
+          // City only exists in Canada -- prefer province
+          // Fall through to the Canadian province resolution below (step 5c)
+        } else {
+          // City exists in neither -- prefer country interpretation
+          return resolveAsCountryMatch(result, parts, countryCode);
+        }
       } else {
-        // No ambiguity -- use country interpretation
+        // Code is not a US state or Canadian province -- no ambiguity
         return resolveAsCountryMatch(result, parts, countryCode);
       }
     } else {
