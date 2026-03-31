@@ -90,19 +90,15 @@ export async function searchJobs(
 
   // Resolve structured location tiers from the JSONB locationPreferences.
   // If locationPreferences is null/undefined, resolvedTiers is empty (no location filter).
+  // Runtime guard: JSONB is typed as `unknown` at runtime, so validate that `tiers`
+  // is actually an array before passing to resolveAllTiers. A corrupt value like
+  // `{ tiers: 42 }` would otherwise crash with an unhelpful "map is not a function" error.
   const locationPreferences = profile.locationPreferences as {
-    tiers: Array<{
-      rank: number;
-      workFormats: string[];
-      scope: {
-        type: "countries" | "regions" | "timezones" | "cities" | "any";
-        include: string[];
-        exclude?: string[];
-      };
-    }>;
+    tiers?: unknown;
   } | null;
-  const resolvedTiers = locationPreferences?.tiers
-    ? resolveAllTiers(locationPreferences.tiers)
+  const rawTiers = locationPreferences?.tiers;
+  const resolvedTiers = Array.isArray(rawTiers)
+    ? resolveAllTiers(rawTiers)
     : [];
 
   // 5. Build SQL pre-filter conditions
