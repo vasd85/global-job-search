@@ -43,3 +43,15 @@ export { sha1, sha256 } from "./utils/hash";
 export { normalizeUrl, canonicalizeHttpUrl, sameRegistrableHost } from "./utils/url";
 export { fetchText } from "./utils/http";
 export { normalizeText, htmlToText, mergeTextBlocks } from "./utils/job-text";
+
+// Geo (location matching)
+export type {
+  ParsedJobLocation,
+  ResolvedTierGeo,
+  LocationMatchResult,
+} from "./geo/index";
+export {
+  matchJobToTiers,
+  resolveAllTiers,
+  parseJobLocation,
+} from "./geo/index";
