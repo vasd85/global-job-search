@@ -38,8 +38,17 @@ export async function seedSynonyms(
           },
         });
       upserted++;
-    } catch {
-      skipped++;
+    } catch (err: unknown) {
+      // Only skip on unique constraint violation (expected for idempotent upsert race)
+      if (
+        err instanceof Error &&
+        "code" in err &&
+        (err as Error & { code: string }).code === "23505"
+      ) {
+        skipped++;
+      } else {
+        throw err;
+      }
     }
   }
 
