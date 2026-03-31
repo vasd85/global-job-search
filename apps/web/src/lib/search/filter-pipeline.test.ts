@@ -79,6 +79,15 @@ vi.mock("@/lib/db/schema", () => ({
   roleFamilies: "roleFamilies-table-token",
 }));
 
+// Synonym cache passthrough: returns the input terms deduplicated (matching the
+// real expandTerms contract) so existing tests keep asserting on the
+// split/lowercase behavior without needing DB data.
+vi.mock("@/lib/search/synonym-cache", () => ({
+  expandTerms: vi.fn((_dimension: string, terms: string[]) =>
+    Promise.resolve([...new Set(terms)]),
+  ),
+}));
+
 vi.mock("@gjs/ats-core", () => ({
   // eslint-disable-next-line @typescript-eslint/no-unsafe-return
   classifyJobMulti: (...args: unknown[]) => classifyJobMultiMock(...args),
@@ -1795,20 +1804,20 @@ describe("searchJobs -- seniority extraction calls", () => {
 // ---------------------------------------------------------------------------
 
 describe("normalizeIndustryTerms", () => {
-  test("splits compound labels on '/' and lowercases", () => {
-    const result = normalizeIndustryTerms(["Web3/Blockchain/Crypto"]);
+  test("splits compound labels on '/' and lowercases", async () => {
+    const result = await normalizeIndustryTerms(["Web3/Blockchain/Crypto"]);
     expect(result).toEqual(
       expect.arrayContaining(["web3", "blockchain", "crypto"]),
     );
     expect(result).toHaveLength(3);
   });
 
-  test("lowercases simple terms", () => {
-    expect(normalizeIndustryTerms(["Fintech"])).toEqual(["fintech"]);
+  test("lowercases simple terms", async () => {
+    expect(await normalizeIndustryTerms(["Fintech"])).toEqual(["fintech"]);
   });
 
-  test("deduplicates across multiple inputs", () => {
-    const result = normalizeIndustryTerms([
+  test("deduplicates across multiple inputs", async () => {
+    const result = await normalizeIndustryTerms([
       "Web3/Crypto",
       "Crypto/DeFi",
     ]);
@@ -1818,17 +1827,17 @@ describe("normalizeIndustryTerms", () => {
     );
   });
 
-  test("trims whitespace around parts", () => {
-    const result = normalizeIndustryTerms(["AI / ML / Data"]);
+  test("trims whitespace around parts", async () => {
+    const result = await normalizeIndustryTerms(["AI / ML / Data"]);
     expect(result).toEqual(expect.arrayContaining(["ai", "ml", "data"]));
   });
 
-  test("skips empty segments", () => {
-    const result = normalizeIndustryTerms(["/Fintech/", ""]);
+  test("skips empty segments", async () => {
+    const result = await normalizeIndustryTerms(["/Fintech/", ""]);
     expect(result).toEqual(["fintech"]);
   });
 
-  test("returns empty array for empty input", () => {
-    expect(normalizeIndustryTerms([])).toEqual([]);
+  test("returns empty array for empty input", async () => {
+    expect(await normalizeIndustryTerms([])).toEqual([]);
   });
 });

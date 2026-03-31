@@ -9,6 +9,7 @@ import {
   type ResolvedTierGeo,
 } from "@gjs/ats-core";
 import type { Database } from "@/lib/db";
+import { expandTerms } from "@/lib/search/synonym-cache";
 import {
   jobs,
   companies,
@@ -101,8 +102,8 @@ export async function searchJobs(
     ? resolveAllTiers(rawTiers)
     : [];
 
-  // 5. Build SQL pre-filter conditions
-  const conditions = buildSqlConditions(industries, remotePreference);
+  // 5. Build SQL pre-filter conditions (async: loads synonym cache on first call)
+  const conditions = await buildSqlConditions(industries, remotePreference);
 
   // 6. Batched processing: stream jobs through the classifier
   const { results, total, hasMore } = await processInBatches(
@@ -178,19 +179,23 @@ function resolveRoleFamilies(
 /**
  * Normalize user industry preferences into tags comparable with company
  * industry values. Splits compound labels (e.g., "Web3/Blockchain/Crypto")
- * on "/" delimiter, lowercases, and trims whitespace.
+ * on "/" delimiter, lowercases, trims whitespace, then expands through
+ * the synonym DB to add canonical forms and umbrella-linked synonyms.
  */
-export function normalizeIndustryTerms(industries: string[]): string[] {
-  const terms = new Set<string>();
+export async function normalizeIndustryTerms(
+  industries: string[],
+): Promise<string[]> {
+  const rawTerms: string[] = [];
   for (const industry of industries) {
     for (const part of industry.split("/")) {
       const normalized = part.trim().toLowerCase();
-      if (normalized.length > 0) {
-        terms.add(normalized);
-      }
+      if (normalized.length > 0) rawTerms.push(normalized);
     }
   }
-  return [...terms];
+  if (rawTerms.length === 0) return [];
+  // Expand through synonym DB (adds canonical forms + umbrella synonyms).
+  // expandTerms already deduplicates and lowercases.
+  return expandTerms("industry", rawTerms);
 }
 
 /**
@@ -198,16 +203,17 @@ export function normalizeIndustryTerms(industries: string[]): string[] {
  * Always filters on status = 'open'. Optionally adds industry overlap
  * and workplace type conditions.
  */
-function buildSqlConditions(
+async function buildSqlConditions(
   industries: string[],
   remotePreference: string,
-): SQL[] {
+): Promise<SQL[]> {
   const conditions: SQL[] = [eq(jobs.status, "open")];
 
   // Raw SQL: Drizzle pg-core lacks an arrayOverlaps operator for text arrays.
-  // Industry terms are normalized (split on "/", lowercased) to bridge the
-  // vocabulary gap between chatbot labels and company industry tags.
-  const normalizedIndustries = normalizeIndustryTerms(industries);
+  // Industry terms are normalized (split on "/", lowercased) and expanded
+  // through the synonym DB to bridge the vocabulary gap between chatbot
+  // labels and company industry tags.
+  const normalizedIndustries = await normalizeIndustryTerms(industries);
   if (normalizedIndustries.length > 0) {
     conditions.push(
       sql`${companies.industry} && ARRAY[${sql.join(
