@@ -14,7 +14,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "vitest"
+    "test": "vitest",
+    "build:city-index": "tsx scripts/build-city-index.ts"
   },
   "dependencies": {
     "cheerio": "^1.0.0",
