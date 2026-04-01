@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { createHash } from "node:crypto";
 import type { AllJob, ExtractionResult } from "@gjs/ats-core";
-import { companies, jobs, pollLogs } from "../db/schema";
+import { companies, jobs, pollLogs } from "@gjs/db/schema";
 
 // ---------------------------------------------------------------------------
 // Mock @gjs/ats-core — we control what extractors and helpers return
