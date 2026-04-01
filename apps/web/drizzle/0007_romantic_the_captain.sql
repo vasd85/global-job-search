@@ -1,0 +1,1 @@
+ALTER TABLE "company" ADD COLUMN "last_changed_at" timestamp with time zone;
