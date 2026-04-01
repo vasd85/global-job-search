@@ -83,6 +83,7 @@ function makeFakeCompany(overrides: Record<string, unknown> = {}) {
     consecutiveErrors: 0,
     pollPriority: "daily",
     nextPollAfter: null,
+    lastChangedAt: null,
     jobsCount: 0,
     createdAt: new Date("2025-01-01T12:00:00Z"),
     updatedAt: new Date("2025-01-01T12:00:00Z"),

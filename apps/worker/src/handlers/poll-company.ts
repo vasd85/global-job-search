@@ -60,25 +60,39 @@ export function createPollCompanyHandler(db: Database) {
       );
 
       // 4. Compute adaptive polling schedule
+      const hadChanges = result.jobsNew > 0 || result.jobsClosed > 0;
       const adaptiveResult = computeNextPoll({
         lastPollStatus: result.status,
         consecutiveErrors: company.consecutiveErrors,
         lastPolledAt: company.lastPolledAt,
         createdAt: company.createdAt,
+        lastChangedAt: company.lastChangedAt,
         jobsNew: result.jobsNew,
         jobsClosed: result.jobsClosed,
       });
 
-      // 5. Update company with adaptive polling fields
-      await db
-        .update(companies)
-        .set({
-          nextPollAfter: adaptiveResult.nextPollAfter,
-          pollPriority: adaptiveResult.pollPriority,
-          consecutiveErrors: adaptiveResult.consecutiveErrors,
-          updatedAt: new Date(),
-        })
-        .where(eq(companies.id, companyId));
+      // 5. Update company with adaptive polling fields.
+      // Wrapped in try-catch: if this fails, the poll itself already
+      // succeeded (pollCompany wrote its results). Letting the pg-boss
+      // job succeed avoids a non-idempotent retry that would re-poll.
+      try {
+        await db
+          .update(companies)
+          .set({
+            nextPollAfter: adaptiveResult.nextPollAfter,
+            pollPriority: adaptiveResult.pollPriority,
+            consecutiveErrors: adaptiveResult.consecutiveErrors,
+            ...(hadChanges ? { lastChangedAt: new Date() } : {}),
+            updatedAt: new Date(),
+          })
+          .where(eq(companies.id, companyId));
+      } catch (updateError) {
+        console.error(
+          `[poll-company] Failed to update adaptive fields for ${company.slug}, ` +
+            `poll succeeded but scheduling may be stale:`,
+          updateError
+        );
+      }
     }
   };
 }

@@ -112,6 +112,7 @@ export const companies = pgTable(
     consecutiveErrors: integer("consecutive_errors").notNull().default(0),
     pollPriority: text("poll_priority").notNull().default("daily"), // daily | regular | weekly
     nextPollAfter: timestamp("next_poll_after", { withTimezone: true }),
+    lastChangedAt: timestamp("last_changed_at", { withTimezone: true }), // last time jobs changed during a poll
     jobsCount: integer("jobs_count").notNull().default(0),
 
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

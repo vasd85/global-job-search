@@ -11,6 +11,8 @@ export interface AdaptivePollInput {
   lastPolledAt: Date | null;
   /** When the company record was created */
   createdAt: Date;
+  /** When the company last had job changes detected (null if never) */
+  lastChangedAt: Date | null;
   /** Number of new jobs found in this poll */
   jobsNew: number;
   /** Number of jobs marked closed/stale in this poll */
@@ -103,14 +105,14 @@ export function computeNextPoll(
   }
 
   // No changes -- determine staleness based on time since last change.
-  // We approximate "days since last change" by how long ago the company
-  // was last polled with changes. Since we don't track that date directly,
-  // we use the company age as a proxy for very-stable detection, and fall
-  // through from the "had changes" check above for the stable case.
-  //
-  // If we reach here, no changes occurred in this poll. Check thresholds
-  // based on company age (new companies already handled above).
-  if (companyAgeDays >= VERY_STABLE_THRESHOLD_DAYS) {
+  // Use lastChangedAt to compute days since the company last had job
+  // changes detected. Fall back to createdAt when lastChangedAt is null
+  // (company has never had detected changes).
+  const referenceDate = input.lastChangedAt ?? createdAt;
+  const daysSinceLastChange =
+    (now.getTime() - referenceDate.getTime()) / (1000 * 60 * 60 * 24);
+
+  if (daysSinceLastChange >= VERY_STABLE_THRESHOLD_DAYS) {
     return {
       nextPollAfter: new Date(now.getTime() + HOURS_168),
       pollPriority: "weekly",
@@ -118,7 +120,7 @@ export function computeNextPoll(
     };
   }
 
-  if (companyAgeDays >= STABLE_THRESHOLD_DAYS) {
+  if (daysSinceLastChange >= STABLE_THRESHOLD_DAYS) {
     return {
       nextPollAfter: new Date(now.getTime() + HOURS_72),
       pollPriority: "regular",

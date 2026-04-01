@@ -60,6 +60,7 @@ function makeCompany(overrides: Record<string, unknown> = {}) {
     consecutiveErrors: 0,
     pollPriority: "daily",
     nextPollAfter: new Date("2025-06-15T12:00:00Z"),
+    lastChangedAt: null,
     jobsCount: 42,
     createdAt: new Date("2025-01-01T12:00:00Z"),
     updatedAt: new Date("2025-06-14T12:00:00Z"),
@@ -174,17 +175,19 @@ describe("createPollCompanyHandler(db)", () => {
       consecutiveErrors: 0,
       lastPolledAt: company.lastPolledAt,
       createdAt: company.createdAt,
+      lastChangedAt: company.lastChangedAt,
       jobsNew: 2,
       jobsClosed: 1,
     });
 
-    // DB update called with adaptive fields
+    // DB update called with adaptive fields + lastChangedAt (since poll had changes)
     expect(setCalls).toHaveLength(1);
     expect(setCalls[0]).toEqual(
       expect.objectContaining({
         nextPollAfter: adaptiveOutput.nextPollAfter,
         pollPriority: "daily",
         consecutiveErrors: 0,
+        lastChangedAt: FIXED_NOW,
       })
     );
   });
@@ -293,6 +296,7 @@ describe("createPollCompanyHandler(db)", () => {
       consecutiveErrors: 2,
       lastPolledAt: new Date("2025-06-14T08:00:00Z"),
       createdAt: new Date("2025-03-01T12:00:00Z"),
+      lastChangedAt: null,
       jobsNew: 0,
       jobsClosed: 0,
     });
@@ -433,11 +437,9 @@ describe("createPollCompanyHandler(db)", () => {
     expect(mockPollCompany).not.toHaveBeenCalled();
   });
 
-  test("DB update rejects after successful poll: error propagates", async () => {
-    // TODO: This scenario documents a non-idempotent behavior. If the DB
-    // update fails after pollCompany succeeds, pg-boss will retry the
-    // entire job, causing a duplicate poll. Consider wrapping the update
-    // in a try/catch or making pollCompany idempotent.
+  test("DB update rejects after successful poll: error is caught, job succeeds", async () => {
+    // The adaptive update is wrapped in try-catch so that a failure here
+    // does not cause pg-boss to retry the job (which would re-poll).
     const company = makeCompany();
     const pollResult = makePollResult();
     const adaptiveOutput = makeAdaptiveOutput();
@@ -457,12 +459,19 @@ describe("createPollCompanyHandler(db)", () => {
     mockPollCompany.mockResolvedValue(pollResult);
     mockComputeNextPoll.mockReturnValue(adaptiveOutput);
 
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const handler = createPollCompanyHandler(db);
 
-    await expect(handler([makeJob("company-1")])).rejects.toThrow("disk full");
+    // Should resolve (not reject) -- the error is caught and logged
+    await expect(handler([makeJob("company-1")])).resolves.toBeUndefined();
 
-    // pollCompany was already called (the side effect occurred)
+    // pollCompany was still called (the poll itself succeeded)
     expect(mockPollCompany).toHaveBeenCalledOnce();
+    // The error was logged
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Failed to update adaptive fields"),
+      expect.any(Error)
+    );
   });
 
   test("job data with undefined companyId: falls into company-not-found branch", async () => {

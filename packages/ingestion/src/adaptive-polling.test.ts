@@ -20,9 +20,10 @@ function makeInput(overrides: Partial<AdaptivePollInput> = {}): AdaptivePollInpu
     consecutiveErrors: 0,
     // TODO: lastPolledAt is accepted in AdaptivePollInput but never read
     // by computeNextPoll(). Consider removing from the interface or using
-    // it for a "days since last change" heuristic.
+    // it for a future heuristic.
     lastPolledAt: NOW,
     createdAt: new Date(NOW.getTime() - 60 * DAY_MS), // 60 days old by default
+    lastChangedAt: null, // null = never had changes, falls back to createdAt
     jobsNew: 0,
     jobsClosed: 0,
     ...overrides,
