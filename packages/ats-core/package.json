@@ -10,7 +10,8 @@
     "./normalizer": "./src/normalizer/index.ts",
     "./classifier": "./src/classifier/index.ts",
     "./utils": "./src/utils/index.ts",
-    "./geo": "./src/geo/index.ts"
+    "./geo": "./src/geo/index.ts",
+    "./taxonomy": "./src/taxonomy/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

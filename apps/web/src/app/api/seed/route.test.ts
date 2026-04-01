@@ -17,11 +17,17 @@ vi.mock("@/lib/ingestion/seed-companies", () => ({
   TEST_SEED_COMPANIES: [{ name: "Mock Co", ats_vendor: "greenhouse", ats_slug: "mock" }],
 }));
 
+vi.mock("@/lib/ingestion/seed-synonyms", () => ({
+  seedSynonyms: vi.fn(),
+}));
+
 // Re-import after mock registration so the module binds to the mock.
 import { seedCompanies, TEST_SEED_COMPANIES } from "@/lib/ingestion/seed-companies";
+import { seedSynonyms } from "@/lib/ingestion/seed-synonyms";
 import { POST } from "./route";
 
 const seedCompaniesMock = seedCompanies as ReturnType<typeof vi.fn>;
+const seedSynonymsMock = seedSynonyms as ReturnType<typeof vi.fn>;
 
 // ---- Helpers ---------------------------------------------------------------
 
@@ -36,6 +42,7 @@ const adminSession = { user: { id: "u1", role: "admin" }, session: {} };
 beforeEach(() => {
   vi.clearAllMocks();
   getSessionMock.mockResolvedValue(adminSession);
+  seedSynonymsMock.mockResolvedValue({ upserted: 0, skipped: 0 });
 });
 
 // ---- Tests -----------------------------------------------------------------
@@ -57,8 +64,9 @@ describe("POST /api/seed", () => {
     expect(res.status).toBe(403);
   });
 
-  test("calls seedCompanies with db and TEST_SEED_COMPANIES", async () => {
+  test("calls seedCompanies and seedSynonyms with db", async () => {
     seedCompaniesMock.mockResolvedValueOnce({ inserted: 3, skipped: 1 });
+    seedSynonymsMock.mockResolvedValueOnce({ upserted: 15, skipped: 0 });
 
     await POST(adminRequest());
 
@@ -66,10 +74,12 @@ describe("POST /api/seed", () => {
       expect.anything(), // db
       TEST_SEED_COMPANIES
     );
+    expect(seedSynonymsMock).toHaveBeenCalledWith(expect.anything());
   });
 
   test("returns 200 with success, counts, and formatted message", async () => {
     seedCompaniesMock.mockResolvedValueOnce({ inserted: 5, skipped: 2 });
+    seedSynonymsMock.mockResolvedValueOnce({ upserted: 10, skipped: 5 });
 
     const res = await POST(adminRequest());
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
@@ -78,20 +88,21 @@ describe("POST /api/seed", () => {
     expect(res.status).toBe(200);
     expect(json).toEqual({
       success: true,
-      inserted: 5,
-      skipped: 2,
-      message: "Seeded 5 companies (2 skipped)",
+      companies: { inserted: 5, skipped: 2 },
+      synonyms: { upserted: 10, skipped: 5 },
+      message: "Seeded 5 companies (2 skipped), 10 synonym groups (5 skipped)",
     });
   });
 
   test("formats message correctly when zero companies are inserted", async () => {
     seedCompaniesMock.mockResolvedValueOnce({ inserted: 0, skipped: 4 });
+    seedSynonymsMock.mockResolvedValueOnce({ upserted: 0, skipped: 15 });
 
     const res = await POST(adminRequest());
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const json: Record<string, unknown> = await res.json();
 
-    expect(json.message).toBe("Seeded 0 companies (4 skipped)");
+    expect(json.message).toBe("Seeded 0 companies (4 skipped), 0 synonym groups (15 skipped)");
   });
 
   test.each([
@@ -101,6 +112,7 @@ describe("POST /api/seed", () => {
     "returns 500 with success: false when seedCompanies throws %s",
     async (_label, thrown, expectedMsg) => {
       seedCompaniesMock.mockRejectedValueOnce(thrown);
+      seedSynonymsMock.mockResolvedValueOnce({ upserted: 0, skipped: 0 });
 
       const res = await POST(adminRequest());
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment

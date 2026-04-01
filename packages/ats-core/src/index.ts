@@ -55,3 +55,7 @@ export {
   resolveAllTiers,
   parseJobLocation,
 } from "./geo/index";
+
+// Taxonomy (synonym expansion)
+export type { SynonymGroup } from "./taxonomy/index";
+export { expandTerms, canonicalize } from "./taxonomy/index";

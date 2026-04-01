@@ -43,6 +43,13 @@
       "when": 1774535924789,
       "tag": "0005_solid_the_fallen",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1774969055958,
+      "tag": "0006_strange_yellowjacket",
+      "breakpoints": true
     }
   ]
 }

@@ -79,6 +79,15 @@ vi.mock("@/lib/db/schema", () => ({
   roleFamilies: "roleFamilies-table-token",
 }));
 
+// Synonym cache passthrough: returns the input terms deduplicated (matching the
+// real expandTerms contract) so existing tests keep asserting on the
+// split/lowercase behavior without needing DB data.
+vi.mock("@/lib/search/synonym-cache", () => ({
+  expandTerms: vi.fn((_dimension: string, terms: string[]) =>
+    Promise.resolve([...new Set(terms)]),
+  ),
+}));
+
 vi.mock("@gjs/ats-core", () => ({
   // eslint-disable-next-line @typescript-eslint/no-unsafe-return
   classifyJobMulti: (...args: unknown[]) => classifyJobMultiMock(...args),
@@ -1795,20 +1804,20 @@ describe("searchJobs -- seniority extraction calls", () => {
 // ---------------------------------------------------------------------------
 
 describe("normalizeIndustryTerms", () => {
-  test("splits compound labels on '/' and lowercases", () => {
-    const result = normalizeIndustryTerms(["Web3/Blockchain/Crypto"]);
+  test("splits compound labels on '/' and lowercases", async () => {
+    const result = await normalizeIndustryTerms(["Web3/Blockchain/Crypto"]);
     expect(result).toEqual(
       expect.arrayContaining(["web3", "blockchain", "crypto"]),
     );
     expect(result).toHaveLength(3);
   });
 
-  test("lowercases simple terms", () => {
-    expect(normalizeIndustryTerms(["Fintech"])).toEqual(["fintech"]);
+  test("lowercases simple terms", async () => {
+    expect(await normalizeIndustryTerms(["Fintech"])).toEqual(["fintech"]);
   });
 
-  test("deduplicates across multiple inputs", () => {
-    const result = normalizeIndustryTerms([
+  test("deduplicates across multiple inputs", async () => {
+    const result = await normalizeIndustryTerms([
       "Web3/Crypto",
       "Crypto/DeFi",
     ]);
@@ -1818,17 +1827,336 @@ describe("normalizeIndustryTerms", () => {
     );
   });
 
-  test("trims whitespace around parts", () => {
-    const result = normalizeIndustryTerms(["AI / ML / Data"]);
+  test("trims whitespace around parts", async () => {
+    const result = await normalizeIndustryTerms(["AI / ML / Data"]);
     expect(result).toEqual(expect.arrayContaining(["ai", "ml", "data"]));
   });
 
-  test("skips empty segments", () => {
-    const result = normalizeIndustryTerms(["/Fintech/", ""]);
+  test("skips empty segments", async () => {
+    const result = await normalizeIndustryTerms(["/Fintech/", ""]);
     expect(result).toEqual(["fintech"]);
   });
 
-  test("returns empty array for empty input", () => {
-    expect(normalizeIndustryTerms([])).toEqual([]);
+  test("returns empty array for empty input", async () => {
+    expect(await normalizeIndustryTerms([])).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// normalizeIndustryTerms -- synonym expansion integration
+//
+// These tests override the passthrough synonym-cache mock with realistic
+// synonym data to verify the split-then-expand pipeline works correctly.
+// ---------------------------------------------------------------------------
+
+describe("normalizeIndustryTerms -- synonym expansion", () => {
+  // Access the already-mocked expandTerms from the synonym-cache mock (lines 85-89).
+  // We use vi.mocked + dynamic import resolved at top-level to get a typed mock handle.
+  let expandTermsMock: ReturnType<typeof vi.fn>;
+
+  beforeAll(async () => {
+    const mod = await import("@/lib/search/synonym-cache");
+    expandTermsMock = vi.mocked(mod.expandTerms) as unknown as ReturnType<typeof vi.fn>;
+  });
+
+  test("compound label is split, then each part is expanded through synonyms", async () => {
+    expandTermsMock.mockResolvedValueOnce([
+      "crypto",
+      "cryptocurrency",
+      "bitcoin",
+      "digital_currency",
+      "web3",
+      "blockchain",
+      "defi",
+      "decentralized_finance",
+      "exchange",
+      "crypto_exchange",
+      "digital_exchange",
+    ]);
+
+    const result = await normalizeIndustryTerms(["Cryptocurrency/Blockchain"]);
+
+    expect(result).toHaveLength(11);
+    expect(result).toEqual(
+      expect.arrayContaining([
+        "crypto",
+        "cryptocurrency",
+        "web3",
+        "blockchain",
+        "defi",
+        "exchange",
+      ]),
+    );
+  });
+
+  test('expandTerms is called with dimension "industry" and lowercased terms', async () => {
+    expandTermsMock.mockResolvedValueOnce(["fintech"]);
+
+    await normalizeIndustryTerms(["Fintech"]);
+
+    expect(expandTermsMock).toHaveBeenCalledWith("industry", ["fintech"]);
+  });
+
+  test("empty input short-circuits without calling expandTerms", async () => {
+    expandTermsMock.mockClear();
+
+    const result = await normalizeIndustryTerms([]);
+
+    expect(result).toEqual([]);
+    expect(expandTermsMock).not.toHaveBeenCalled();
+  });
+
+  test("all-whitespace/slash-only input short-circuits without calling expandTerms", async () => {
+    expandTermsMock.mockClear();
+
+    const result = await normalizeIndustryTerms(["/ / /", "   "]);
+
+    expect(result).toEqual([]);
+    expect(expandTermsMock).not.toHaveBeenCalled();
+  });
+
+  test("multiple industries pass raw (non-deduplicated) split terms to expandTerms", async () => {
+    // "Web3/Crypto" splits to ["web3", "crypto"]
+    // "Crypto/DeFi" splits to ["crypto", "defi"]
+    // Combined without dedup: ["web3", "crypto", "crypto", "defi"]
+    expandTermsMock.mockResolvedValueOnce([
+      "web3",
+      "crypto",
+      "defi",
+    ]);
+
+    await normalizeIndustryTerms(["Web3/Crypto", "Crypto/DeFi"]);
+
+    // normalizeIndustryTerms should NOT pre-deduplicate; it passes raw terms
+    expect(expandTermsMock).toHaveBeenCalledWith("industry", [
+      "web3",
+      "crypto",
+      "crypto",
+      "defi",
+    ]);
+  });
+
+  test("mixed case input is lowercased before passing to expandTerms", async () => {
+    expandTermsMock.mockResolvedValueOnce(["fintech", "ai"]);
+
+    await normalizeIndustryTerms(["FINTECH/AI"]);
+
+    expect(expandTermsMock).toHaveBeenCalledWith("industry", [
+      "fintech",
+      "ai",
+    ]);
+  });
+
+  test("single term without slashes goes through expansion", async () => {
+    expandTermsMock.mockResolvedValueOnce([
+      "fintech",
+      "financial_technology",
+      "financial_tech",
+    ]);
+
+    const result = await normalizeIndustryTerms(["fintech"]);
+
+    expect(result).toEqual([
+      "fintech",
+      "financial_technology",
+      "financial_tech",
+    ]);
+  });
+
+  test("input containing only slashes short-circuits", async () => {
+    expandTermsMock.mockClear();
+
+    const result = await normalizeIndustryTerms(["///"]);
+
+    expect(result).toEqual([]);
+    expect(expandTermsMock).not.toHaveBeenCalled();
+  });
+
+  test("special characters are preserved, only case is normalized", async () => {
+    expandTermsMock.mockResolvedValueOnce(["ai & ml", "saas (b2b)"]);
+
+    await normalizeIndustryTerms(["AI & ML", "SaaS (B2B)"]);
+
+    expect(expandTermsMock).toHaveBeenCalledWith("industry", [
+      "ai & ml",
+      "saas (b2b)",
+    ]);
+  });
+
+  test("very long industry string with many slash-separated parts", async () => {
+    const parts = "a/b/c/d/e/f/g/h/i/j";
+    expandTermsMock.mockResolvedValueOnce([
+      "a", "b", "c", "d", "e", "f", "g", "h", "i", "j",
+    ]);
+
+    const result = await normalizeIndustryTerms([parts]);
+
+    // All 10 parts are passed, no truncation
+    expect(expandTermsMock).toHaveBeenCalledWith(
+      "industry",
+      ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"],
+    );
+    expect(result).toHaveLength(10);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// searchJobs -- synonym-expanded industry matching (integration)
+//
+// These tests exercise the full searchJobs pipeline with a synonym-cache
+// mock returning realistic expansion data, proving that the SQL array
+// overlap condition benefits from synonym expansion.
+// ---------------------------------------------------------------------------
+
+describe("searchJobs -- synonym-expanded industry matching", () => {
+  let expandTermsMock: ReturnType<typeof vi.fn>;
+
+  beforeAll(async () => {
+    const mod = await import("@/lib/search/synonym-cache");
+    expandTermsMock = vi.mocked(mod.expandTerms) as unknown as ReturnType<typeof vi.fn>;
+  });
+
+  test('user preference "Cryptocurrency/Blockchain" is expanded to match company tags', async () => {
+    // Mock synonym expansion to return the full crypto umbrella
+    expandTermsMock.mockResolvedValueOnce([
+      "crypto",
+      "cryptocurrency",
+      "bitcoin",
+      "digital_currency",
+      "web3",
+      "blockchain",
+      "defi",
+      "decentralized_finance",
+      "exchange",
+      "crypto_exchange",
+      "digital_exchange",
+    ]);
+
+    setupStandardFlow({
+      companyPrefs: { industries: ["Cryptocurrency/Blockchain"] },
+      batches: [
+        [
+          makeCandidateRow({
+            companyIndustry: ["web3", "crypto"],
+          }),
+        ],
+      ],
+    });
+
+    const result = await searchJobs(
+      db as unknown as Database,
+      "profile-1",
+      defaultPagination,
+    );
+
+    // The job appears in results -- the pipeline did not block on industry mismatch
+    expect(result.jobs.length).toBe(1);
+    expect(result.jobs[0].companyIndustry).toEqual(["web3", "crypto"]);
+
+    // expandTerms was called with the correct dimension and split/lowercased terms
+    expect(expandTermsMock).toHaveBeenCalledWith("industry", [
+      "cryptocurrency",
+      "blockchain",
+    ]);
+  });
+
+  test("empty industries preference skips industry filter entirely", async () => {
+    expandTermsMock.mockClear();
+
+    setupStandardFlow({
+      companyPrefs: { industries: [] },
+      batches: [[makeCandidateRow()]],
+    });
+
+    const result = await searchJobs(
+      db as unknown as Database,
+      "profile-1",
+      defaultPagination,
+    );
+
+    // expandTerms should not be called for empty industries
+    expect(expandTermsMock).not.toHaveBeenCalled();
+    // Jobs are still returned (only status=open filter applies)
+    expect(result.jobs.length).toBe(1);
+  });
+
+  test("searchJobs propagates synonym cache errors", async () => {
+    expandTermsMock.mockRejectedValueOnce(
+      new Error("DB connection lost"),
+    );
+
+    setupStandardFlow({
+      companyPrefs: { industries: ["Cryptocurrency/Blockchain"] },
+      batches: [[makeCandidateRow()]],
+    });
+
+    await expect(
+      searchJobs(db as unknown as Database, "profile-1", defaultPagination),
+    ).rejects.toThrow("DB connection lost");
+  });
+
+  test("industry terms in response filters are the raw user input, not expanded terms", async () => {
+    expandTermsMock.mockResolvedValueOnce([
+      "crypto",
+      "cryptocurrency",
+      "web3",
+      "blockchain",
+    ]);
+
+    setupStandardFlow({
+      companyPrefs: { industries: ["Cryptocurrency/Blockchain"] },
+      batches: [[makeCandidateRow()]],
+    });
+
+    const result = await searchJobs(
+      db as unknown as Database,
+      "profile-1",
+      defaultPagination,
+    );
+
+    // Response filters show raw input, not expanded synonyms
+    expect(result.filters.industries).toEqual(["Cryptocurrency/Blockchain"]);
+  });
+
+  test("searchJobs works when synonym cache returns passthrough (empty synonym table)", async () => {
+    // Simulate empty synonym table: expandTerms returns terms unchanged
+    expandTermsMock.mockImplementationOnce(
+      (_dimension: string, terms: string[]) =>
+        Promise.resolve([...new Set(terms)]),
+    );
+
+    setupStandardFlow({
+      companyPrefs: { industries: ["fintech"] },
+      batches: [[makeCandidateRow({ companyIndustry: ["fintech"] })]],
+    });
+
+    const result = await searchJobs(
+      db as unknown as Database,
+      "profile-1",
+      defaultPagination,
+    );
+
+    // Behavior matches pre-feature: exact match only, no expansion
+    expect(result.jobs.length).toBe(1);
+    expect(result.filters.industries).toEqual(["fintech"]);
+  });
+
+  test("null companyPrefs skips expandTerms entirely", async () => {
+    expandTermsMock.mockClear();
+
+    setupStandardFlow({
+      companyPrefs: null,
+      batches: [[makeCandidateRow()]],
+    });
+
+    const result = await searchJobs(
+      db as unknown as Database,
+      "profile-1",
+      defaultPagination,
+    );
+
+    expect(expandTermsMock).not.toHaveBeenCalled();
+    expect(result.jobs.length).toBe(1);
+    expect(result.filters.industries).toEqual([]);
   });
 });

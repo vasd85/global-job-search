@@ -9,6 +9,7 @@ import {
   uniqueIndex,
   index,
   real,
+  serial,
   customType,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
@@ -391,5 +392,22 @@ export const conversationMessages = pgTable(
   (table) => [
     index("conversation_message_state_idx").on(table.conversationStateId),
     index("conversation_message_created_idx").on(table.conversationStateId, table.createdAt),
+  ]
+);
+
+// ─── synonym_group ─────────────────────────────────────────────────────────
+
+export const synonymGroup = pgTable(
+  "synonym_group",
+  {
+    id: serial("id").primaryKey(),
+    dimension: text("dimension").notNull(), // "industry", "skill", "product_type", etc.
+    canonical: text("canonical").notNull(), // the canonical term for this group
+    synonyms: text("synonyms").array().notNull(), // all variant terms (includes canonical itself)
+    umbrellaKey: text("umbrella_key"), // optional: links groups for cross-concept expansion
+  },
+  (table) => [
+    uniqueIndex("uq_synonym_dimension_canonical").on(table.dimension, table.canonical),
+    index("idx_synonym_dimension").on(table.dimension),
   ]
 );
