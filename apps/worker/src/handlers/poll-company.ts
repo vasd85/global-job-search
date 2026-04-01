@@ -35,14 +35,14 @@ export function createPollCompanyHandler(db: Database) {
         console.warn(
           `[poll-company] Company not found: ${companyId}, skipping job ${job.id}`
         );
-        return;
+        continue;
       }
 
       if (!company.isActive) {
         console.info(
           `[poll-company] Company ${company.slug} is inactive, skipping`
         );
-        return;
+        continue;
       }
 
       // 2. Apply jitter to avoid thundering herd

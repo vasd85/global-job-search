@@ -57,14 +57,23 @@ export async function POST(request: Request): Promise<NextResponse> {
 
     let enqueued = 0;
     let skipped = 0;
+    let failed = 0;
 
     for (const company of dueCompanies) {
-      const vendorKey = company.atsVendor as keyof typeof VENDOR_QUEUES;
+      const vendorKey = company.atsVendor.toLowerCase() as keyof typeof VENDOR_QUEUES;
       const queue = VENDOR_QUEUES[vendorKey];
 
       if (queue) {
-        await boss.send(queue, { companyId: company.id });
-        enqueued++;
+        try {
+          await boss.send(queue, { companyId: company.id });
+          enqueued++;
+        } catch (sendError) {
+          failed++;
+          console.error(
+            `[dispatch-polling] Failed to enqueue ${company.slug}:`,
+            sendError
+          );
+        }
       } else {
         console.warn(
           `[dispatch-polling] Unknown vendor "${company.atsVendor}" for ${company.slug}, skipping`
@@ -76,6 +85,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json({
       enqueued,
       skipped,
+      failed,
       total: dueCompanies.length,
     });
   } catch (error) {
