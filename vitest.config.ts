@@ -5,6 +5,7 @@ export default defineConfig({
     projects: [
       "apps/web/vitest.config.ts",
       "packages/ats-core/vitest.config.ts",
+      "packages/ingestion/vitest.config.ts",
     ],
   },
 });
