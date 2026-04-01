@@ -37,7 +37,7 @@ const FIXED_NOW = new Date("2025-06-15T12:00:00Z");
 function makeJob(companyId: string, id?: string): Job<{ companyId: string }> {
   return {
     id: id ?? `job-${companyId}`,
-    name: "poll:greenhouse",
+    name: "poll/greenhouse",
     data: { companyId },
   } as Job<{ companyId: string }>;
 }
@@ -481,7 +481,7 @@ describe("createPollCompanyHandler(db)", () => {
     // Simulate a malformed job payload
     const malformedJob = {
       id: "job-bad",
-      name: "poll:greenhouse",
+      name: "poll/greenhouse",
       data: {},
     } as Job<{ companyId: string }>;
 

@@ -31,10 +31,10 @@ vi.mock("@/lib/db/schema", () => ({
 // Mock VENDOR_QUEUES with the real values
 vi.mock("@gjs/ingestion", () => ({
   VENDOR_QUEUES: {
-    greenhouse: "poll:greenhouse",
-    lever: "poll:lever",
-    ashby: "poll:ashby",
-    smartrecruiters: "poll:smartrecruiters",
+    greenhouse: "poll/greenhouse",
+    lever: "poll/lever",
+    ashby: "poll/ashby",
+    smartrecruiters: "poll/smartrecruiters",
   },
 }));
 
@@ -113,9 +113,9 @@ describe("POST /api/internal/dispatch-polling", () => {
     expect(json).toEqual({ enqueued: 3, skipped: 0, failed: 0, total: 3 });
 
     expect(mockSend).toHaveBeenCalledTimes(3);
-    expect(mockSend).toHaveBeenCalledWith("poll:greenhouse", { companyId: "uuid-co1" });
-    expect(mockSend).toHaveBeenCalledWith("poll:lever", { companyId: "uuid-co2" });
-    expect(mockSend).toHaveBeenCalledWith("poll:ashby", { companyId: "uuid-co3" });
+    expect(mockSend).toHaveBeenCalledWith("poll/greenhouse", { companyId: "uuid-co1" });
+    expect(mockSend).toHaveBeenCalledWith("poll/lever", { companyId: "uuid-co2" });
+    expect(mockSend).toHaveBeenCalledWith("poll/ashby", { companyId: "uuid-co3" });
   });
 
   test("returns correct counts when no companies are due", async () => {
@@ -206,10 +206,10 @@ describe("POST /api/internal/dispatch-polling", () => {
     const json = await res.json();
 
     expect(json).toEqual({ enqueued: 4, skipped: 0, failed: 0, total: 4 });
-    expect(mockSend).toHaveBeenNthCalledWith(1, "poll:greenhouse", { companyId: "uuid-gh" });
-    expect(mockSend).toHaveBeenNthCalledWith(2, "poll:lever", { companyId: "uuid-lv" });
-    expect(mockSend).toHaveBeenNthCalledWith(3, "poll:ashby", { companyId: "uuid-ab" });
-    expect(mockSend).toHaveBeenNthCalledWith(4, "poll:smartrecruiters", { companyId: "uuid-sr" });
+    expect(mockSend).toHaveBeenNthCalledWith(1, "poll/greenhouse", { companyId: "uuid-gh" });
+    expect(mockSend).toHaveBeenNthCalledWith(2, "poll/lever", { companyId: "uuid-lv" });
+    expect(mockSend).toHaveBeenNthCalledWith(3, "poll/ashby", { companyId: "uuid-ab" });
+    expect(mockSend).toHaveBeenNthCalledWith(4, "poll/smartrecruiters", { companyId: "uuid-sr" });
   });
 
   test("DB query filters on isActive=true AND (nextPollAfter<=now OR nextPollAfter IS NULL)", async () => {
@@ -271,7 +271,7 @@ describe("POST /api/internal/dispatch-polling", () => {
 
     await POST(makeRequest());
 
-    expect(mockSend).toHaveBeenCalledWith("poll:lever", { companyId: "real-uuid-abc" });
+    expect(mockSend).toHaveBeenCalledWith("poll/lever", { companyId: "real-uuid-abc" });
   });
 
   test("returns 500 when getQueue() fails", async () => {
@@ -306,8 +306,8 @@ describe("POST /api/internal/dispatch-polling", () => {
 
     expect(res.status).toBe(200);
     expect(json).toEqual({ enqueued: 2, skipped: 0, failed: 0, total: 2 });
-    expect(mockSend).toHaveBeenCalledWith("poll:greenhouse", { companyId: "uuid-upper" });
-    expect(mockSend).toHaveBeenCalledWith("poll:lever", { companyId: "uuid-allcaps" });
+    expect(mockSend).toHaveBeenCalledWith("poll/greenhouse", { companyId: "uuid-upper" });
+    expect(mockSend).toHaveBeenCalledWith("poll/lever", { companyId: "uuid-allcaps" });
     expect(warnSpy).not.toHaveBeenCalled();
 
     warnSpy.mockRestore();

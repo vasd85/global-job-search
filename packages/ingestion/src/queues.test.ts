@@ -5,10 +5,10 @@ import { VENDOR_QUEUES, FUTURE_QUEUES } from "./queues";
 describe("VENDOR_QUEUES", () => {
   test("maps all four supported vendors to correct queue names", () => {
     expect(VENDOR_QUEUES).toEqual({
-      greenhouse: "poll:greenhouse",
-      lever: "poll:lever",
-      ashby: "poll:ashby",
-      smartrecruiters: "poll:smartrecruiters",
+      greenhouse: "poll/greenhouse",
+      lever: "poll/lever",
+      ashby: "poll/ashby",
+      smartrecruiters: "poll/smartrecruiters",
     });
   });
 
@@ -56,11 +56,11 @@ describe("queue name format", () => {
   ];
 
   test.each(allQueues)(
-    '%s -> "%s" follows prefix:name convention',
+    '%s -> "%s" follows prefix/name convention',
     (_key, value) => {
-      // pg-boss uses queue names as identifiers. Special characters or
-      // spaces could cause silent failures.
-      expect(value).toMatch(/^[a-z]+:[a-z-]+$/);
+      // pg-boss allows alphanumeric, underscores, hyphens, periods, forward slashes.
+      // Our convention: prefix/name with lowercase letters and hyphens.
+      expect(value).toMatch(/^[a-z]+\/[a-z-]+$/);
     }
   );
 });
