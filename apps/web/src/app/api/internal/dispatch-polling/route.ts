@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { and, eq, lte, or, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -7,7 +8,12 @@ import { getQueue } from "@/lib/queue";
 
 // ─── Auth ───────────────────────────────────────────────────────────────────
 
-const DISPATCH_SECRET = process.env.DISPATCH_SECRET;
+const DISPATCH_SECRET = process.env.DISPATCH_SECRET?.trim() || undefined;
+
+function constantTimeCompare(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
 
 function isAuthorized(request: Request): boolean {
   // If no secret is configured, the route is open (local dev)
@@ -15,7 +21,8 @@ function isAuthorized(request: Request): boolean {
     return true;
   }
   const authHeader = request.headers.get("authorization");
-  return authHeader === `Bearer ${DISPATCH_SECRET}`;
+  if (!authHeader) return false;
+  return constantTimeCompare(authHeader, `Bearer ${DISPATCH_SECRET}`);
 }
 
 // ─── Route ──────────────────────────────────────────────────────────────────

@@ -19,8 +19,12 @@ export function getQueue(): Promise<PgBoss> {
       await boss.start();
       return boss;
     })();
-    // If start fails, allow retry on next call
-    _bossPromise.catch(() => {
+    // If start fails, log the error and clear the promise so subsequent
+    // calls can retry. The error is still propagated to the original caller
+    // via the shared promise; this handler ensures it is logged even in
+    // fire-and-forget patterns.
+    _bossPromise.catch((err) => {
+      console.error("pg-boss start failed, will retry on next getQueue() call:", err);
       _bossPromise = undefined;
     });
   }
