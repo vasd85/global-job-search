@@ -44,6 +44,9 @@ importers:
       next:
         specifier: 16.1.6
         version: 16.1.6(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      pg-boss:
+        specifier: ^12.15.0
+        version: 12.15.0
       postgres:
         specifier: ^3.4.8
         version: 3.4.8
