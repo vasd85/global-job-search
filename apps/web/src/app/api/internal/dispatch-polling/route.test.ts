@@ -39,7 +39,8 @@ vi.mock("@gjs/ingestion", () => ({
 }));
 
 const mockSend = vi.fn().mockResolvedValue("job-id-1");
-const mockBoss = { send: mockSend };
+const mockCreateQueue = vi.fn().mockResolvedValue(undefined);
+const mockBoss = { send: mockSend, createQueue: mockCreateQueue };
 const mockGetQueue = vi.fn().mockResolvedValue(mockBoss);
 vi.mock("@/lib/queue", () => ({
   // eslint-disable-next-line @typescript-eslint/no-unsafe-return

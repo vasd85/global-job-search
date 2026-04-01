@@ -62,6 +62,11 @@ export async function POST(request: Request): Promise<NextResponse> {
 
     const boss = await getQueue();
 
+    // Ensure queues exist (idempotent — no-op if already created by worker)
+    for (const queue of Object.values(VENDOR_QUEUES)) {
+      await boss.createQueue(queue);
+    }
+
     let enqueued = 0;
     let skipped = 0;
     let failed = 0;
