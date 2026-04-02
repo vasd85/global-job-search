@@ -18,7 +18,7 @@ import { FUTURE_QUEUES } from "@gjs/ingestion";
  */
 export async function POST(request: Request) {
   const session = await auth.api.getSession({ headers: request.headers });
-  if (!session) {
+  if (!session?.user?.id) {
     return NextResponse.json(
       { error: "Authentication required" },
       { status: 401 },

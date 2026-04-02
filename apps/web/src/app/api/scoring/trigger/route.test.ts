@@ -255,13 +255,7 @@ describe("POST /api/scoring/trigger -- authentication", () => {
     expect(body.error).toBe("Authentication required");
   });
 
-  // BUG: The route accesses session.user.id at line 33 without first
-  // checking that session.user exists. A session object without a user
-  // property causes a TypeError ("Cannot read properties of undefined
-  // (reading 'id')"), which falls into the catch block and returns 500
-  // instead of a more appropriate 401 or 404. The route should validate
-  // session.user before accessing session.user.id.
-  test.skip("session without user ID should return 404 but crashes with 500", async () => {
+  test("session without user property returns 401", async () => {
     getSessionMock.mockResolvedValueOnce({
       session: { token: "tok" },
     });
@@ -269,10 +263,8 @@ describe("POST /api/scoring/trigger -- authentication", () => {
 
     const { status, body } = await postJson();
 
-    // Expected: 404 with "User profile not found" (or 401 for invalid session)
-    // Actual: 500 with "Internal server error" due to uncaught TypeError
-    expect(status).toBe(404);
-    expect(body.error).toBe("User profile not found");
+    expect(status).toBe(401);
+    expect(body.error).toBe("Authentication required");
   });
 });
 

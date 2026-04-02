@@ -144,7 +144,13 @@ export function createLlmScoringHandler(db: Database) {
           prompt: promptParts.user,
         });
 
-        const scoringOutput = result.output as ScoringOutput;
+        const scoringOutput = result.output as ScoringOutput | null;
+        if (!scoringOutput) {
+          console.warn(
+            `[score] LLM returned no structured output for job ${data.jobId}, skipping`,
+          );
+          continue;
+        }
 
         // 8. Compute match percent
         const { matchPercent, appliedGrowthBonus } = computeMatchPercent(
