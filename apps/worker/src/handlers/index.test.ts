@@ -3,13 +3,17 @@ import { registerHandlers } from "./index";
 // ─── Module mocks ──────────────────────────────────────────────────────────
 
 const mockPollHandler = vi.fn();
+const mockScoringHandler = vi.fn();
 
 vi.mock("./poll-company", () => ({
   createPollCompanyHandler: vi.fn(() => mockPollHandler),
 }));
 
+vi.mock("./llm-scoring", () => ({
+  createLlmScoringHandler: vi.fn(() => mockScoringHandler),
+}));
+
 vi.mock("./stubs", () => ({
-  handleLlmScoring: vi.fn(),
   handleInternetExpansion: vi.fn(),
   handleDescriptionFetch: vi.fn(),
   handleRoleTaxonomy: vi.fn(),
@@ -18,8 +22,8 @@ vi.mock("./stubs", () => ({
 // ─── Imports (after mocks) ─────────────────────────────────────────────────
 
 import { createPollCompanyHandler } from "./poll-company";
+import { createLlmScoringHandler } from "./llm-scoring";
 import {
-  handleLlmScoring,
   handleInternetExpansion,
   handleDescriptionFetch,
   handleRoleTaxonomy,
@@ -45,8 +49,9 @@ describe("registerHandlers(boss, db)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.spyOn(console, "info").mockImplementation(() => {});
-    // Re-set mock return value after clearAllMocks
+    // Re-set mock return values after clearAllMocks
     (createPollCompanyHandler as ReturnType<typeof vi.fn>).mockReturnValue(mockPollHandler);
+    (createLlmScoringHandler as ReturnType<typeof vi.fn>).mockReturnValue(mockScoringHandler);
   });
 
   afterEach(() => {
@@ -94,7 +99,7 @@ describe("registerHandlers(boss, db)", () => {
     }
   });
 
-  test("registers all 4 future queues with their stub handlers", async () => {
+  test("registers LLM scoring queue with localConcurrency: 3", async () => {
     const boss = createMockBoss();
     const db = createMockDb();
 
@@ -102,20 +107,36 @@ describe("registerHandlers(boss, db)", () => {
 
     const workCalls = (boss.work as ReturnType<typeof vi.fn>).mock.calls;
 
-    // Future queue calls: boss.work(queueName, handler) -- no options object
-    const futureMapping: [string, unknown][] = [
-      [FUTURE_QUEUES.llmScoring, handleLlmScoring],
+    const scoringCall = workCalls.find(
+      (c: unknown[]) => c[0] === FUTURE_QUEUES.llmScoring
+    );
+    expect(scoringCall).toBeDefined();
+    // Scoring call: boss.work(queueName, { localConcurrency: 3 }, handler)
+    expect(scoringCall![1]).toEqual({ localConcurrency: 3 });
+    expect(scoringCall![2]).toBe(mockScoringHandler);
+  });
+
+  test("registers remaining 3 future queues with their stub handlers", async () => {
+    const boss = createMockBoss();
+    const db = createMockDb();
+
+    await registerHandlers(boss, db);
+
+    const workCalls = (boss.work as ReturnType<typeof vi.fn>).mock.calls;
+
+    // Remaining stub queue calls: boss.work(queueName, handler) -- no options object
+    const stubMapping: [string, unknown][] = [
       [FUTURE_QUEUES.internetExpansion, handleInternetExpansion],
       [FUTURE_QUEUES.descriptionFetch, handleDescriptionFetch],
       [FUTURE_QUEUES.roleTaxonomy, handleRoleTaxonomy],
     ];
 
-    for (const [queueName, expectedHandler] of futureMapping) {
+    for (const [queueName, expectedHandler] of stubMapping) {
       const call = workCalls.find(
         (c: unknown[]) => c[0] === queueName
       );
       expect(call).toBeDefined();
-      // For future queues, the handler is the second argument (no options)
+      // For stub queues, the handler is the second argument (no options)
       expect(call![1]).toBe(expectedHandler);
     }
   });
@@ -166,5 +187,15 @@ describe("registerHandlers(boss, db)", () => {
     const uniqueHandlers = new Set(vendorHandlers);
     expect(uniqueHandlers.size).toBe(1);
     expect(vendorHandlers[0]).toBe(mockPollHandler);
+  });
+
+  test("createLlmScoringHandler is called once with db", async () => {
+    const boss = createMockBoss();
+    const db = createMockDb();
+
+    await registerHandlers(boss, db);
+
+    expect(createLlmScoringHandler).toHaveBeenCalledOnce();
+    expect(createLlmScoringHandler).toHaveBeenCalledWith(db);
   });
 });

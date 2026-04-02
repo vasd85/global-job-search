@@ -1,6 +1,5 @@
 import type { Job } from "pg-boss";
 import {
-  handleLlmScoring,
   handleInternetExpansion,
   handleDescriptionFetch,
   handleRoleTaxonomy,
@@ -29,7 +28,6 @@ describe("stub handlers", () => {
     handler: (jobs: Job[]) => Promise<void>;
     prefix: string;
   }>([
-    { name: "handleLlmScoring", handler: handleLlmScoring, prefix: "LLM scoring" },
     { name: "handleInternetExpansion", handler: handleInternetExpansion, prefix: "Internet expansion" },
     { name: "handleDescriptionFetch", handler: handleDescriptionFetch, prefix: "Description fetch" },
     { name: "handleRoleTaxonomy", handler: handleRoleTaxonomy, prefix: "Role taxonomy" },
@@ -57,7 +55,6 @@ describe("stub handlers", () => {
     name: string;
     handler: (jobs: Job[]) => Promise<void>;
   }>([
-    { name: "handleLlmScoring", handler: handleLlmScoring },
     { name: "handleInternetExpansion", handler: handleInternetExpansion },
     { name: "handleDescriptionFetch", handler: handleDescriptionFetch },
     { name: "handleRoleTaxonomy", handler: handleRoleTaxonomy },
