@@ -113,33 +113,44 @@ export async function POST(request: Request) {
     }
 
     // 5. Enqueue scoring jobs via pg-boss
+    let enqueued = 0;
+    let sendFailed = 0;
+
     if (jobsToScore.length > 0) {
       const boss = await getQueue();
       await boss.createQueue(FUTURE_QUEUES.llmScoring);
 
       for (const jobId of jobsToScore) {
-        await boss.send(
-          FUTURE_QUEUES.llmScoring,
-          {
-            jobId,
-            userProfileId: profile.id,
-            userId: session.user.id,
-          },
-          {
-            singletonKey: `${profile.id}:${jobId}`,
-          },
-        );
+        try {
+          await boss.send(
+            FUTURE_QUEUES.llmScoring,
+            {
+              jobId,
+              userProfileId: profile.id,
+              userId: session.user.id,
+            },
+            {
+              singletonKey: `${profile.id}:${jobId}`,
+            },
+          );
+          enqueued++;
+        } catch (error) {
+          sendFailed++;
+          console.warn(
+            `[scoring/trigger] Failed to enqueue job ${jobId}:`,
+            error instanceof Error ? error.message : error,
+          );
+        }
       }
     }
-
-    const enqueued = jobsToScore.length;
-    const total = enqueued + cached;
+    const total = enqueued + cached + sendFailed;
 
     return NextResponse.json({
       enqueued,
       cached,
       total,
-      message: `Scoring ${enqueued} jobs. ${cached} already scored.`,
+      ...(sendFailed > 0 && { sendFailed }),
+      message: `Scoring ${enqueued} jobs. ${cached} already scored.${sendFailed > 0 ? ` ${sendFailed} failed to enqueue.` : ""}`,
     });
   } catch (error) {
     console.error("[scoring/trigger] Error:", error);

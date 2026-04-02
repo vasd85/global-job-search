@@ -360,7 +360,7 @@ describe("createLlmScoringHandler", () => {
     expect(db.insert).not.toHaveBeenCalled();
   });
 
-  test("LLM call throws -- error propagates for pg-boss retry", async () => {
+  test("LLM call throws -- error is caught per-job, handler completes", async () => {
     const jobRow = makeJobRow();
     const profile = makeProfile();
     const { db } = createMockDb([[jobRow], [profile]]);
@@ -368,11 +368,15 @@ describe("createLlmScoringHandler", () => {
     mockGenerateText.mockRejectedValue(new Error("rate limit exceeded"));
 
     const handler = createLlmScoringHandler(db);
+    // Handler catches per-job errors and continues — does not throw
     await expect(
       handler([
         makeBatchJob({ jobId: "job-1", userProfileId: "profile-1", userId: "user-1" }),
       ]),
-    ).rejects.toThrow("rate limit exceeded");
+    ).resolves.toBeUndefined();
+
+    // Upsert should not have been called since LLM failed
+    expect(db.insert).not.toHaveBeenCalled();
   });
 
   // ── Important ─────────────────────────────────────────────────────────

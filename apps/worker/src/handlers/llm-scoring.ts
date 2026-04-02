@@ -32,7 +32,8 @@ const MODEL_ID = "claude-haiku-4-5-20251001";
 export function createLlmScoringHandler(db: Database) {
   return async (batchJobs: Job<ScoringJobData>[]): Promise<void> => {
     for (const batchJob of batchJobs) {
-      const { jobId, userProfileId, userId } = batchJob.data;
+      const data = batchJob.data;
+      const { jobId, userProfileId, userId } = data;
 
       try {
         // 1. Load job row with company data
@@ -225,10 +226,11 @@ export function createLlmScoringHandler(db: Database) {
             (scoringOutput.dealBreakerTriggered ? " (deal-breaker triggered)" : ""),
         );
       } catch (error) {
-        // LLM API errors (rate limit, auth failure, network) — let pg-boss retry
+        // Per-job error isolation: log and continue with remaining jobs.
+        // Failed jobs will be re-enqueued on the next scoring trigger
+        // (they won't have a fresh cache entry).
         const message = error instanceof Error ? error.message : String(error);
         console.error(`[score] Error scoring job ${jobId} for profile ${userProfileId}: ${message}`);
-        throw error;
       }
     }
   };

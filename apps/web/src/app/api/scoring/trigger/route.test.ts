@@ -639,11 +639,8 @@ describe("POST /api/scoring/trigger -- pg-boss enqueue", () => {
     );
   });
 
-  test("boss.send fails mid-loop returns 500", async () => {
-    // TODO: The route has no try/catch around individual boss.send() calls.
-    // A single send failure kills the entire request. Consider whether
-    // partial enqueue failure should be handled more gracefully.
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+  test("boss.send fails mid-loop -- partial success with sendFailed count", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const jobs = [makeJob("job-ok"), makeJob("job-fail"), makeJob("job-skip")];
     searchJobsMock.mockResolvedValueOnce(
       makeSearchResponse({ jobs, total: 3 }),
@@ -660,15 +657,18 @@ describe("POST /api/scoring/trigger -- pg-boss enqueue", () => {
 
     mockSend
       .mockResolvedValueOnce("job-id-ok")
-      .mockRejectedValueOnce(new Error("queue full"));
+      .mockRejectedValueOnce(new Error("queue full"))
+      .mockResolvedValueOnce("job-id-skip");
 
     const { status, body } = await postJson();
 
-    expect(status).toBe(500);
-    expect(body.error).toBe("Internal server error");
-    expect(JSON.stringify(body)).not.toContain("queue full");
+    expect(status).toBe(200);
+    expect(body.enqueued).toBe(2);
+    expect(body.sendFailed).toBe(1);
+    expect(body.total).toBe(3);
+    expect(body.message).toContain("1 failed to enqueue");
 
-    errorSpy.mockRestore();
+    warnSpy.mockRestore();
   });
 
   test("getQueue fails returns 500", async () => {
@@ -799,8 +799,8 @@ describe("POST /api/scoring/trigger -- failure scenarios", () => {
     errorSpy.mockRestore();
   });
 
-  test("boss.send rejects on first call returns 500", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+  test("boss.send rejects on first call -- returns 200 with all failed", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const jobs = [makeJob("job-1")];
     searchJobsMock.mockResolvedValueOnce(
       makeSearchResponse({ jobs, total: 1 }),
@@ -811,10 +811,12 @@ describe("POST /api/scoring/trigger -- failure scenarios", () => {
 
     const { status, body } = await postJson();
 
-    expect(status).toBe(500);
-    expect(body.error).toBe("Internal server error");
+    expect(status).toBe(200);
+    expect(body.enqueued).toBe(0);
+    expect(body.sendFailed).toBe(1);
+    expect(body.total).toBe(1);
 
-    errorSpy.mockRestore();
+    warnSpy.mockRestore();
   });
 });
 

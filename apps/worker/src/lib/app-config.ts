@@ -19,5 +19,7 @@ export async function getAppConfigValue<T>(
 
   if (rows.length === 0) return defaultValue;
 
-  return rows[0].value as T;
+  const value = rows[0].value;
+  if (value == null) return defaultValue;
+  return value as T;
 }

@@ -217,7 +217,6 @@ describe("fetchJobDescription", () => {
   });
 
   test("URL construction with special characters in atsSlug", async () => {
-    // TODO: should atsSlug and atsJobId be URL-encoded?
     mockFetchSuccess({
       jobAd: { sections: { jobDescription: { text: "<p>ok</p>" } } },
     });
@@ -228,9 +227,9 @@ describe("fetchJobDescription", () => {
     const jobRow = makeJobRow({ atsJobId: "job/123" });
     await fetchJobDescription(db, jobRow, makeCompanyRow("acme corp"));
 
-    // Characters are inserted as-is (no encoding)
+    // Characters are URL-encoded
     expect(fetch).toHaveBeenCalledWith(
-      "https://api.smartrecruiters.com/v1/companies/acme corp/postings/job/123",
+      "https://api.smartrecruiters.com/v1/companies/acme%20corp/postings/job%2F123",
       expect.anything(),
     );
   });

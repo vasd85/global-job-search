@@ -60,8 +60,8 @@ export function computeMatchPercent(
     appliedGrowthBonus = true;
   }
 
-  // Cap at 100 and round to nearest integer
-  matchPercent = Math.round(Math.min(matchPercent, 100));
+  // Clamp to 0-100 and round to nearest integer
+  matchPercent = Math.round(Math.max(0, Math.min(matchPercent, 100)));
 
   return { matchPercent, appliedGrowthBonus };
 }

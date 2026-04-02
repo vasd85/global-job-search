@@ -33,7 +33,7 @@ export async function fetchJobDescription(
   // Only SmartRecruiters needs a detail fetch; other vendors provide descriptions in the list API
   if (jobRow.sourceRef !== "smartrecruiters") return null;
 
-  const detailUrl = `https://api.smartrecruiters.com/v1/companies/${companyRow.atsSlug}/postings/${jobRow.atsJobId}`;
+  const detailUrl = `https://api.smartrecruiters.com/v1/companies/${encodeURIComponent(companyRow.atsSlug)}/postings/${encodeURIComponent(jobRow.atsJobId)}`;
 
   try {
     const response = await fetch(detailUrl, {
