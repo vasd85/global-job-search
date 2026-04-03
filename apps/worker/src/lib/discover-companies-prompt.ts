@@ -1,3 +1,5 @@
+import { debug } from "./logger";
+
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export interface DiscoveryPromptInput {
@@ -74,6 +76,12 @@ Return up to ${budget} companies. Prioritize the best matches first.
 ## Task
 
 Search the web to find companies matching the criteria above. For each company, find their careers/jobs page URL (especially on Greenhouse, Lever, Ashby, or SmartRecruiters). Return structured results.`;
+
+  debug("prompt", "Built discovery prompt", {
+    systemPromptLength: SYSTEM_PROMPT.length,
+    userPromptLength: user.length,
+    excludedCompanyCount: existingCompanyNames.length,
+  });
 
   return { system: SYSTEM_PROMPT, user };
 }
