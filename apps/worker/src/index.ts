@@ -1,6 +1,7 @@
 import { PgBoss } from "pg-boss";
 import { db } from "@gjs/db";
 import { registerHandlers } from "./handlers";
+import { seedPollingConfig } from "./lib/seed-config";
 
 // ─── Environment ────────────────────────────────────────────────────────────
 
@@ -23,6 +24,9 @@ boss.on("error", (error: Error) => {
 async function start(): Promise<void> {
   await boss.start();
   console.info("[worker] pg-boss started");
+
+  await seedPollingConfig(db);
+  console.info("[worker] Polling config seeded");
 
   await registerHandlers(boss, db);
   console.info("[worker] All handlers registered -- ready for jobs");

@@ -19,6 +19,10 @@ vi.mock("./stubs", () => ({
   handleRoleTaxonomy: vi.fn(),
 }));
 
+vi.mock("../lib/app-config", () => ({
+  getAppConfigValue: vi.fn().mockResolvedValue(5),
+}));
+
 // ─── Imports (after mocks) ─────────────────────────────────────────────────
 
 import { createPollCompanyHandler } from "./poll-company";

@@ -12,6 +12,13 @@ vi.mock("../lib/jitter", () => ({
   jitter: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock("../lib/app-config", () => ({
+  getAppConfigValue: vi.fn().mockImplementation(
+    (_db: unknown, _key: string, defaultValue: unknown) =>
+      Promise.resolve(defaultValue),
+  ),
+}));
+
 // Use a stable token for drizzle-orm `eq` so we can inspect calls
 vi.mock("drizzle-orm", () => ({
   eq: vi.fn((_col: unknown, val: unknown) => ({ _eq: val })),
@@ -166,8 +173,11 @@ describe("createPollCompanyHandler(db)", () => {
     const handler = createPollCompanyHandler(db);
     await handler([makeJob("company-1")]);
 
-    // pollCompany called with db and company
-    expect(mockPollCompany).toHaveBeenCalledWith(db, company);
+    // pollCompany called with db, company, and threshold options
+    expect(mockPollCompany).toHaveBeenCalledWith(db, company, {
+      staleThresholdDays: 7,
+      closedThresholdDays: 30,
+    });
 
     // computeNextPoll called with correct AdaptivePollInput shape
     expect(mockComputeNextPoll).toHaveBeenCalledWith({
@@ -266,9 +276,10 @@ describe("createPollCompanyHandler(db)", () => {
     expect(setCalls).toHaveLength(3);
 
     // Each call used the correct company
-    expect(mockPollCompany).toHaveBeenNthCalledWith(1, db, companies[0]);
-    expect(mockPollCompany).toHaveBeenNthCalledWith(2, db, companies[1]);
-    expect(mockPollCompany).toHaveBeenNthCalledWith(3, db, companies[2]);
+    const expectedOpts = { staleThresholdDays: 7, closedThresholdDays: 30 };
+    expect(mockPollCompany).toHaveBeenNthCalledWith(1, db, companies[0], expectedOpts);
+    expect(mockPollCompany).toHaveBeenNthCalledWith(2, db, companies[1], expectedOpts);
+    expect(mockPollCompany).toHaveBeenNthCalledWith(3, db, companies[2], expectedOpts);
   });
 
   test("computeNextPoll receives correct input shape from company and poll result", async () => {
@@ -372,7 +383,10 @@ describe("createPollCompanyHandler(db)", () => {
 
     // pollCompany should be called once (only for c3)
     expect(mockPollCompany).toHaveBeenCalledTimes(1);
-    expect(mockPollCompany).toHaveBeenCalledWith(db, company3);
+    expect(mockPollCompany).toHaveBeenCalledWith(db, company3, {
+      staleThresholdDays: 7,
+      closedThresholdDays: 30,
+    });
     expect(setCalls).toHaveLength(1);
   });
 
@@ -403,7 +417,10 @@ describe("createPollCompanyHandler(db)", () => {
     await handler([makeJob("c1"), makeJob("c2")]);
 
     expect(mockPollCompany).toHaveBeenCalledTimes(1);
-    expect(mockPollCompany).toHaveBeenCalledWith(db, activeCompany);
+    expect(mockPollCompany).toHaveBeenCalledWith(db, activeCompany, {
+      staleThresholdDays: 7,
+      closedThresholdDays: 30,
+    });
   });
 
   // ── Nice-to-have ───────────────────────────────────────────────────────
