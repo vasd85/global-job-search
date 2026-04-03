@@ -30,6 +30,7 @@ import { decryptUserKey } from "../lib/decrypt-user-key";
 import { getAppConfigValue } from "../lib/app-config";
 import { normalizeDomain } from "../lib/normalize-domain";
 import { discoverCompanies } from "../lib/discover-companies";
+import { debug } from "../lib/logger";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -166,6 +167,15 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
           continue;
         }
 
+        debug("expand", "Loaded user preferences", {
+          industries: prefs.industries,
+          companySizes: prefs.companySizes,
+          companyStages: prefs.companyStages,
+          productTypes: prefs.productTypes,
+          exclusions: prefs.exclusions,
+          hqGeographies: prefs.hqGeographies,
+        });
+
         // 3. Load budget from config
         const rawBudget = Number(
           await getAppConfigValue<number>(
@@ -177,6 +187,11 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
         const budget = Number.isNaN(rawBudget)
           ? 20
           : Math.max(1, Math.floor(rawBudget));
+
+        debug("expand", "Loaded budget config", {
+          rawBudget,
+          clampedBudget: budget,
+        });
 
         // 4. Load existing companies for dedup
         // NOTE: Loads all active companies into memory for domain/ATS dedup.
@@ -205,10 +220,22 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
           existingAtsKeys.add(`${c.atsVendor}:${c.atsSlug}`);
         }
 
+        debug("expand", "Loaded existing companies for dedup", {
+          totalCompanies: existingCompanies.length,
+          domainCount: existingDomains.size,
+          atsKeyCount: existingAtsKeys.size,
+          sampleNames: [...existingNames].slice(0, 10),
+        });
+
         // 5. Discover companies via AI web search
         console.info(
           `[expand] Discovering companies for user ${userId} (budget: ${budget})`,
         );
+        debug("expand", "Calling discoverCompanies", {
+          industriesCount: (prefs.industries ?? []).length,
+          existingNamesCount: existingNames.size,
+          budget,
+        });
         const discovered = await discoverCompanies({
           apiKey,
           preferences: {
@@ -240,6 +267,14 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
 
         for (const disc of discovered.slice(0, budget)) {
           try {
+            debug("expand", "Processing discovered company", {
+              name: disc.name,
+              website: disc.website,
+              careersUrl: disc.careersUrl,
+              industry: disc.industry,
+              reasoning: disc.reasoning,
+            });
+
             // 6a. Domain dedup
             const domain = normalizeDomain(disc.website);
             if (domain && existingDomains.has(domain)) {
@@ -260,6 +295,11 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
             }
 
             const vendor = detectAtsVendor(disc.careersUrl);
+            debug("expand", "ATS detection result", {
+              company: disc.name,
+              vendor,
+              careersUrl: disc.careersUrl,
+            });
             if (!SUPPORTED_VENDORS.has(vendor)) {
               console.info(
                 `[expand] Skipping ${disc.name}: unsupported ATS vendor "${vendor}"`,
@@ -270,6 +310,11 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
 
             // 6c. Extract ATS slug
             const atsSlug = extractAtsSlug(vendor, disc.careersUrl);
+            debug("expand", "ATS slug extraction", {
+              company: disc.name,
+              vendor,
+              atsSlug,
+            });
             if (!atsSlug) {
               console.info(
                 `[expand] Skipping ${disc.name}: could not extract ATS slug from ${disc.careersUrl}`,
@@ -316,6 +361,15 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
               continue;
             }
 
+            debug("expand", "Company inserted", {
+              id: companyRow.id as string,
+              slug: companySlug,
+              name: companyRow.name,
+              website: companyRow.website,
+              atsVendor: companyRow.atsVendor,
+              atsSlug: companyRow.atsSlug,
+            });
+
             inserted++;
             insertedCompanyIds.push(companyRow.id as string);
             if (domain) existingDomains.add(domain);
@@ -324,6 +378,10 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
             // 6f. Immediate poll (no jitter for expansion)
             try {
               const result = await pollCompany(db, companyRow);
+              debug("expand", "Poll result", {
+                company: disc.name,
+                ...result,
+              });
               console.info(
                 `[expand] Polled ${disc.name}: found=${result.jobsFound} new=${result.jobsNew}`,
               );
@@ -379,6 +437,12 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
               targetTitles,
             );
 
+            debug("expand:l2", "Role family resolution", {
+              targetTitles,
+              matchedFamilySlugs: matchedFamilies.map((f) => f.slug),
+              totalRoleFamilies: allFamilies.length,
+            });
+
             // 7d. Resolve user's location preferences into tier structures
             const locationPreferences = profile?.locationPreferences as {
               tiers?: unknown;
@@ -389,6 +453,11 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
               : [];
 
             const targetSeniority = profile?.targetSeniority ?? [];
+
+            debug("expand:l2", "Location tier resolution", {
+              rawLocationPreferences: locationPreferences,
+              resolvedTierCount: resolvedTiers.length,
+            });
 
             // 7e. Query jobs with fields needed for Level 2 classification
             const newJobs = await db
@@ -439,13 +508,32 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
                   continue;
                 }
 
+                debug("expand:l2", "Evaluating job", {
+                  jobId: job.id,
+                  title: job.title,
+                  departmentRaw: job.departmentRaw,
+                  locationRaw: job.locationRaw,
+                  workplaceType: job.workplaceType,
+                });
+
                 // Level 2 filter: role family classification
                 if (matchedFamilies.length > 0) {
                   const classified = classifyJobMulti(matchedFamilies, {
                     title: job.title,
                     departmentRaw: job.departmentRaw,
                   });
+                  debug("expand:l2", "Classification result", {
+                    jobId: job.id,
+                    familySlug: classified.familySlug,
+                    score: classified.score,
+                    matchType: classified.matchType,
+                  });
                   if (classified.score < CLASSIFICATION_THRESHOLD) {
+                    debug(
+                      "expand:l2",
+                      `Filtered: role family score ${classified.score} < ${CLASSIFICATION_THRESHOLD}`,
+                      { jobId: job.id, title: job.title },
+                    );
                     filteredOut++;
                     continue;
                   }
@@ -460,6 +548,16 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
                     seniority !== null &&
                     !targetSeniority.includes(seniority)
                   ) {
+                    debug(
+                      "expand:l2",
+                      `Filtered: seniority "${seniority}" not in target`,
+                      {
+                        jobId: job.id,
+                        title: job.title,
+                        detectedSeniority: seniority,
+                        targetSeniority,
+                      },
+                    );
                     filteredOut++;
                     continue;
                   }
@@ -473,10 +571,25 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
                     resolvedTiers,
                   );
                   if (!locationResult.passes) {
+                    debug(
+                      "expand:l2",
+                      `Filtered: location did not match tiers`,
+                      {
+                        jobId: job.id,
+                        title: job.title,
+                        locationRaw: job.locationRaw,
+                        workplaceType: job.workplaceType,
+                      },
+                    );
                     filteredOut++;
                     continue;
                   }
                 }
+
+                debug("expand:l2", "Passed L2 filter, enqueuing scoring", {
+                  jobId: job.id,
+                  title: job.title,
+                });
 
                 try {
                   await boss.send(
