@@ -11,11 +11,15 @@
     "test": "vitest"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.64",
     "@gjs/ats-core": "workspace:*",
+    "@gjs/crypto": "workspace:*",
     "@gjs/db": "workspace:*",
     "@gjs/ingestion": "workspace:*",
+    "ai": "^6.0.138",
     "drizzle-orm": "^0.45.1",
-    "pg-boss": "^12.15.0"
+    "pg-boss": "^12.15.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

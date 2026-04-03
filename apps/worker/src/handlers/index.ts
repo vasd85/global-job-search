@@ -2,8 +2,8 @@ import type { PgBoss } from "pg-boss";
 import type { Database } from "@gjs/db";
 import { VENDOR_QUEUES, FUTURE_QUEUES } from "@gjs/ingestion";
 import { createPollCompanyHandler } from "./poll-company";
+import { createLlmScoringHandler } from "./llm-scoring";
 import {
-  handleLlmScoring,
   handleInternetExpansion,
   handleDescriptionFetch,
   handleRoleTaxonomy,
@@ -12,11 +12,15 @@ import {
 /** Per-vendor concurrency limit for ATS polling. */
 const VENDOR_CONCURRENCY = 5;
 
+/** Concurrent LLM scoring jobs (global, not per-user for MVP). */
+const SCORING_CONCURRENCY = 3;
+
 /**
  * Create all queues and register work handlers with pg-boss.
  *
  * Vendor queues get the real poll-company handler with concurrency 5.
- * Future queues get stub handlers that log and complete immediately.
+ * The LLM scoring queue gets the real scoring handler with concurrency 3.
+ * Remaining future queues get stub handlers that log and complete immediately.
  */
 export async function registerHandlers(
   boss: PgBoss,
@@ -40,10 +44,15 @@ export async function registerHandlers(
     console.info(`[handlers] Registered ${queue} (concurrency: ${VENDOR_CONCURRENCY})`);
   }
 
-  // Register stub handlers for future queues
-  await boss.work(FUTURE_QUEUES.llmScoring, handleLlmScoring);
-  console.info(`[handlers] Registered ${FUTURE_QUEUES.llmScoring} (stub)`);
+  // Register LLM scoring handler
+  await boss.work(
+    FUTURE_QUEUES.llmScoring,
+    { localConcurrency: SCORING_CONCURRENCY },
+    createLlmScoringHandler(db),
+  );
+  console.info(`[handlers] Registered ${FUTURE_QUEUES.llmScoring} (concurrency: ${SCORING_CONCURRENCY})`);
 
+  // Register stub handlers for remaining future queues
   await boss.work(FUTURE_QUEUES.internetExpansion, handleInternetExpansion);
   console.info(`[handlers] Registered ${FUTURE_QUEUES.internetExpansion} (stub)`);
 

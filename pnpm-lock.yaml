@@ -20,6 +20,9 @@ importers:
       '@gjs/ats-core':
         specifier: workspace:*
         version: link:../../packages/ats-core
+      '@gjs/crypto':
+        specifier: workspace:*
+        version: link:../../packages/crypto
       '@gjs/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -111,21 +114,33 @@ importers:
 
   apps/worker:
     dependencies:
+      '@ai-sdk/anthropic':
+        specifier: ^3.0.64
+        version: 3.0.64(zod@4.3.6)
       '@gjs/ats-core':
         specifier: workspace:*
         version: link:../../packages/ats-core
+      '@gjs/crypto':
+        specifier: workspace:*
+        version: link:../../packages/crypto
       '@gjs/db':
         specifier: workspace:*
         version: link:../../packages/db
       '@gjs/ingestion':
         specifier: workspace:*
         version: link:../../packages/ingestion
+      ai:
+        specifier: ^6.0.138
+        version: 6.0.138(zod@4.3.6)
       drizzle-orm:
         specifier: ^0.45.1
         version: 0.45.1(@opentelemetry/api@1.9.0)(kysely@0.28.13)(pg@8.20.0)(postgres@3.4.8)
       pg-boss:
         specifier: ^12.15.0
         version: 12.15.0
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
     devDependencies:
       '@types/node':
         specifier: ^24.0.0
@@ -170,6 +185,21 @@ importers:
       vitest:
         specifier: ^4.0.18
         version: 4.0.18(@opentelemetry/api@1.9.0)(@types/node@24.12.0)(jiti@2.6.1)(jsdom@28.1.0(@noble/hashes@2.0.1))(lightningcss@1.31.1)(tsx@4.21.0)
+
+  packages/crypto:
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.12.0
+      eslint:
+        specifier: ^9.39.4
+        version: 9.39.4(jiti@2.6.1)
+      typescript:
+        specifier: ^5
+        version: 5.9.3
+      typescript-eslint:
+        specifier: ^8.57.0
+        version: 8.57.0(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3)
 
   packages/db:
     dependencies:
