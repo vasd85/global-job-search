@@ -455,14 +455,14 @@ describe("POST /api/search/expand -- corner cases", () => {
 // ---------------------------------------------------------------------------
 
 describe("POST /api/search/expand -- cascading failures", () => {
-  test("auth service throwing is not caught by the handler try block", async () => {
-    // TODO: auth.api.getSession throwing is not caught by the try block (line 21
-    // is before the try on line 29). If getSession rejects, the error propagates
-    // unhandled to the Next.js framework, which returns its own 500. The handler
-    // should wrap the getSession call in the try block or add its own try-catch.
+  test("auth service throwing returns 500 with structured error", async () => {
     getSessionMock.mockRejectedValueOnce(new Error("auth service unavailable"));
 
-    await expect(POST(makeRequest())).rejects.toThrow("auth service unavailable");
+    const res = await POST(makeRequest());
+    expect(res.status).toBe(500);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const body: Record<string, unknown> = await res.json();
+    expect(body).toEqual({ error: "Internal server error" });
   });
 });
 
