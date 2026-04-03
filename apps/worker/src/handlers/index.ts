@@ -8,9 +8,10 @@ import {
   handleDescriptionFetch,
   handleRoleTaxonomy,
 } from "./stubs";
+import { getAppConfigValue } from "../lib/app-config";
 
-/** Per-vendor concurrency limit for ATS polling. */
-const VENDOR_CONCURRENCY = 5;
+/** Fallback if config row is missing or invalid. */
+const DEFAULT_VENDOR_CONCURRENCY = 5;
 
 /** Concurrent LLM scoring jobs (global, not per-user for MVP). */
 const SCORING_CONCURRENCY = 3;
@@ -36,12 +37,27 @@ export async function registerHandlers(
     await boss.createQueue(queue);
   }
 
+  // Load vendor concurrency from config (requires restart to change).
+  // Coerce with Number() before clamping: getAppConfigValue performs an
+  // unsafe `value as T` cast, so a non-numeric string stored in jsonb
+  // would produce NaN from Math.floor, and Math.max(1, NaN) = NaN.
+  const rawConcurrency = Number(
+    await getAppConfigValue<number>(
+      db,
+      "polling.vendor_concurrency",
+      DEFAULT_VENDOR_CONCURRENCY,
+    ),
+  );
+  const vendorConcurrency = Number.isNaN(rawConcurrency)
+    ? DEFAULT_VENDOR_CONCURRENCY
+    : Math.max(1, Math.floor(rawConcurrency));
+
   // Register ATS polling handlers (one per vendor, same handler function)
   const pollHandler = createPollCompanyHandler(db);
 
   for (const queue of Object.values(VENDOR_QUEUES)) {
-    await boss.work(queue, { localConcurrency: VENDOR_CONCURRENCY }, pollHandler);
-    console.info(`[handlers] Registered ${queue} (concurrency: ${VENDOR_CONCURRENCY})`);
+    await boss.work(queue, { localConcurrency: vendorConcurrency }, pollHandler);
+    console.info(`[handlers] Registered ${queue} (concurrency: ${vendorConcurrency})`);
   }
 
   // Register LLM scoring handler

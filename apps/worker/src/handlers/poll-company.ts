@@ -4,6 +4,7 @@ import type { Database } from "@gjs/db";
 import { companies } from "@gjs/db/schema";
 import { pollCompany, computeNextPoll } from "@gjs/ingestion";
 import { jitter } from "../lib/jitter";
+import { getAppConfigValue } from "../lib/app-config";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -21,6 +22,25 @@ interface PollJobData {
  */
 export function createPollCompanyHandler(db: Database) {
   return async (jobs: Job<PollJobData>[]): Promise<void> => {
+    // Load config once per batch invocation to avoid N+1 queries.
+    // Coerce with Number() before clamping: getAppConfigValue performs an
+    // unsafe `value as T` cast, so a non-numeric string stored in jsonb
+    // would produce NaN from Math.floor, and Math.max(N, NaN) = NaN.
+    const rawJitter = Number(
+      await getAppConfigValue<number>(db, "polling.jitter_max_ms", 5000),
+    );
+    const jitterMaxMs = Number.isNaN(rawJitter) ? 5000 : Math.max(0, rawJitter);
+
+    const rawStale = Number(
+      await getAppConfigValue<number>(db, "polling.stale_threshold_days", 7),
+    );
+    const staleThresholdDays = Number.isNaN(rawStale) ? 7 : Math.max(1, Math.floor(rawStale));
+
+    const rawClosed = Number(
+      await getAppConfigValue<number>(db, "polling.closed_threshold_days", 30),
+    );
+    const closedThresholdDays = Number.isNaN(rawClosed) ? 30 : Math.max(1, Math.floor(rawClosed));
+
     for (const job of jobs) {
       const { companyId } = job.data;
 
@@ -46,11 +66,14 @@ export function createPollCompanyHandler(db: Database) {
       }
 
       // 2. Apply jitter to avoid thundering herd
-      await jitter(5000);
+      await jitter(jitterMaxMs);
 
       // 3. Execute the poll
       console.info(`[poll-company] Polling ${company.slug} (${company.atsVendor})`);
-      const result = await pollCompany(db, company);
+      const result = await pollCompany(db, company, {
+        staleThresholdDays,
+        closedThresholdDays,
+      });
 
       console.info(
         `[poll-company] ${company.slug}: status=${result.status} ` +

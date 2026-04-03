@@ -12,6 +12,13 @@ vi.mock("../lib/jitter", () => ({
   jitter: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock("../lib/app-config", () => ({
+  getAppConfigValue: vi.fn().mockImplementation(
+    (_db: unknown, _key: string, defaultValue: unknown) =>
+      Promise.resolve(defaultValue),
+  ),
+}));
+
 // Use a stable token for drizzle-orm `eq` so we can inspect calls
 vi.mock("drizzle-orm", () => ({
   eq: vi.fn((_col: unknown, val: unknown) => ({ _eq: val })),
@@ -28,6 +35,7 @@ vi.mock("@gjs/db/schema", () => ({
 
 import { pollCompany, computeNextPoll } from "@gjs/ingestion";
 import { jitter } from "../lib/jitter";
+import { getAppConfigValue } from "../lib/app-config";
 import type { PollResult, AdaptivePollOutput } from "@gjs/ingestion";
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -166,8 +174,11 @@ describe("createPollCompanyHandler(db)", () => {
     const handler = createPollCompanyHandler(db);
     await handler([makeJob("company-1")]);
 
-    // pollCompany called with db and company
-    expect(mockPollCompany).toHaveBeenCalledWith(db, company);
+    // pollCompany called with db, company, and threshold options
+    expect(mockPollCompany).toHaveBeenCalledWith(db, company, {
+      staleThresholdDays: 7,
+      closedThresholdDays: 30,
+    });
 
     // computeNextPoll called with correct AdaptivePollInput shape
     expect(mockComputeNextPoll).toHaveBeenCalledWith({
@@ -266,9 +277,10 @@ describe("createPollCompanyHandler(db)", () => {
     expect(setCalls).toHaveLength(3);
 
     // Each call used the correct company
-    expect(mockPollCompany).toHaveBeenNthCalledWith(1, db, companies[0]);
-    expect(mockPollCompany).toHaveBeenNthCalledWith(2, db, companies[1]);
-    expect(mockPollCompany).toHaveBeenNthCalledWith(3, db, companies[2]);
+    const expectedOpts = { staleThresholdDays: 7, closedThresholdDays: 30 };
+    expect(mockPollCompany).toHaveBeenNthCalledWith(1, db, companies[0], expectedOpts);
+    expect(mockPollCompany).toHaveBeenNthCalledWith(2, db, companies[1], expectedOpts);
+    expect(mockPollCompany).toHaveBeenNthCalledWith(3, db, companies[2], expectedOpts);
   });
 
   test("computeNextPoll receives correct input shape from company and poll result", async () => {
@@ -372,7 +384,10 @@ describe("createPollCompanyHandler(db)", () => {
 
     // pollCompany should be called once (only for c3)
     expect(mockPollCompany).toHaveBeenCalledTimes(1);
-    expect(mockPollCompany).toHaveBeenCalledWith(db, company3);
+    expect(mockPollCompany).toHaveBeenCalledWith(db, company3, {
+      staleThresholdDays: 7,
+      closedThresholdDays: 30,
+    });
     expect(setCalls).toHaveLength(1);
   });
 
@@ -403,7 +418,10 @@ describe("createPollCompanyHandler(db)", () => {
     await handler([makeJob("c1"), makeJob("c2")]);
 
     expect(mockPollCompany).toHaveBeenCalledTimes(1);
-    expect(mockPollCompany).toHaveBeenCalledWith(db, activeCompany);
+    expect(mockPollCompany).toHaveBeenCalledWith(db, activeCompany, {
+      staleThresholdDays: 7,
+      closedThresholdDays: 30,
+    });
   });
 
   // ── Nice-to-have ───────────────────────────────────────────────────────
@@ -488,5 +506,211 @@ describe("createPollCompanyHandler(db)", () => {
     await expect(handler([malformedJob])).resolves.toBeUndefined();
 
     expect(mockPollCompany).not.toHaveBeenCalled();
+  });
+
+  // ── Config wiring scenarios ──────────────────────────────────────────────
+
+  describe("config wiring", () => {
+    const mockGetAppConfigValue = getAppConfigValue as ReturnType<typeof vi.fn>;
+
+    test("custom config values are passed through to jitter() and pollCompany()", async () => {
+      mockGetAppConfigValue.mockImplementation(
+        (_db: unknown, key: string) => {
+          const configMap: Record<string, unknown> = {
+            "polling.jitter_max_ms": 3000,
+            "polling.stale_threshold_days": 5,
+            "polling.closed_threshold_days": 20,
+          };
+          return Promise.resolve(configMap[key]);
+        },
+      );
+
+      const company = makeCompany();
+      const { db } = createMockDb([company]);
+      mockPollCompany.mockResolvedValue(makePollResult());
+      mockComputeNextPoll.mockReturnValue(makeAdaptiveOutput());
+
+      const handler = createPollCompanyHandler(db);
+      await handler([makeJob("company-1")]);
+
+      expect(mockJitter).toHaveBeenCalledWith(3000);
+      expect(mockPollCompany).toHaveBeenCalledWith(db, company, {
+        staleThresholdDays: 5,
+        closedThresholdDays: 20,
+      });
+    });
+
+    test("config values are loaded once per batch, not per job", async () => {
+      const companies = [
+        makeCompany({ id: "c1", slug: "co-1" }),
+        makeCompany({ id: "c2", slug: "co-2" }),
+        makeCompany({ id: "c3", slug: "co-3" }),
+      ];
+
+      const mockLimit = vi.fn()
+        .mockResolvedValueOnce([companies[0]])
+        .mockResolvedValueOnce([companies[1]])
+        .mockResolvedValueOnce([companies[2]]);
+      const mockSelectWhere = vi.fn().mockReturnValue({ limit: mockLimit });
+      const mockFrom = vi.fn().mockReturnValue({ where: mockSelectWhere });
+      const mockSelect = vi.fn().mockReturnValue({ from: mockFrom });
+      const mockSet = vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue(undefined),
+      });
+      const mockUpdate = vi.fn().mockReturnValue({ set: mockSet });
+
+      const db = { select: mockSelect, update: mockUpdate } as unknown as
+        Parameters<typeof createPollCompanyHandler>[0];
+
+      mockPollCompany.mockResolvedValue(makePollResult());
+      mockComputeNextPoll.mockReturnValue(makeAdaptiveOutput());
+
+      const handler = createPollCompanyHandler(db);
+      await handler([makeJob("c1"), makeJob("c2"), makeJob("c3")]);
+
+      // 3 config keys read once per batch = 3 calls total, NOT 9 (3 x 3)
+      expect(mockGetAppConfigValue).toHaveBeenCalledTimes(3);
+      expect(mockPollCompany).toHaveBeenCalledTimes(3);
+    });
+
+    test("negative jitter value is clamped to 0", async () => {
+      mockGetAppConfigValue.mockImplementation(
+        (_db: unknown, key: string, defaultValue: unknown) => {
+          if (key === "polling.jitter_max_ms") return Promise.resolve(-100);
+          return Promise.resolve(defaultValue);
+        },
+      );
+
+      const company = makeCompany();
+      const { db } = createMockDb([company]);
+      mockPollCompany.mockResolvedValue(makePollResult());
+      mockComputeNextPoll.mockReturnValue(makeAdaptiveOutput());
+
+      const handler = createPollCompanyHandler(db);
+      await handler([makeJob("company-1")]);
+
+      // Math.max(0, -100) = 0
+      expect(mockJitter).toHaveBeenCalledWith(0);
+    });
+
+    test("stale threshold is clamped to minimum 1", async () => {
+      mockGetAppConfigValue.mockImplementation(
+        (_db: unknown, key: string, defaultValue: unknown) => {
+          if (key === "polling.stale_threshold_days") return Promise.resolve(0);
+          return Promise.resolve(defaultValue);
+        },
+      );
+
+      const company = makeCompany();
+      const { db } = createMockDb([company]);
+      mockPollCompany.mockResolvedValue(makePollResult());
+      mockComputeNextPoll.mockReturnValue(makeAdaptiveOutput());
+
+      const handler = createPollCompanyHandler(db);
+      await handler([makeJob("company-1")]);
+
+      expect(mockPollCompany).toHaveBeenCalledWith(db, company, {
+        staleThresholdDays: 1,
+        closedThresholdDays: 30,
+      });
+    });
+
+    test("closed threshold is clamped to minimum 1", async () => {
+      mockGetAppConfigValue.mockImplementation(
+        (_db: unknown, key: string, defaultValue: unknown) => {
+          if (key === "polling.closed_threshold_days") return Promise.resolve(0);
+          return Promise.resolve(defaultValue);
+        },
+      );
+
+      const company = makeCompany();
+      const { db } = createMockDb([company]);
+      mockPollCompany.mockResolvedValue(makePollResult());
+      mockComputeNextPoll.mockReturnValue(makeAdaptiveOutput());
+
+      const handler = createPollCompanyHandler(db);
+      await handler([makeJob("company-1")]);
+
+      expect(mockPollCompany).toHaveBeenCalledWith(db, company, {
+        staleThresholdDays: 7,
+        closedThresholdDays: 1,
+      });
+    });
+
+    test("empty jobs array: config values are still loaded", async () => {
+      const { db } = createMockDb([]);
+      const handler = createPollCompanyHandler(db);
+
+      await expect(handler([])).resolves.toBeUndefined();
+
+      // getAppConfigValue is called 3 times even for empty batch
+      // (the reads happen before the for loop)
+      expect(mockGetAppConfigValue).toHaveBeenCalledTimes(3);
+      expect(mockPollCompany).not.toHaveBeenCalled();
+    });
+
+    test("getAppConfigValue rejects during batch: handler rejects", async () => {
+      mockGetAppConfigValue.mockRejectedValue(new Error("DB unavailable"));
+
+      const { db } = createMockDb([]);
+      const handler = createPollCompanyHandler(db);
+
+      await expect(handler([makeJob("company-1")])).rejects.toThrow(
+        "DB unavailable",
+      );
+
+      expect(mockPollCompany).not.toHaveBeenCalled();
+    });
+
+    // ── NaN propagation defect scenarios ───────────────────────────────────
+
+    test("non-numeric string for jitter_max_ms: falls back to default 5000", async () => {
+      // Number("fast") = NaN, so the coercion guard falls back to the
+      // hardcoded default of 5000 ms.
+      mockGetAppConfigValue.mockImplementation(
+        (_db: unknown, key: string, defaultValue: unknown) => {
+          if (key === "polling.jitter_max_ms") return Promise.resolve("fast");
+          return Promise.resolve(defaultValue);
+        },
+      );
+
+      const company = makeCompany();
+      const { db } = createMockDb([company]);
+      mockPollCompany.mockResolvedValue(makePollResult());
+      mockComputeNextPoll.mockReturnValue(makeAdaptiveOutput());
+
+      const handler = createPollCompanyHandler(db);
+      await handler([makeJob("company-1")]);
+
+      expect(mockJitter).toHaveBeenCalledWith(5000);
+    });
+
+    test("non-numeric string for threshold values: falls back to defaults", async () => {
+      // Number("long") = NaN, so the coercion guard falls back to the
+      // hardcoded defaults: stale=7, closed=30.
+      mockGetAppConfigValue.mockImplementation(
+        (_db: unknown, key: string, defaultValue: unknown) => {
+          const overrides: Record<string, unknown> = {
+            "polling.stale_threshold_days": "long",
+            "polling.closed_threshold_days": "very-long",
+          };
+          if (key in overrides) return Promise.resolve(overrides[key]);
+          return Promise.resolve(defaultValue);
+        },
+      );
+
+      const company = makeCompany();
+      const { db } = createMockDb([company]);
+      mockPollCompany.mockResolvedValue(makePollResult());
+      mockComputeNextPoll.mockReturnValue(makeAdaptiveOutput());
+
+      const handler = createPollCompanyHandler(db);
+      await handler([makeJob("company-1")]);
+
+      expect(mockPollCompany).toHaveBeenCalledWith(db, company, {
+        staleThresholdDays: 7,
+        closedThresholdDays: 30,
+      });
+    });
   });
 });

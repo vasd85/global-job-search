@@ -19,6 +19,10 @@ vi.mock("./stubs", () => ({
   handleRoleTaxonomy: vi.fn(),
 }));
 
+vi.mock("../lib/app-config", () => ({
+  getAppConfigValue: vi.fn().mockResolvedValue(5),
+}));
+
 // ─── Imports (after mocks) ─────────────────────────────────────────────────
 
 import { createPollCompanyHandler } from "./poll-company";
@@ -28,6 +32,7 @@ import {
   handleDescriptionFetch,
   handleRoleTaxonomy,
 } from "./stubs";
+import { getAppConfigValue } from "../lib/app-config";
 import { VENDOR_QUEUES, FUTURE_QUEUES } from "@gjs/ingestion";
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -197,5 +202,118 @@ describe("registerHandlers(boss, db)", () => {
 
     expect(createLlmScoringHandler).toHaveBeenCalledOnce();
     expect(createLlmScoringHandler).toHaveBeenCalledWith(db);
+  });
+
+  // ── Config wiring scenarios ──────────────────────────────────────────────
+
+  describe("vendor concurrency config", () => {
+    const mockGetAppConfigValue = getAppConfigValue as ReturnType<typeof vi.fn>;
+
+    test("custom vendor concurrency from config is used for all vendor queues", async () => {
+      mockGetAppConfigValue.mockResolvedValue(8);
+      const boss = createMockBoss();
+      const db = createMockDb();
+
+      await registerHandlers(boss, db);
+
+      const workCalls = (boss.work as ReturnType<typeof vi.fn>).mock.calls;
+      for (const vendorQueue of Object.values(VENDOR_QUEUES)) {
+        const call = workCalls.find(
+          (c: unknown[]) => c[0] === vendorQueue,
+        );
+        expect(call).toBeDefined();
+        expect(call![1]).toEqual({ localConcurrency: 8 });
+      }
+    });
+
+    test("vendor concurrency clamped to minimum 1", async () => {
+      mockGetAppConfigValue.mockResolvedValue(0);
+      const boss = createMockBoss();
+      const db = createMockDb();
+
+      await registerHandlers(boss, db);
+
+      const workCalls = (boss.work as ReturnType<typeof vi.fn>).mock.calls;
+      for (const vendorQueue of Object.values(VENDOR_QUEUES)) {
+        const call = workCalls.find(
+          (c: unknown[]) => c[0] === vendorQueue,
+        );
+        expect(call).toBeDefined();
+        expect(call![1]).toEqual({ localConcurrency: 1 });
+      }
+    });
+
+    test("fractional concurrency value is floored", async () => {
+      mockGetAppConfigValue.mockResolvedValue(3.7);
+      const boss = createMockBoss();
+      const db = createMockDb();
+
+      await registerHandlers(boss, db);
+
+      const workCalls = (boss.work as ReturnType<typeof vi.fn>).mock.calls;
+      for (const vendorQueue of Object.values(VENDOR_QUEUES)) {
+        const call = workCalls.find(
+          (c: unknown[]) => c[0] === vendorQueue,
+        );
+        expect(call).toBeDefined();
+        expect(call![1]).toEqual({ localConcurrency: 3 });
+      }
+    });
+
+    test("getAppConfigValue rejects: error propagates, no handlers registered", async () => {
+      mockGetAppConfigValue.mockRejectedValue(new Error("DB unavailable"));
+      const boss = createMockBoss();
+      const db = createMockDb();
+
+      await expect(registerHandlers(boss, db)).rejects.toThrow("DB unavailable");
+
+      // boss.work is called for queue creation but the vendor work registrations
+      // happen after config read. The config read is between createQueue and work,
+      // but createQueue calls still happen.
+      // Vendor queue work() calls should NOT have happened.
+      const workCalls = (boss.work as ReturnType<typeof vi.fn>).mock.calls;
+      const vendorQueueNames: string[] = Object.values(VENDOR_QUEUES);
+      const vendorWorkCalls = workCalls.filter((c: unknown[]) =>
+        vendorQueueNames.includes(c[0] as string),
+      );
+      expect(vendorWorkCalls).toHaveLength(0);
+    });
+
+    test("scoring concurrency is NOT affected by vendor config", async () => {
+      mockGetAppConfigValue.mockResolvedValue(10);
+      const boss = createMockBoss();
+      const db = createMockDb();
+
+      await registerHandlers(boss, db);
+
+      const workCalls = (boss.work as ReturnType<typeof vi.fn>).mock.calls;
+      const scoringCall = workCalls.find(
+        (c: unknown[]) => c[0] === FUTURE_QUEUES.llmScoring,
+      );
+      expect(scoringCall).toBeDefined();
+      // Scoring queue should still use hardcoded concurrency of 3
+      expect(scoringCall![1]).toEqual({ localConcurrency: 3 });
+    });
+
+    // ── NaN propagation defect ─────────────────────────────────────────────
+
+    test("non-numeric string for vendor_concurrency: falls back to default 5", async () => {
+      // Number("high") = NaN, so the coercion guard falls back to
+      // DEFAULT_VENDOR_CONCURRENCY (5).
+      mockGetAppConfigValue.mockResolvedValue("high");
+      const boss = createMockBoss();
+      const db = createMockDb();
+
+      await registerHandlers(boss, db);
+
+      const workCalls = (boss.work as ReturnType<typeof vi.fn>).mock.calls;
+      for (const vendorQueue of Object.values(VENDOR_QUEUES)) {
+        const call = workCalls.find(
+          (c: unknown[]) => c[0] === vendorQueue,
+        );
+        expect(call).toBeDefined();
+        expect(call![1]).toEqual({ localConcurrency: 5 });
+      }
+    });
   });
 });

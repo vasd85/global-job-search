@@ -1,1 +1,1 @@
-export { pollCompany, type PollResult } from "@gjs/ingestion";
+export { pollCompany, type PollResult, type PollOptions } from "@gjs/ingestion";
