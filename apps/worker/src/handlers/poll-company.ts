@@ -4,6 +4,7 @@ import type { Database } from "@gjs/db";
 import { companies } from "@gjs/db/schema";
 import { pollCompany, computeNextPoll } from "@gjs/ingestion";
 import { jitter } from "../lib/jitter";
+import { getAppConfigValue } from "../lib/app-config";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -21,6 +22,20 @@ interface PollJobData {
  */
 export function createPollCompanyHandler(db: Database) {
   return async (jobs: Job<PollJobData>[]): Promise<void> => {
+    // Load config once per batch invocation to avoid N+1 queries
+    const jitterMaxMs = Math.max(
+      0,
+      await getAppConfigValue<number>(db, "polling.jitter_max_ms", 5000),
+    );
+    const staleThresholdDays = Math.max(
+      1,
+      await getAppConfigValue<number>(db, "polling.stale_threshold_days", 7),
+    );
+    const closedThresholdDays = Math.max(
+      1,
+      await getAppConfigValue<number>(db, "polling.closed_threshold_days", 30),
+    );
+
     for (const job of jobs) {
       const { companyId } = job.data;
 
@@ -46,11 +61,14 @@ export function createPollCompanyHandler(db: Database) {
       }
 
       // 2. Apply jitter to avoid thundering herd
-      await jitter(5000);
+      await jitter(jitterMaxMs);
 
       // 3. Execute the poll
       console.info(`[poll-company] Polling ${company.slug} (${company.atsVendor})`);
-      const result = await pollCompany(db, company);
+      const result = await pollCompany(db, company, {
+        staleThresholdDays,
+        closedThresholdDays,
+      });
 
       console.info(
         `[poll-company] ${company.slug}: status=${result.status} ` +
