@@ -6,6 +6,7 @@ import {
   type DiscoveredCompany,
 } from "./discover-companies-schema";
 import { buildDiscoveryPrompt } from "./discover-companies-prompt";
+import { debug } from "./logger";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -57,6 +58,12 @@ export async function discoverCompanies(
     const anthropic = createAnthropic({ apiKey });
     const model = anthropic(MODEL_ID);
 
+    debug("discover", "Calling generateText", {
+      modelId: MODEL_ID,
+      maxSteps: MAX_STEPS,
+      promptSummary: promptParts.user.slice(0, 200),
+    });
+
     const result = await generateText({
       model,
       tools: {
@@ -69,7 +76,14 @@ export async function discoverCompanies(
     });
 
     const discoveryOutput = result.output;
+    debug("discover", "generateText returned", {
+      hasOutput: discoveryOutput != null,
+      stepCount: result.steps?.length,
+    });
     if (!discoveryOutput) {
+      debug("discover", "Parse failure: no structured output", {
+        rawText: result.text?.slice(0, 500),
+      });
       console.warn("[discover] AI returned no structured output");
       return [];
     }
