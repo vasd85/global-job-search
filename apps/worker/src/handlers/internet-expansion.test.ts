@@ -21,6 +21,8 @@ vi.mock("../lib/discover-companies", () => ({
 
 vi.mock("drizzle-orm", () => ({
   eq: vi.fn((_col: unknown, val: unknown) => ({ _eq: val })),
+  and: vi.fn((...args: unknown[]) => ({ _and: args })),
+  inArray: vi.fn((_col: unknown, vals: unknown) => ({ _inArray: vals })),
 }));
 
 vi.mock("@gjs/db/schema", () => ({
@@ -30,6 +32,16 @@ vi.mock("@gjs/db/schema", () => ({
     atsVendor: Symbol("companies.atsVendor"),
     atsSlug: Symbol("companies.atsSlug"),
     isActive: Symbol("companies.isActive"),
+  },
+  jobs: {
+    id: Symbol("jobs.id"),
+    companyId: Symbol("jobs.companyId"),
+    descriptionHash: Symbol("jobs.descriptionHash"),
+  },
+  jobMatches: {
+    jobId: Symbol("jobMatches.jobId"),
+    jobContentHash: Symbol("jobMatches.jobContentHash"),
+    userProfileId: Symbol("jobMatches.userProfileId"),
   },
   userCompanyPreferences: {
     userId: Symbol("userCompanyPreferences.userId"),
@@ -152,6 +164,8 @@ function makeCompanyRow(overrides: Record<string, unknown> = {}) {
  * 1. select().from(userCompanyPreferences).where().limit() -> preferences
  * 2. select({...}).from(companies).where()                 -> existing companies
  * 3. insert(companies).values().onConflictDoNothing().returning() -> inserted row
+ * 4. select({id,descriptionHash}).from(jobs).where()       -> jobs from new companies
+ * 5. select({jobId,jobContentHash}).from(jobMatches).where() -> existing scores
  *
  * selectResults: consumed in order. Each terminal call returns the next result.
  * insertResults: consumed in order for .returning() calls.
@@ -286,9 +300,14 @@ describe("createInternetExpansionHandler", () => {
     setupHappyPath();
 
     const companyRow = makeCompanyRow();
-    // select 1: preferences, select 2: existing companies (empty)
+    const jobRows = [
+      { id: "job-1", descriptionHash: "hash-1" },
+      { id: "job-2", descriptionHash: "hash-2" },
+    ];
+    // select 1: preferences, select 2: existing companies (empty),
+    // select 3: jobs from new companies, select 4: existing scores (empty)
     const { db, insertCalls } = createMockDb(
-      [[makePrefsRow()], []],
+      [[makePrefsRow()], [], jobRows, []],
       [[companyRow]],
     );
     const boss = createMockBoss();
@@ -314,17 +333,17 @@ describe("createInternetExpansionHandler", () => {
     // pollCompany called with the inserted row
     expect(mockPollCompany).toHaveBeenCalledWith(db, companyRow);
 
-    // boss.send called for scoring
+    // boss.send called for individual scoring jobs (one per job)
+    expect(boss.send).toHaveBeenCalledTimes(2);
     expect(boss.send).toHaveBeenCalledWith(
       FUTURE_QUEUES.llmScoring,
-      expect.objectContaining({
-        userId: "user-1",
-        userProfileId: "profile-1",
-        trigger: "internet_expansion",
-      }),
-      expect.objectContaining({
-        singletonKey: "expand-score:profile-1",
-      }),
+      { jobId: "job-1", userProfileId: "profile-1", userId: "user-1" },
+      { singletonKey: "profile-1:job-1" },
+    );
+    expect(boss.send).toHaveBeenCalledWith(
+      FUTURE_QUEUES.llmScoring,
+      { jobId: "job-2", userProfileId: "profile-1", userId: "user-1" },
+      { singletonKey: "profile-1:job-2" },
     );
   });
 
@@ -534,8 +553,11 @@ describe("createInternetExpansionHandler", () => {
     mockPollCompany.mockRejectedValue(new Error("timeout"));
 
     const companyRow = makeCompanyRow();
+    const jobRows = [{ id: "job-1", descriptionHash: "hash-1" }];
+    // select 1: prefs, select 2: existing companies (empty),
+    // select 3: jobs from new companies, select 4: existing scores (empty)
     const { db } = createMockDb(
-      [[makePrefsRow()], []],
+      [[makePrefsRow()], [], jobRows, []],
       [[companyRow]],
     );
     const boss = createMockBoss();
@@ -551,8 +573,8 @@ describe("createInternetExpansionHandler", () => {
     // Scoring still enqueued because inserted > 0
     expect(boss.send).toHaveBeenCalledWith(
       FUTURE_QUEUES.llmScoring,
-      expect.objectContaining({ trigger: "internet_expansion" }),
-      expect.any(Object),
+      { jobId: "job-1", userProfileId: "profile-1", userId: "user-1" },
+      { singletonKey: "profile-1:job-1" },
     );
   });
 
@@ -678,8 +700,11 @@ describe("createInternetExpansionHandler", () => {
     setupHappyPath();
 
     const companyRow = makeCompanyRow();
+    const jobRows = [{ id: "job-1", descriptionHash: "hash-1" }];
+    // select 1: prefs, select 2: existing companies (empty),
+    // select 3: jobs from new companies, select 4: existing scores (empty)
     const { db } = createMockDb(
-      [[makePrefsRow()], []],
+      [[makePrefsRow()], [], jobRows, []],
       [[companyRow]],
     );
     const boss = createMockBoss();
@@ -1111,8 +1136,11 @@ describe("createInternetExpansionHandler", () => {
     setupHappyPath();
 
     const companyRow = makeCompanyRow();
+    const jobRows = [{ id: "job-1", descriptionHash: "hash-1" }];
+    // select 1: prefs, select 2: existing companies (empty),
+    // select 3: jobs from new companies, select 4: existing scores (empty)
     const { db } = createMockDb(
-      [[makePrefsRow()], []],
+      [[makePrefsRow()], [], jobRows, []],
       [[companyRow]],
     );
     const boss = createMockBoss();

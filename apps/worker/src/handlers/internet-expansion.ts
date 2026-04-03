@@ -1,7 +1,7 @@
-import { eq } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import type { Job, PgBoss } from "pg-boss";
 import type { Database } from "@gjs/db";
-import { companies, userCompanyPreferences } from "@gjs/db/schema";
+import { companies, jobs, jobMatches, userCompanyPreferences } from "@gjs/db/schema";
 import { pollCompany, FUTURE_QUEUES } from "@gjs/ingestion";
 import {
   detectAtsVendor,
@@ -154,6 +154,7 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
         }
 
         // 6. Process each discovered company
+        const insertedCompanyIds: string[] = [];
         let inserted = 0;
         let polled = 0;
         let skippedDomain = 0;
@@ -241,6 +242,7 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
             }
 
             inserted++;
+            insertedCompanyIds.push(companyRow.id as string);
             if (domain) existingDomains.add(domain);
             existingAtsKeys.add(atsKey);
 
@@ -280,26 +282,72 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
             `poll_errors=${pollErrors}`,
         );
 
-        // 7. Enqueue LLM scoring for this user's jobs
-        if (inserted > 0) {
+        // 7. Enqueue LLM scoring for newly inserted companies' jobs
+        if (insertedCompanyIds.length > 0) {
           try {
-            await boss.send(
-              FUTURE_QUEUES.llmScoring,
-              {
-                userId,
-                userProfileId,
-                // Sentinel: the scoring handler will pick up all unscored
-                // jobs for this profile on next trigger from the web app.
-                // For now, we just log a reminder that scoring should happen.
-                trigger: "internet_expansion",
-              },
-              {
-                singletonKey: `expand-score:${userProfileId}`,
-              },
-            );
-            console.info(
-              `[expand] Enqueued scoring job for profile ${userProfileId}`,
-            );
+            // Query jobs belonging to the companies we just inserted
+            const newJobs = await db
+              .select({ id: jobs.id, descriptionHash: jobs.descriptionHash })
+              .from(jobs)
+              .where(inArray(jobs.companyId, insertedCompanyIds));
+
+            if (newJobs.length > 0) {
+              const newJobIds = newJobs.map((j) => j.id);
+
+              // Check which jobs already have a fresh score for this profile
+              const existingScores = await db
+                .select({
+                  jobId: jobMatches.jobId,
+                  jobContentHash: jobMatches.jobContentHash,
+                })
+                .from(jobMatches)
+                .where(
+                  and(
+                    eq(jobMatches.userProfileId, userProfileId),
+                    inArray(jobMatches.jobId, newJobIds),
+                  ),
+                );
+
+              const scoreByJobId = new Map(
+                existingScores.map((m) => [m.jobId, m.jobContentHash]),
+              );
+              const hashByJobId = new Map(
+                newJobs.map((j) => [j.id, j.descriptionHash]),
+              );
+
+              // Enqueue individual scoring jobs for unscored/stale jobs
+              let enqueued = 0;
+              for (const job of newJobs) {
+                const existingHash = scoreByJobId.get(job.id);
+                const currentHash = hashByJobId.get(job.id);
+
+                // Skip if already scored with the current content hash
+                if (existingHash != null && existingHash === currentHash) {
+                  continue;
+                }
+
+                try {
+                  await boss.send(
+                    FUTURE_QUEUES.llmScoring,
+                    { jobId: job.id, userProfileId, userId },
+                    { singletonKey: `${userProfileId}:${job.id}` },
+                  );
+                  enqueued++;
+                } catch (sendError) {
+                  const msg =
+                    sendError instanceof Error
+                      ? sendError.message
+                      : String(sendError);
+                  console.warn(
+                    `[expand] Failed to enqueue scoring for job ${job.id}: ${msg}`,
+                  );
+                }
+              }
+
+              console.info(
+                `[expand] Enqueued ${enqueued} scoring jobs for profile ${userProfileId}`,
+              );
+            }
           } catch (scoreError) {
             // Non-fatal: scoring can be triggered manually later
             const msg =
