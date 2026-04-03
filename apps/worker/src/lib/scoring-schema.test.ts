@@ -29,17 +29,19 @@ describe("ScoringOutputSchema", () => {
     expect(result).toEqual(input);
   });
 
-  test("score out of range (11) is rejected", () => {
-    expect(() => ScoringOutputSchema.parse(validOutput({ scoreR: 11 }))).toThrow();
+  test("out-of-range score (11) passes schema — clamped in handler", () => {
+    // Anthropic rejects all numeric constraints (min/max/int).
+    // Clamping to 0-10 and rounding happens in the handler.
+    const result = ScoringOutputSchema.parse(validOutput({ scoreR: 11 }));
+    expect(result.scoreR).toBe(11);
   });
 
-  test("score out of range (-1) is rejected", () => {
-    expect(() => ScoringOutputSchema.parse(validOutput({ scoreR: -1 }))).toThrow();
+  test("negative score (-1) passes schema — clamped in handler", () => {
+    const result = ScoringOutputSchema.parse(validOutput({ scoreR: -1 }));
+    expect(result.scoreR).toBe(-1);
   });
 
-  test("non-integer score (5.5) is accepted (rounded in handler)", () => {
-    // Schema uses z.number() not .int() because Anthropic rejects min/max on integer type.
-    // Rounding happens in the handler, not in Zod validation.
+  test("non-integer score (5.5) passes schema — rounded in handler", () => {
     const result = ScoringOutputSchema.parse(validOutput({ scoreR: 5.5 }));
     expect(result.scoreR).toBe(5.5);
   });

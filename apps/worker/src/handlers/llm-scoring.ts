@@ -153,13 +153,14 @@ export function createLlmScoringHandler(db: Database) {
           continue;
         }
 
-        // 8. Round scores to integers (schema uses z.number() not .int()
-        //    because Anthropic rejects min/max on integer type)
-        const scoreR = Math.round(scoringOutput.scoreR);
-        const scoreS = Math.round(scoringOutput.scoreS);
-        const scoreL = Math.round(scoringOutput.scoreL);
-        const scoreC = Math.round(scoringOutput.scoreC);
-        const scoreD = Math.round(scoringOutput.scoreD);
+        // 8. Clamp and round scores (Anthropic structured output does not
+        //    support min/max/int constraints — enforced here instead)
+        const clamp = (v: number) => Math.round(Math.max(0, Math.min(10, v)));
+        const scoreR = clamp(scoringOutput.scoreR);
+        const scoreS = clamp(scoringOutput.scoreS);
+        const scoreL = clamp(scoringOutput.scoreL);
+        const scoreC = clamp(scoringOutput.scoreC);
+        const scoreD = clamp(scoringOutput.scoreD);
 
         // 9. Compute match percent
         const { matchPercent, appliedGrowthBonus } = computeMatchPercent(
