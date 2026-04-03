@@ -1,4 +1,4 @@
-export { pollCompany, type PollResult } from "./poll-company";
+export { pollCompany, type PollResult, type PollOptions } from "./poll-company";
 export {
   computeNextPoll,
   type PollPriority,

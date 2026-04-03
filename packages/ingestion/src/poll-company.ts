@@ -26,6 +26,11 @@ export interface PollResult {
   durationMs: number;
 }
 
+export interface PollOptions {
+  staleThresholdDays?: number;
+  closedThresholdDays?: number;
+}
+
 type CompanyRow = typeof companies.$inferSelect;
 type JobRow = typeof jobs.$inferSelect;
 
@@ -82,8 +87,11 @@ function computeDescriptionHash(descriptionText: string | null | undefined): str
 async function syncCompanyJobs(
   db: Database,
   company: CompanyRow,
-  freshJobs: AllJob[]
+  freshJobs: AllJob[],
+  options?: PollOptions,
 ): Promise<Omit<PollResult, "durationMs">> {
+  const staleThreshold = options?.staleThresholdDays ?? STALE_THRESHOLD_DAYS;
+  const closedThreshold = options?.closedThresholdDays ?? CLOSED_THRESHOLD_DAYS;
   const now = new Date();
 
   // 1. Fetch all currently-open stored jobs for this company
@@ -173,13 +181,13 @@ async function syncCompanyJobs(
         (now.getTime() - stored.lastSeenAt.getTime()) / (1000 * 60 * 60 * 24)
       );
 
-      if (daysSinceLastSeen >= CLOSED_THRESHOLD_DAYS) {
+      if (daysSinceLastSeen >= closedThreshold) {
         await db
           .update(jobs)
           .set({ status: "closed", closedAt: now, updatedAt: now })
           .where(eq(jobs.id, stored.id));
         jobsClosed++;
-      } else if (daysSinceLastSeen >= STALE_THRESHOLD_DAYS) {
+      } else if (daysSinceLastSeen >= staleThreshold) {
         await db
           .update(jobs)
           .set({ status: "stale", updatedAt: now })
@@ -203,7 +211,8 @@ async function syncCompanyJobs(
 
 export async function pollCompany(
   db: Database,
-  company: CompanyRow
+  company: CompanyRow,
+  options?: PollOptions,
 ): Promise<PollResult> {
   const startTime = Date.now();
 
@@ -250,7 +259,7 @@ export async function pollCompany(
     }
 
     // 2. Sync jobs (diff engine)
-    const syncResult = await syncCompanyJobs(db, company, result.jobs);
+    const syncResult = await syncCompanyJobs(db, company, result.jobs, options);
     const durationMs = Date.now() - startTime;
 
     // 3. Update company metadata
