@@ -18,15 +18,15 @@ import { FUTURE_QUEUES } from "@gjs/ingestion";
  * Uses a singletonKey per user to ensure only one expansion runs at a time.
  */
 export async function POST(request: Request) {
-  const session = await auth.api.getSession({ headers: request.headers });
-  if (!session?.user?.id) {
-    return NextResponse.json(
-      { error: "Authentication required" },
-      { status: 401 },
-    );
-  }
-
   try {
+    const session = await auth.api.getSession({ headers: request.headers });
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { error: "Authentication required" },
+        { status: 401 },
+      );
+    }
+
     // 1. Load the user's profile
     const profileRows = await db
       .select({ id: userProfiles.id })
