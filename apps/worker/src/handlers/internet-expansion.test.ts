@@ -37,6 +37,10 @@ vi.mock("@gjs/db/schema", () => ({
     id: Symbol("jobs.id"),
     companyId: Symbol("jobs.companyId"),
     descriptionHash: Symbol("jobs.descriptionHash"),
+    title: Symbol("jobs.title"),
+    departmentRaw: Symbol("jobs.departmentRaw"),
+    locationRaw: Symbol("jobs.locationRaw"),
+    workplaceType: Symbol("jobs.workplaceType"),
   },
   jobMatches: {
     jobId: Symbol("jobMatches.jobId"),
@@ -46,6 +50,10 @@ vi.mock("@gjs/db/schema", () => ({
   userCompanyPreferences: {
     userId: Symbol("userCompanyPreferences.userId"),
   },
+  userProfiles: {
+    userId: Symbol("userProfiles.userId"),
+  },
+  roleFamilies: Symbol("roleFamilies"),
 }));
 
 vi.mock("@gjs/ingestion", () => ({
@@ -66,6 +74,13 @@ vi.mock("@gjs/ats-core/discovery", () => ({
   parseSmartRecruitersCompanyFromCareersUrl: vi.fn(),
 }));
 
+vi.mock("@gjs/ats-core", () => ({
+  classifyJobMulti: vi.fn(),
+  extractSeniority: vi.fn(),
+  resolveAllTiers: vi.fn(),
+  matchJobToTiers: vi.fn(),
+}));
+
 // ─── Imports (after mocks) ─────────────────────────────────────────────────
 
 import { decryptUserKey } from "../lib/decrypt-user-key";
@@ -80,6 +95,12 @@ import {
   parseAshbyBoard,
   parseSmartRecruitersCompanyFromCareersUrl,
 } from "@gjs/ats-core/discovery";
+import {
+  classifyJobMulti,
+  extractSeniority,
+  resolveAllTiers,
+  matchJobToTiers,
+} from "@gjs/ats-core";
 
 // ─── Typed mocks ───────────────────────────────────────────────────────────
 
@@ -95,6 +116,10 @@ const mockParseLeverSite = parseLeverSite as ReturnType<typeof vi.fn>;
 const mockParseAshbyBoard = parseAshbyBoard as ReturnType<typeof vi.fn>;
 const mockParseSmartRecruitersCompany =
   parseSmartRecruitersCompanyFromCareersUrl as ReturnType<typeof vi.fn>;
+const mockClassifyJobMulti = classifyJobMulti as ReturnType<typeof vi.fn>;
+const mockExtractSeniority = extractSeniority as ReturnType<typeof vi.fn>;
+const mockResolveAllTiers = resolveAllTiers as ReturnType<typeof vi.fn>;
+const mockMatchJobToTiers = matchJobToTiers as ReturnType<typeof vi.fn>;
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -126,6 +151,37 @@ function makePrefsRow(overrides: Record<string, unknown> = {}) {
     productTypes: ["b2b"],
     exclusions: [],
     hqGeographies: ["US"],
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...overrides,
+  };
+}
+
+function makeProfileRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "profile-1",
+    userId: "user-1",
+    targetTitles: ["Software Engineer"],
+    targetSeniority: [],
+    locationPreferences: null,
+    preferredLocations: [],
+    remotePreference: "any",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...overrides,
+  };
+}
+
+function makeRoleFamilyRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "rf-1",
+    slug: "engineering",
+    name: "Engineering",
+    strongMatch: ["engineer", "developer"],
+    moderateMatch: ["programmer"],
+    departmentBoost: ["engineering"],
+    departmentExclude: ["sales"],
+    isSystemDefined: true,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
@@ -164,8 +220,10 @@ function makeCompanyRow(overrides: Record<string, unknown> = {}) {
  * 1. select().from(userCompanyPreferences).where().limit() -> preferences
  * 2. select({...}).from(companies).where()                 -> existing companies
  * 3. insert(companies).values().onConflictDoNothing().returning() -> inserted row
- * 4. select({id,descriptionHash}).from(jobs).where()       -> jobs from new companies
- * 5. select({jobId,jobContentHash}).from(jobMatches).where() -> existing scores
+ * 4. select().from(userProfiles).where().limit()           -> user profile
+ * 5. select().from(roleFamilies)                           -> role families (no .where())
+ * 6. select({...}).from(jobs).where()                      -> jobs from new companies
+ * 7. select({jobId,jobContentHash}).from(jobMatches).where() -> existing scores
  *
  * selectResults: consumed in order. Each terminal call returns the next result.
  * insertResults: consumed in order for .returning() calls.
@@ -221,7 +279,19 @@ function createMockDb(
     return wrapper;
   });
 
-  const mockFrom = vi.fn().mockReturnValue({ where: mockWhere });
+  // .from() returns { where } for filtered queries or is directly thenable
+  // for unfiltered queries like `db.select().from(roleFamilies)`.
+  const mockFrom = vi.fn().mockImplementation(() => {
+    const result = selectResults[selectIndex] ?? [];
+    return {
+      where: mockWhere,
+      // Make it thenable for direct await (roleFamilies query has no .where())
+      then: (resolve: (val: unknown) => void) => {
+        selectIndex++;
+        resolve(result);
+      },
+    };
+  });
 
   const mockSelect = vi.fn().mockImplementation(() => ({
     from: mockFrom,
@@ -278,6 +348,17 @@ function setupHappyPath(opts: {
   mockDetectAtsVendor.mockReturnValue("greenhouse");
   mockParseGreenhouseBoardToken.mockReturnValue("newco");
   mockPollCompany.mockResolvedValue({ jobsFound: 5, jobsNew: 5 });
+
+  // Level 2 filter defaults: all jobs pass
+  mockClassifyJobMulti.mockReturnValue({
+    familySlug: "engineering",
+    score: 0.9,
+    matchType: "strong",
+    matchedPattern: "engineer",
+  });
+  mockExtractSeniority.mockReturnValue(null);
+  mockResolveAllTiers.mockReturnValue([]);
+  mockMatchJobToTiers.mockReturnValue({ passes: true, matchedTier: 1 });
 }
 
 // ─── Tests ─────────────────────────────────────────────────────────────────
@@ -301,13 +382,14 @@ describe("createInternetExpansionHandler", () => {
 
     const companyRow = makeCompanyRow();
     const jobRows = [
-      { id: "job-1", descriptionHash: "hash-1" },
-      { id: "job-2", descriptionHash: "hash-2" },
+      { id: "job-1", descriptionHash: "hash-1", title: "Software Engineer", departmentRaw: "Engineering", locationRaw: "Remote", workplaceType: "remote" },
+      { id: "job-2", descriptionHash: "hash-2", title: "Backend Engineer", departmentRaw: "Engineering", locationRaw: "NYC", workplaceType: "onsite" },
     ];
     // select 1: preferences, select 2: existing companies (empty),
-    // select 3: jobs from new companies, select 4: existing scores (empty)
+    // select 3: user profile, select 4: role families,
+    // select 5: jobs from new companies, select 6: existing scores (empty)
     const { db, insertCalls } = createMockDb(
-      [[makePrefsRow()], [], jobRows, []],
+      [[makePrefsRow()], [], [makeProfileRow()], [makeRoleFamilyRow()], jobRows, []],
       [[companyRow]],
     );
     const boss = createMockBoss();
@@ -333,17 +415,17 @@ describe("createInternetExpansionHandler", () => {
     // pollCompany called with the inserted row
     expect(mockPollCompany).toHaveBeenCalledWith(db, companyRow);
 
-    // boss.send called for individual scoring jobs (one per job)
+    // boss.send called for individual scoring jobs (one per job) with stagger
     expect(boss.send).toHaveBeenCalledTimes(2);
     expect(boss.send).toHaveBeenCalledWith(
       FUTURE_QUEUES.llmScoring,
       { jobId: "job-1", userProfileId: "profile-1", userId: "user-1" },
-      { singletonKey: "profile-1:job-1" },
+      { singletonKey: "profile-1:job-1", startAfter: 0 },
     );
     expect(boss.send).toHaveBeenCalledWith(
       FUTURE_QUEUES.llmScoring,
       { jobId: "job-2", userProfileId: "profile-1", userId: "user-1" },
-      { singletonKey: "profile-1:job-2" },
+      { singletonKey: "profile-1:job-2", startAfter: 5 },
     );
   });
 
@@ -553,11 +635,12 @@ describe("createInternetExpansionHandler", () => {
     mockPollCompany.mockRejectedValue(new Error("timeout"));
 
     const companyRow = makeCompanyRow();
-    const jobRows = [{ id: "job-1", descriptionHash: "hash-1" }];
+    const jobRows = [{ id: "job-1", descriptionHash: "hash-1", title: "Software Engineer", departmentRaw: "Engineering", locationRaw: "Remote", workplaceType: "remote" }];
     // select 1: prefs, select 2: existing companies (empty),
-    // select 3: jobs from new companies, select 4: existing scores (empty)
+    // select 3: user profile, select 4: role families,
+    // select 5: jobs from new companies, select 6: existing scores (empty)
     const { db } = createMockDb(
-      [[makePrefsRow()], [], jobRows, []],
+      [[makePrefsRow()], [], [makeProfileRow()], [makeRoleFamilyRow()], jobRows, []],
       [[companyRow]],
     );
     const boss = createMockBoss();
@@ -574,7 +657,7 @@ describe("createInternetExpansionHandler", () => {
     expect(boss.send).toHaveBeenCalledWith(
       FUTURE_QUEUES.llmScoring,
       { jobId: "job-1", userProfileId: "profile-1", userId: "user-1" },
-      { singletonKey: "profile-1:job-1" },
+      { singletonKey: "profile-1:job-1", startAfter: 0 },
     );
   });
 
@@ -700,11 +783,12 @@ describe("createInternetExpansionHandler", () => {
     setupHappyPath();
 
     const companyRow = makeCompanyRow();
-    const jobRows = [{ id: "job-1", descriptionHash: "hash-1" }];
+    const jobRows = [{ id: "job-1", descriptionHash: "hash-1", title: "Software Engineer", departmentRaw: "Engineering", locationRaw: "Remote", workplaceType: "remote" }];
     // select 1: prefs, select 2: existing companies (empty),
-    // select 3: jobs from new companies, select 4: existing scores (empty)
+    // select 3: user profile, select 4: role families,
+    // select 5: jobs from new companies, select 6: existing scores (empty)
     const { db } = createMockDb(
-      [[makePrefsRow()], [], jobRows, []],
+      [[makePrefsRow()], [], [makeProfileRow()], [makeRoleFamilyRow()], jobRows, []],
       [[companyRow]],
     );
     const boss = createMockBoss();
