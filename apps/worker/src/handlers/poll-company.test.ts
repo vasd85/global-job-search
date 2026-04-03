@@ -35,6 +35,7 @@ vi.mock("@gjs/db/schema", () => ({
 
 import { pollCompany, computeNextPoll } from "@gjs/ingestion";
 import { jitter } from "../lib/jitter";
+import { getAppConfigValue } from "../lib/app-config";
 import type { PollResult, AdaptivePollOutput } from "@gjs/ingestion";
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -505,5 +506,217 @@ describe("createPollCompanyHandler(db)", () => {
     await expect(handler([malformedJob])).resolves.toBeUndefined();
 
     expect(mockPollCompany).not.toHaveBeenCalled();
+  });
+
+  // ── Config wiring scenarios ──────────────────────────────────────────────
+
+  describe("config wiring", () => {
+    const mockGetAppConfigValue = getAppConfigValue as ReturnType<typeof vi.fn>;
+
+    test("custom config values are passed through to jitter() and pollCompany()", async () => {
+      mockGetAppConfigValue.mockImplementation(
+        (_db: unknown, key: string) => {
+          const configMap: Record<string, unknown> = {
+            "polling.jitter_max_ms": 3000,
+            "polling.stale_threshold_days": 5,
+            "polling.closed_threshold_days": 20,
+          };
+          return Promise.resolve(configMap[key]);
+        },
+      );
+
+      const company = makeCompany();
+      const { db } = createMockDb([company]);
+      mockPollCompany.mockResolvedValue(makePollResult());
+      mockComputeNextPoll.mockReturnValue(makeAdaptiveOutput());
+
+      const handler = createPollCompanyHandler(db);
+      await handler([makeJob("company-1")]);
+
+      expect(mockJitter).toHaveBeenCalledWith(3000);
+      expect(mockPollCompany).toHaveBeenCalledWith(db, company, {
+        staleThresholdDays: 5,
+        closedThresholdDays: 20,
+      });
+    });
+
+    test("config values are loaded once per batch, not per job", async () => {
+      const companies = [
+        makeCompany({ id: "c1", slug: "co-1" }),
+        makeCompany({ id: "c2", slug: "co-2" }),
+        makeCompany({ id: "c3", slug: "co-3" }),
+      ];
+
+      const mockLimit = vi.fn()
+        .mockResolvedValueOnce([companies[0]])
+        .mockResolvedValueOnce([companies[1]])
+        .mockResolvedValueOnce([companies[2]]);
+      const mockSelectWhere = vi.fn().mockReturnValue({ limit: mockLimit });
+      const mockFrom = vi.fn().mockReturnValue({ where: mockSelectWhere });
+      const mockSelect = vi.fn().mockReturnValue({ from: mockFrom });
+      const mockSet = vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue(undefined),
+      });
+      const mockUpdate = vi.fn().mockReturnValue({ set: mockSet });
+
+      const db = { select: mockSelect, update: mockUpdate } as unknown as
+        Parameters<typeof createPollCompanyHandler>[0];
+
+      mockPollCompany.mockResolvedValue(makePollResult());
+      mockComputeNextPoll.mockReturnValue(makeAdaptiveOutput());
+
+      const handler = createPollCompanyHandler(db);
+      await handler([makeJob("c1"), makeJob("c2"), makeJob("c3")]);
+
+      // 3 config keys read once per batch = 3 calls total, NOT 9 (3 x 3)
+      expect(mockGetAppConfigValue).toHaveBeenCalledTimes(3);
+      expect(mockPollCompany).toHaveBeenCalledTimes(3);
+    });
+
+    test("negative jitter value is clamped to 0", async () => {
+      mockGetAppConfigValue.mockImplementation(
+        (_db: unknown, key: string, defaultValue: unknown) => {
+          if (key === "polling.jitter_max_ms") return Promise.resolve(-100);
+          return Promise.resolve(defaultValue);
+        },
+      );
+
+      const company = makeCompany();
+      const { db } = createMockDb([company]);
+      mockPollCompany.mockResolvedValue(makePollResult());
+      mockComputeNextPoll.mockReturnValue(makeAdaptiveOutput());
+
+      const handler = createPollCompanyHandler(db);
+      await handler([makeJob("company-1")]);
+
+      // Math.max(0, -100) = 0
+      expect(mockJitter).toHaveBeenCalledWith(0);
+    });
+
+    test("stale threshold is clamped to minimum 1", async () => {
+      mockGetAppConfigValue.mockImplementation(
+        (_db: unknown, key: string, defaultValue: unknown) => {
+          if (key === "polling.stale_threshold_days") return Promise.resolve(0);
+          return Promise.resolve(defaultValue);
+        },
+      );
+
+      const company = makeCompany();
+      const { db } = createMockDb([company]);
+      mockPollCompany.mockResolvedValue(makePollResult());
+      mockComputeNextPoll.mockReturnValue(makeAdaptiveOutput());
+
+      const handler = createPollCompanyHandler(db);
+      await handler([makeJob("company-1")]);
+
+      expect(mockPollCompany).toHaveBeenCalledWith(db, company, {
+        staleThresholdDays: 1,
+        closedThresholdDays: 30,
+      });
+    });
+
+    test("closed threshold is clamped to minimum 1", async () => {
+      mockGetAppConfigValue.mockImplementation(
+        (_db: unknown, key: string, defaultValue: unknown) => {
+          if (key === "polling.closed_threshold_days") return Promise.resolve(0);
+          return Promise.resolve(defaultValue);
+        },
+      );
+
+      const company = makeCompany();
+      const { db } = createMockDb([company]);
+      mockPollCompany.mockResolvedValue(makePollResult());
+      mockComputeNextPoll.mockReturnValue(makeAdaptiveOutput());
+
+      const handler = createPollCompanyHandler(db);
+      await handler([makeJob("company-1")]);
+
+      expect(mockPollCompany).toHaveBeenCalledWith(db, company, {
+        staleThresholdDays: 7,
+        closedThresholdDays: 1,
+      });
+    });
+
+    test("empty jobs array: config values are still loaded", async () => {
+      const { db } = createMockDb([]);
+      const handler = createPollCompanyHandler(db);
+
+      await expect(handler([])).resolves.toBeUndefined();
+
+      // getAppConfigValue is called 3 times even for empty batch
+      // (the reads happen before the for loop)
+      expect(mockGetAppConfigValue).toHaveBeenCalledTimes(3);
+      expect(mockPollCompany).not.toHaveBeenCalled();
+    });
+
+    test("getAppConfigValue rejects during batch: handler rejects", async () => {
+      mockGetAppConfigValue.mockRejectedValue(new Error("DB unavailable"));
+
+      const { db } = createMockDb([]);
+      const handler = createPollCompanyHandler(db);
+
+      await expect(handler([makeJob("company-1")])).rejects.toThrow(
+        "DB unavailable",
+      );
+
+      expect(mockPollCompany).not.toHaveBeenCalled();
+    });
+
+    // ── NaN propagation defect scenarios ───────────────────────────────────
+
+    test("non-numeric string for jitter_max_ms: NaN propagates to jitter()", async () => {
+      // BUG: Math.max(0, Math.floor("fast")) returns NaN, not 0.
+      // Math.floor("fast") = NaN, and Math.max(0, NaN) = NaN.
+      // The clamping chain does NOT protect against non-numeric strings.
+      // TODO: Add Number() coercion or typeof check before the clamp.
+      mockGetAppConfigValue.mockImplementation(
+        (_db: unknown, key: string, defaultValue: unknown) => {
+          if (key === "polling.jitter_max_ms") return Promise.resolve("fast");
+          return Promise.resolve(defaultValue);
+        },
+      );
+
+      const company = makeCompany();
+      const { db } = createMockDb([company]);
+      mockPollCompany.mockResolvedValue(makePollResult());
+      mockComputeNextPoll.mockReturnValue(makeAdaptiveOutput());
+
+      const handler = createPollCompanyHandler(db);
+      await handler([makeJob("company-1")]);
+
+      // NaN is passed to jitter, not 0
+      expect(mockJitter).toHaveBeenCalledWith(NaN);
+    });
+
+    test("non-numeric string for threshold values: NaN propagates to pollCompany()", async () => {
+      // BUG: Math.max(1, Math.floor("long")) returns NaN, not 1.
+      // When NaN is used in threshold comparisons (daysSinceLastSeen >= NaN),
+      // the comparison is always false, so no jobs are ever marked stale or closed.
+      // TODO: Add Number() coercion or typeof check before the clamp.
+      mockGetAppConfigValue.mockImplementation(
+        (_db: unknown, key: string, defaultValue: unknown) => {
+          const overrides: Record<string, unknown> = {
+            "polling.stale_threshold_days": "long",
+            "polling.closed_threshold_days": "very-long",
+          };
+          if (key in overrides) return Promise.resolve(overrides[key]);
+          return Promise.resolve(defaultValue);
+        },
+      );
+
+      const company = makeCompany();
+      const { db } = createMockDb([company]);
+      mockPollCompany.mockResolvedValue(makePollResult());
+      mockComputeNextPoll.mockReturnValue(makeAdaptiveOutput());
+
+      const handler = createPollCompanyHandler(db);
+      await handler([makeJob("company-1")]);
+
+      // NaN values are passed through, not clamped to 1
+      expect(mockPollCompany).toHaveBeenCalledWith(db, company, {
+        staleThresholdDays: NaN,
+        closedThresholdDays: NaN,
+      });
+    });
   });
 });

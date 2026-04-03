@@ -430,3 +430,184 @@ describe("pollCompany — exception in extractor (catch block)", () => {
     }
   );
 });
+
+// ─── PollOptions override scenarios ───────────────────────────────────────
+
+describe("pollCompany — PollOptions threshold overrides", () => {
+  /** Helper: create a stored job last seen N days before NOW. */
+  function makeStoredJobLastSeenDaysAgo(days: number) {
+    const lastSeen = new Date(NOW);
+    lastSeen.setDate(lastSeen.getDate() - days);
+    return {
+      id: "job-uuid-old",
+      companyId: "company-uuid-1",
+      atsJobId: "missing-job",
+      jobUid: "uid-missing",
+      title: "Old Job",
+      url: "https://example.com/jobs/old",
+      canonicalUrl: "https://example.com/jobs/old",
+      status: "open",
+      descriptionHash: "abc",
+      lastSeenAt: lastSeen,
+      firstSeenAt: lastSeen,
+      createdAt: lastSeen,
+      updatedAt: lastSeen,
+    };
+  }
+
+  // ── Critical ──────────────────────────────────────────────────────────
+
+  test("custom stale threshold overrides the hardcoded 7-day default", async () => {
+    // Job last seen 5 days ago: with default threshold (7), it stays open.
+    // With staleThresholdDays=3, it should be marked stale (5 >= 3).
+    const storedJob = makeStoredJobLastSeenDaysAgo(5);
+    mockExtractFromGreenhouse.mockResolvedValueOnce({ jobs: [], errors: [] });
+    const { db, updatedSets } = makeMockDb([storedJob]);
+
+    const result = await pollCompany(db, makeFakeCompany(), {
+      staleThresholdDays: 3,
+    });
+
+    expect(result.jobsClosed).toBe(1);
+    const statusUpdate = updatedSets.find(
+      (s) => s._table === jobs && s.status === "stale",
+    );
+    expect(statusUpdate).toBeDefined();
+  });
+
+  test("custom closed threshold overrides the hardcoded 30-day default", async () => {
+    // Job last seen 15 days ago: with default threshold (30), it would be
+    // marked stale (15 >= 7). With closedThresholdDays=10, it should be
+    // marked closed (15 >= 10).
+    const storedJob = makeStoredJobLastSeenDaysAgo(15);
+    mockExtractFromGreenhouse.mockResolvedValueOnce({ jobs: [], errors: [] });
+    const { db, updatedSets } = makeMockDb([storedJob]);
+
+    const result = await pollCompany(db, makeFakeCompany(), {
+      closedThresholdDays: 10,
+    });
+
+    expect(result.jobsClosed).toBe(1);
+    const statusUpdate = updatedSets.find(
+      (s) => s._table === jobs && s.status === "closed",
+    );
+    expect(statusUpdate).toBeDefined();
+    expect(statusUpdate!.closedAt).toBeInstanceOf(Date);
+  });
+
+  test("partial options: only staleThresholdDays set, closedThresholdDays uses default 30", async () => {
+    // Job last seen 8 days ago with staleThresholdDays=3 -> stale (8 >= 3)
+    const staleJob = makeStoredJobLastSeenDaysAgo(8);
+    // Job last seen 25 days ago: still only stale because 25 < 30 (default closed)
+    const oldJob = {
+      ...makeStoredJobLastSeenDaysAgo(25),
+      id: "job-uuid-old-2",
+      atsJobId: "missing-job-2",
+    };
+
+    mockExtractFromGreenhouse.mockResolvedValueOnce({ jobs: [], errors: [] });
+    const { db, updatedSets } = makeMockDb([staleJob, oldJob]);
+
+    const result = await pollCompany(db, makeFakeCompany(), {
+      staleThresholdDays: 3,
+    });
+
+    expect(result.jobsClosed).toBe(2);
+    // Both should be marked stale, not closed (25 < 30)
+    const staleUpdates = updatedSets.filter(
+      (s) => s._table === jobs && s.status === "stale",
+    );
+    expect(staleUpdates).toHaveLength(2);
+    const closedUpdates = updatedSets.filter(
+      (s) => s._table === jobs && s.status === "closed",
+    );
+    expect(closedUpdates).toHaveLength(0);
+  });
+
+  // ── Important ─────────────────────────────────────────────────────────
+
+  test("empty options object uses all defaults (7-day stale, 30-day closed)", async () => {
+    // Job last seen 6 days ago: with default 7-day threshold, stays open
+    const storedJob = makeStoredJobLastSeenDaysAgo(6);
+    mockExtractFromGreenhouse.mockResolvedValueOnce({ jobs: [], errors: [] });
+    const { db } = makeMockDb([storedJob]);
+
+    const result = await pollCompany(db, makeFakeCompany(), {});
+
+    expect(result.jobsClosed).toBe(0);
+  });
+
+  test("staleThresholdDays=1: minimum useful value marks 1-day-old missing job as stale", async () => {
+    const storedJob = makeStoredJobLastSeenDaysAgo(1);
+    mockExtractFromGreenhouse.mockResolvedValueOnce({ jobs: [], errors: [] });
+    const { db, updatedSets } = makeMockDb([storedJob]);
+
+    const result = await pollCompany(db, makeFakeCompany(), {
+      staleThresholdDays: 1,
+    });
+
+    expect(result.jobsClosed).toBe(1);
+    const statusUpdate = updatedSets.find(
+      (s) => s._table === jobs && s.status === "stale",
+    );
+    expect(statusUpdate).toBeDefined();
+  });
+
+  // ── Corner cases: threshold boundary and ordering ─────────────────────
+
+  test("job last seen exactly at the stale threshold boundary is marked stale (>= check)", async () => {
+    // Exactly 7 days with default threshold -> daysSinceLastSeen=7, >= 7 is true
+    const storedJob = makeStoredJobLastSeenDaysAgo(7);
+    mockExtractFromGreenhouse.mockResolvedValueOnce({ jobs: [], errors: [] });
+    const { db, updatedSets } = makeMockDb([storedJob]);
+
+    const result = await pollCompany(db, makeFakeCompany());
+
+    expect(result.jobsClosed).toBe(1);
+    const statusUpdate = updatedSets.find(
+      (s) => s._table === jobs && s.status === "stale",
+    );
+    expect(statusUpdate).toBeDefined();
+  });
+
+  test("stale threshold equals closed threshold: job is marked closed (closed check comes first)", async () => {
+    // When both thresholds are 10, the `>= closedThreshold` check fires first
+    const storedJob = makeStoredJobLastSeenDaysAgo(10);
+    mockExtractFromGreenhouse.mockResolvedValueOnce({ jobs: [], errors: [] });
+    const { db, updatedSets } = makeMockDb([storedJob]);
+
+    const result = await pollCompany(db, makeFakeCompany(), {
+      staleThresholdDays: 10,
+      closedThresholdDays: 10,
+    });
+
+    expect(result.jobsClosed).toBe(1);
+    const closedUpdate = updatedSets.find(
+      (s) => s._table === jobs && s.status === "closed",
+    );
+    expect(closedUpdate).toBeDefined();
+    expect(closedUpdate!.closedAt).toBeInstanceOf(Date);
+  });
+
+  test("stale threshold greater than closed threshold: stale branch is unreachable", async () => {
+    // staleThresholdDays=30, closedThresholdDays=7 -> job at 15 days hits
+    // closed (>= 7) before stale (< 30). The stale branch is unreachable
+    // because anything >= 30 also satisfies >= 7 (closed first).
+    const storedJob = makeStoredJobLastSeenDaysAgo(15);
+    mockExtractFromGreenhouse.mockResolvedValueOnce({ jobs: [], errors: [] });
+    const { db, updatedSets } = makeMockDb([storedJob]);
+
+    const result = await pollCompany(db, makeFakeCompany(), {
+      staleThresholdDays: 30,
+      closedThresholdDays: 7,
+    });
+
+    expect(result.jobsClosed).toBe(1);
+    // Because closed check (>= 7) fires before stale check (>= 30),
+    // the job is closed, not stale
+    const closedUpdate = updatedSets.find(
+      (s) => s._table === jobs && s.status === "closed",
+    );
+    expect(closedUpdate).toBeDefined();
+  });
+});
