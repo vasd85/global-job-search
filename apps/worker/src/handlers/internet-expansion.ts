@@ -104,6 +104,9 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
           : Math.max(1, Math.floor(rawBudget));
 
         // 4. Load existing companies for dedup
+        // NOTE: Loads all active companies into memory for domain/ATS dedup.
+        // Acceptable for MVP but should be paginated or use a domain-only
+        // index if the company count grows significantly (>1000).
         const existingCompanies = await db
           .select({
             name: companies.name,
@@ -238,7 +241,7 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
             }
 
             inserted++;
-            existingDomains.add(domain ?? "");
+            if (domain) existingDomains.add(domain);
             existingAtsKeys.add(atsKey);
 
             // 6f. Immediate poll (no jitter for expansion)
