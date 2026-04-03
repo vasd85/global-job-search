@@ -153,15 +153,17 @@ export function createLlmScoringHandler(db: Database) {
           continue;
         }
 
-        // 8. Compute match percent
+        // 8. Round scores to integers (schema uses z.number() not .int()
+        //    because Anthropic rejects min/max on integer type)
+        const scoreR = Math.round(scoringOutput.scoreR);
+        const scoreS = Math.round(scoringOutput.scoreS);
+        const scoreL = Math.round(scoringOutput.scoreL);
+        const scoreC = Math.round(scoringOutput.scoreC);
+        const scoreD = Math.round(scoringOutput.scoreD);
+
+        // 9. Compute match percent
         const { matchPercent, appliedGrowthBonus } = computeMatchPercent(
-          {
-            scoreR: scoringOutput.scoreR,
-            scoreS: scoringOutput.scoreS,
-            scoreL: scoringOutput.scoreL,
-            scoreC: scoringOutput.scoreC,
-            scoreD: scoringOutput.scoreD,
-          },
+          { scoreR, scoreS, scoreL, scoreC, scoreD },
           {
             weightRole: profile.weightRole,
             weightSkills: profile.weightSkills,
@@ -189,11 +191,11 @@ export function createLlmScoringHandler(db: Database) {
           .values({
             userProfileId,
             jobId,
-            scoreR: scoringOutput.scoreR,
-            scoreS: scoringOutput.scoreS,
-            scoreL: scoringOutput.scoreL,
-            scoreC: scoringOutput.scoreC,
-            scoreD: scoringOutput.scoreD,
+            scoreR,
+            scoreS,
+            scoreL,
+            scoreC,
+            scoreD,
             matchPercent,
             matchReason: scoringOutput.matchReason,
             evidenceQuotes: scoringOutput.evidenceQuotes,
@@ -205,11 +207,11 @@ export function createLlmScoringHandler(db: Database) {
           .onConflictDoUpdate({
             target: [jobMatches.userProfileId, jobMatches.jobId],
             set: {
-              scoreR: scoringOutput.scoreR,
-              scoreS: scoringOutput.scoreS,
-              scoreL: scoringOutput.scoreL,
-              scoreC: scoringOutput.scoreC,
-              scoreD: scoringOutput.scoreD,
+              scoreR,
+              scoreS,
+              scoreL,
+              scoreC,
+              scoreD,
               matchPercent,
               matchReason: scoringOutput.matchReason,
               evidenceQuotes: scoringOutput.evidenceQuotes,

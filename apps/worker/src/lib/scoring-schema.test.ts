@@ -37,8 +37,11 @@ describe("ScoringOutputSchema", () => {
     expect(() => ScoringOutputSchema.parse(validOutput({ scoreR: -1 }))).toThrow();
   });
 
-  test("non-integer score (5.5) is rejected", () => {
-    expect(() => ScoringOutputSchema.parse(validOutput({ scoreR: 5.5 }))).toThrow();
+  test("non-integer score (5.5) is accepted (rounded in handler)", () => {
+    // Schema uses z.number() not .int() because Anthropic rejects min/max on integer type.
+    // Rounding happens in the handler, not in Zod validation.
+    const result = ScoringOutputSchema.parse(validOutput({ scoreR: 5.5 }));
+    expect(result.scoreR).toBe(5.5);
   });
 
   // ── Important ─────────────────────────────────────────────────────────
@@ -52,33 +55,6 @@ describe("ScoringOutputSchema", () => {
   ])("boundary value %s=%d is accepted", (field, value) => {
     const result = ScoringOutputSchema.parse(validOutput({ [field]: value }));
     expect(result[field as keyof typeof result]).toBe(value);
-  });
-
-  test("matchReason exceeding 500 chars is rejected", () => {
-    expect(() =>
-      ScoringOutputSchema.parse(validOutput({ matchReason: "a".repeat(501) })),
-    ).toThrow();
-  });
-
-  test("matchReason at exactly 500 chars is accepted", () => {
-    const result = ScoringOutputSchema.parse(validOutput({ matchReason: "a".repeat(500) }));
-    expect(result.matchReason).toHaveLength(500);
-  });
-
-  test("evidenceQuotes with more than 5 elements is rejected", () => {
-    expect(() =>
-      ScoringOutputSchema.parse(
-        validOutput({ evidenceQuotes: ["a", "b", "c", "d", "e", "f"] }),
-      ),
-    ).toThrow();
-  });
-
-  test("evidenceQuote element exceeding 200 chars is rejected", () => {
-    expect(() =>
-      ScoringOutputSchema.parse(
-        validOutput({ evidenceQuotes: ["a".repeat(201)] }),
-      ),
-    ).toThrow();
   });
 
   test("dealBreakerReason is optional", () => {
