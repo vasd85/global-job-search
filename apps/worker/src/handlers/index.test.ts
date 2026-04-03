@@ -297,11 +297,9 @@ describe("registerHandlers(boss, db)", () => {
 
     // ── NaN propagation defect ─────────────────────────────────────────────
 
-    test("non-numeric string for vendor_concurrency: NaN propagates to boss.work()", async () => {
-      // BUG: Math.max(1, Math.floor("high")) returns NaN, not 1.
-      // Math.floor("high") = NaN, and Math.max(1, NaN) = NaN.
-      // The clamping chain does NOT protect against non-numeric strings.
-      // TODO: Add Number() coercion or typeof check before the clamp.
+    test("non-numeric string for vendor_concurrency: falls back to default 5", async () => {
+      // Number("high") = NaN, so the coercion guard falls back to
+      // DEFAULT_VENDOR_CONCURRENCY (5).
       mockGetAppConfigValue.mockResolvedValue("high");
       const boss = createMockBoss();
       const db = createMockDb();
@@ -314,8 +312,7 @@ describe("registerHandlers(boss, db)", () => {
           (c: unknown[]) => c[0] === vendorQueue,
         );
         expect(call).toBeDefined();
-        // NaN is passed to pg-boss, not 1 as the clamp intends
-        expect(call![1]).toEqual({ localConcurrency: NaN });
+        expect(call![1]).toEqual({ localConcurrency: 5 });
       }
     });
   });

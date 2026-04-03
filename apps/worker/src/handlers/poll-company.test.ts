@@ -664,11 +664,9 @@ describe("createPollCompanyHandler(db)", () => {
 
     // ── NaN propagation defect scenarios ───────────────────────────────────
 
-    test("non-numeric string for jitter_max_ms: NaN propagates to jitter()", async () => {
-      // BUG: Math.max(0, Math.floor("fast")) returns NaN, not 0.
-      // Math.floor("fast") = NaN, and Math.max(0, NaN) = NaN.
-      // The clamping chain does NOT protect against non-numeric strings.
-      // TODO: Add Number() coercion or typeof check before the clamp.
+    test("non-numeric string for jitter_max_ms: falls back to default 5000", async () => {
+      // Number("fast") = NaN, so the coercion guard falls back to the
+      // hardcoded default of 5000 ms.
       mockGetAppConfigValue.mockImplementation(
         (_db: unknown, key: string, defaultValue: unknown) => {
           if (key === "polling.jitter_max_ms") return Promise.resolve("fast");
@@ -684,15 +682,12 @@ describe("createPollCompanyHandler(db)", () => {
       const handler = createPollCompanyHandler(db);
       await handler([makeJob("company-1")]);
 
-      // NaN is passed to jitter, not 0
-      expect(mockJitter).toHaveBeenCalledWith(NaN);
+      expect(mockJitter).toHaveBeenCalledWith(5000);
     });
 
-    test("non-numeric string for threshold values: NaN propagates to pollCompany()", async () => {
-      // BUG: Math.max(1, Math.floor("long")) returns NaN, not 1.
-      // When NaN is used in threshold comparisons (daysSinceLastSeen >= NaN),
-      // the comparison is always false, so no jobs are ever marked stale or closed.
-      // TODO: Add Number() coercion or typeof check before the clamp.
+    test("non-numeric string for threshold values: falls back to defaults", async () => {
+      // Number("long") = NaN, so the coercion guard falls back to the
+      // hardcoded defaults: stale=7, closed=30.
       mockGetAppConfigValue.mockImplementation(
         (_db: unknown, key: string, defaultValue: unknown) => {
           const overrides: Record<string, unknown> = {
@@ -712,10 +707,9 @@ describe("createPollCompanyHandler(db)", () => {
       const handler = createPollCompanyHandler(db);
       await handler([makeJob("company-1")]);
 
-      // NaN values are passed through, not clamped to 1
       expect(mockPollCompany).toHaveBeenCalledWith(db, company, {
-        staleThresholdDays: NaN,
-        closedThresholdDays: NaN,
+        staleThresholdDays: 7,
+        closedThresholdDays: 30,
       });
     });
   });

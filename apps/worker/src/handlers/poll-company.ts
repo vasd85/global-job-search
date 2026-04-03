@@ -22,19 +22,24 @@ interface PollJobData {
  */
 export function createPollCompanyHandler(db: Database) {
   return async (jobs: Job<PollJobData>[]): Promise<void> => {
-    // Load config once per batch invocation to avoid N+1 queries
-    const jitterMaxMs = Math.max(
-      0,
+    // Load config once per batch invocation to avoid N+1 queries.
+    // Coerce with Number() before clamping: getAppConfigValue performs an
+    // unsafe `value as T` cast, so a non-numeric string stored in jsonb
+    // would produce NaN from Math.floor, and Math.max(N, NaN) = NaN.
+    const rawJitter = Number(
       await getAppConfigValue<number>(db, "polling.jitter_max_ms", 5000),
     );
-    const staleThresholdDays = Math.max(
-      1,
+    const jitterMaxMs = Number.isNaN(rawJitter) ? 5000 : Math.max(0, rawJitter);
+
+    const rawStale = Number(
       await getAppConfigValue<number>(db, "polling.stale_threshold_days", 7),
     );
-    const closedThresholdDays = Math.max(
-      1,
+    const staleThresholdDays = Number.isNaN(rawStale) ? 7 : Math.max(1, Math.floor(rawStale));
+
+    const rawClosed = Number(
       await getAppConfigValue<number>(db, "polling.closed_threshold_days", 30),
     );
+    const closedThresholdDays = Number.isNaN(rawClosed) ? 30 : Math.max(1, Math.floor(rawClosed));
 
     for (const job of jobs) {
       const { companyId } = job.data;

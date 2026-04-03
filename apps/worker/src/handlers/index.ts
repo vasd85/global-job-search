@@ -37,13 +37,20 @@ export async function registerHandlers(
     await boss.createQueue(queue);
   }
 
-  // Load vendor concurrency from config (requires restart to change)
-  const rawConcurrency = await getAppConfigValue<number>(
-    db,
-    "polling.vendor_concurrency",
-    DEFAULT_VENDOR_CONCURRENCY,
+  // Load vendor concurrency from config (requires restart to change).
+  // Coerce with Number() before clamping: getAppConfigValue performs an
+  // unsafe `value as T` cast, so a non-numeric string stored in jsonb
+  // would produce NaN from Math.floor, and Math.max(1, NaN) = NaN.
+  const rawConcurrency = Number(
+    await getAppConfigValue<number>(
+      db,
+      "polling.vendor_concurrency",
+      DEFAULT_VENDOR_CONCURRENCY,
+    ),
   );
-  const vendorConcurrency = Math.max(1, Math.floor(rawConcurrency));
+  const vendorConcurrency = Number.isNaN(rawConcurrency)
+    ? DEFAULT_VENDOR_CONCURRENCY
+    : Math.max(1, Math.floor(rawConcurrency));
 
   // Register ATS polling handlers (one per vendor, same handler function)
   const pollHandler = createPollCompanyHandler(db);
