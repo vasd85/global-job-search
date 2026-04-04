@@ -162,8 +162,8 @@ describe("discoverCompanies", () => {
     // Output schema was applied
     expect(callArgs.output).toBe("mock-output-schema");
 
-    // stepCountIs(5) was used
-    expect(mockStepCountIs).toHaveBeenCalledWith(5);
+    // stepCountIs(20) was used
+    expect(mockStepCountIs).toHaveBeenCalledWith(20);
     expect(callArgs.stopWhen).toBe("mock-stop-when");
 
     // System and user prompts are strings from buildDiscoveryPrompt
