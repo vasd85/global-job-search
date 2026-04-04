@@ -139,7 +139,29 @@ function tryExtractJson(text: string): DiscoveryOutput | null {
     if (parsed) return parsed;
   }
 
-  // 2. Try finding the first { ... } that looks like our schema
+  // 2. Handle concatenated JSON objects from multi-step output.
+  //    The AI SDK concatenates each step's output, producing e.g.:
+  //    {"companies": []}{"companies": []}{"companies": [{...data...}]}
+  //    Split on }{ boundaries and try each fragment (last one usually has data).
+  if (text.includes("}{")) {
+    const fragments = text.split(/\}\s*\{/).map((frag, i, arr) => {
+      if (i === 0) return frag + "}";
+      if (i === arr.length - 1) return "{" + frag;
+      return "{" + frag + "}";
+    });
+    // Try fragments in reverse — last step most likely has the real data
+    for (let i = fragments.length - 1; i >= 0; i--) {
+      const parsed = safeParse(fragments[i]);
+      if (parsed && parsed.companies.length > 0) return parsed;
+    }
+    // If none had data, try any valid one
+    for (let i = fragments.length - 1; i >= 0; i--) {
+      const parsed = safeParse(fragments[i]);
+      if (parsed) return parsed;
+    }
+  }
+
+  // 3. Try finding the first { ... } that looks like our schema
   const braceStart = text.indexOf("{");
   const braceEnd = text.lastIndexOf("}");
   if (braceStart !== -1 && braceEnd > braceStart) {
