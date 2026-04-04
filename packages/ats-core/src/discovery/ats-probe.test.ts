@@ -145,7 +145,7 @@ describe("probeAtsApis", () => {
   describe("Greenhouse 404 falls through to next vendor", () => {
     it("returns SmartRecruiters match when Greenhouse returns 404", async () => {
       setupFetchByUrl([
-        { match: "smartrecruiters.com", status: 200, body: "{}" },
+        { match: "smartrecruiters.com", status: 200, body: '{"totalFound":1,"content":[{}]}' },
       ]);
 
       const { result, log } = await probeAtsApis("Acme Corp", ["acme"], {
@@ -282,6 +282,37 @@ describe("probeAtsApis", () => {
     });
   });
 
+  describe("SmartRecruiters 200 with zero jobs treated as not found", () => {
+    it("returns null when totalFound is 0 (avoids false positives from empty accounts)", async () => {
+      setupFetchByUrl([
+        { match: "smartrecruiters.com", status: 200, body: '{"totalFound":0,"content":[]}' },
+      ]);
+
+      const { result, log } = await probeAtsApis("Acme Corp", ["acme"], {
+        skipVendors: new Set(["greenhouse", "ashby", "lever"]),
+        perRequestDelayMs: 0,
+      });
+
+      expect(result).toBeNull();
+      const srEntry = log.find((e) => e.vendor === "smartrecruiters");
+      expect(srEntry?.result).toBe("error");
+      expect(srEntry?.error).toBe("empty_postings");
+    });
+
+    it("returns null when body has no totalFound field", async () => {
+      setupFetchByUrl([
+        { match: "smartrecruiters.com", status: 200, body: "{}" },
+      ]);
+
+      const { result } = await probeAtsApis("Acme Corp", ["acme"], {
+        skipVendors: new Set(["greenhouse", "ashby", "lever"]),
+        perRequestDelayMs: 0,
+      });
+
+      expect(result).toBeNull();
+    });
+  });
+
   describe("SmartRecruiters confidence varies by slug length", () => {
     it.each([
       ["acme", 4, "medium"],
@@ -291,7 +322,7 @@ describe("probeAtsApis", () => {
       "slug %s (length %d) returns confidence %s",
       async (slug, _len, expectedConfidence) => {
         setupFetchByUrl([
-          { match: "smartrecruiters.com", status: 200, body: "{}" },
+          { match: "smartrecruiters.com", status: 200, body: '{"totalFound":1,"content":[{}]}' },
         ]);
 
         const { result } = await probeAtsApis("Acme Corp", [slug], {
@@ -782,7 +813,7 @@ describe("probeAtsApis", () => {
   describe("SmartRecruiters matchedName is always null", () => {
     it("returns null matchedName on successful match", async () => {
       setupFetchByUrl([
-        { match: "smartrecruiters.com", status: 200, body: "{}" },
+        { match: "smartrecruiters.com", status: 200, body: '{"totalFound":1,"content":[{}]}' },
       ]);
 
       const { result } = await probeAtsApis("Acme", ["acmeco"], {

@@ -205,6 +205,23 @@ async function probeSmartRecruiters(
   }
 
   if (resp.status === 200) {
+    // SmartRecruiters returns 200 with totalFound:0 for slugs that exist but
+    // have no jobs. This includes abandoned accounts and pre-registered
+    // identifiers — treat as "not found" to avoid false positives.
+    try {
+      const data = JSON.parse(resp.body) as { totalFound?: number };
+      if (!data.totalFound || data.totalFound === 0) {
+        return {
+          endpoint,
+          result: { found: false, httpStatus: 200, matchedName: null, confidence: "high", error: "empty_postings" },
+        };
+      }
+    } catch {
+      return {
+        endpoint,
+        result: { found: false, httpStatus: 200, matchedName: null, confidence: "high", error: "invalid_json" },
+      };
+    }
     const confidence: ProbeConfidence = slug.length > 5 ? "high" : "medium";
     return {
       endpoint,
