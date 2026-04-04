@@ -16,7 +16,10 @@ import {
   parseLeverSite,
   parseAshbyBoard,
   parseSmartRecruitersCompanyFromCareersUrl,
+  generateSlugCandidates,
+  probeAtsApis,
 } from "@gjs/ats-core/discovery";
+import type { ProbeLogEntry } from "@gjs/ats-core/discovery";
 import {
   classifyJobMulti,
   extractSeniority,
@@ -37,6 +40,34 @@ import { debug } from "../lib/logger";
 interface ExpansionJobData {
   userId: string;
   userProfileId: string;
+}
+
+/** Structured log for the complete ATS detection process for a company. */
+interface AtsSearchLog {
+  timestamp: string;
+  slugCandidates: string[];
+  steps: AtsSearchStep[];
+  outcome: {
+    vendor: string;
+    slug: string | null;
+    method: "url_detection" | "api_probe" | "none";
+    confidence: "high" | "medium" | "low" | null;
+  };
+}
+
+/** A single step in the ATS detection process. */
+type AtsSearchStep =
+  | UrlDetectionStep
+  | ProbeLogEntry;
+
+interface UrlDetectionStep {
+  type: "url_detection";
+  timestamp: string;
+  input: string;
+  vendor: string;
+  slug: string | null;
+  result: "found" | "not_found";
+  durationMs: number;
 }
 
 /** ATS vendors that have working extractors. */
@@ -135,8 +166,9 @@ function resolveRoleFamilies(
 
 /**
  * pg-boss handler for internet expansion jobs. Discovers new companies
- * via AI web search, detects their ATS vendor, inserts them into the DB,
- * polls all their jobs, and enqueues LLM scoring.
+ * via AI web search, detects their ATS vendor (URL fast-path then API probe),
+ * inserts ALL companies into the DB (including unknown ATS), polls supported-ATS
+ * companies, runs Level 2 filtering inline, and enqueues LLM scoring.
  */
 export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
   return async (batchJobs: Job<ExpansionJobData>[]): Promise<void> => {
@@ -194,9 +226,8 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
         });
 
         // 4. Load existing companies for dedup
-        // NOTE: Loads all active companies into memory for domain/ATS dedup.
-        // Acceptable for MVP but should be paginated or use a domain-only
-        // index if the company count grows significantly (>1000).
+        // NOTE: Loads all companies (active and inactive) into memory for domain/ATS dedup.
+        // Includes inactive/unknown-ATS companies so we don't re-discover and re-probe them.
         const existingCompanies = await db
           .select({
             name: companies.name,
@@ -204,8 +235,7 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
             atsVendor: companies.atsVendor,
             atsSlug: companies.atsSlug,
           })
-          .from(companies)
-          .where(eq(companies.isActive, true));
+          .from(companies);
 
         const existingDomains = new Set<string>();
         const existingNames = new Set<string>();
@@ -217,7 +247,9 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
             const domain = normalizeDomain(c.website);
             if (domain) existingDomains.add(domain);
           }
-          existingAtsKeys.add(`${c.atsVendor}:${c.atsSlug}`);
+          if (c.atsSlug) {
+            existingAtsKeys.add(`${c.atsVendor}:${c.atsSlug}`);
+          }
         }
 
         debug("expand", "Loaded existing companies for dedup", {
@@ -255,15 +287,52 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
           continue;
         }
 
+        // 5b. Load Level 2 filter context upfront (reused for every company)
+        const [profile] = await db
+          .select()
+          .from(userProfiles)
+          .where(eq(userProfiles.userId, userId))
+          .limit(1);
+
+        const allFamilies = await db.select().from(roleFamilies);
+
+        const targetTitles = profile?.targetTitles ?? [];
+        const matchedFamilies = resolveRoleFamilies(
+          allFamilies,
+          targetTitles,
+        );
+
+        debug("expand:l2", "Role family resolution", {
+          targetTitles,
+          matchedFamilySlugs: matchedFamilies.map((f) => f.slug),
+          totalRoleFamilies: allFamilies.length,
+        });
+
+        const locationPreferences = profile?.locationPreferences as {
+          tiers?: unknown;
+        } | null;
+        const rawTiers = locationPreferences?.tiers;
+        const resolvedTiers: ResolvedTierGeo[] = Array.isArray(rawTiers)
+          ? resolveAllTiers(rawTiers)
+          : [];
+
+        const targetSeniority = profile?.targetSeniority ?? [];
+
+        debug("expand:l2", "Location tier resolution", {
+          rawLocationPreferences: locationPreferences,
+          resolvedTierCount: resolvedTiers.length,
+        });
+
         // 6. Process each discovered company
-        const insertedCompanyIds: string[] = [];
         let inserted = 0;
+        let insertedUnknown = 0;
         let polled = 0;
+        let probeHits = 0;
         let skippedDomain = 0;
-        let skippedAts = 0;
-        let skippedSlug = 0;
-        let skippedDuplicateAts = 0;
+        let skippedDup = 0;
         let pollErrors = 0;
+        let scoredEnqueued = 0;
+        let scoredFiltered = 0;
 
         for (const disc of discovered.slice(0, budget)) {
           try {
@@ -285,58 +354,134 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
               continue;
             }
 
-            // 6b. ATS detection
-            if (!disc.careersUrl) {
-              console.info(
-                `[expand] Skipping ${disc.name}: no careers URL discovered`,
-              );
-              skippedAts++;
-              continue;
+            // 6b. ATS detection: probe-first with URL fast-path
+            const detectionStart = new Date();
+            const searchSteps: AtsSearchStep[] = [];
+            let detectedVendor: string = "unknown";
+            let detectedSlug: string | null = null;
+            let detectionMethod: AtsSearchLog["outcome"]["method"] = "none";
+            let detectionConfidence: AtsSearchLog["outcome"]["confidence"] = null;
+            const slugCandidates = generateSlugCandidates(disc.name);
+
+            // Fast-path: URL-based detection
+            if (disc.careersUrl) {
+              const urlStart = Date.now();
+              const urlVendor = detectAtsVendor(disc.careersUrl);
+              const urlDuration = Date.now() - urlStart;
+
+              debug("expand", "URL detection result", {
+                company: disc.name,
+                vendor: urlVendor,
+                careersUrl: disc.careersUrl,
+              });
+
+              if (SUPPORTED_VENDORS.has(urlVendor)) {
+                const urlSlug = extractAtsSlug(urlVendor, disc.careersUrl);
+                searchSteps.push({
+                  type: "url_detection",
+                  timestamp: detectionStart.toISOString(),
+                  input: disc.careersUrl,
+                  vendor: urlVendor,
+                  slug: urlSlug,
+                  result: urlSlug ? "found" : "not_found",
+                  durationMs: urlDuration,
+                });
+
+                if (urlSlug) {
+                  detectedVendor = urlVendor;
+                  detectedSlug = urlSlug;
+                  detectionMethod = "url_detection";
+                  detectionConfidence = "high";
+
+                  debug("expand", "URL fast-path succeeded", {
+                    company: disc.name,
+                    vendor: urlVendor,
+                    slug: urlSlug,
+                  });
+                }
+              } else {
+                searchSteps.push({
+                  type: "url_detection",
+                  timestamp: detectionStart.toISOString(),
+                  input: disc.careersUrl,
+                  vendor: urlVendor,
+                  slug: null,
+                  result: "not_found",
+                  durationMs: urlDuration,
+                });
+              }
             }
 
-            const vendor = detectAtsVendor(disc.careersUrl);
-            debug("expand", "ATS detection result", {
-              company: disc.name,
-              vendor,
-              careersUrl: disc.careersUrl,
-            });
-            if (!SUPPORTED_VENDORS.has(vendor)) {
-              console.info(
-                `[expand] Skipping ${disc.name}: unsupported ATS vendor "${vendor}"`,
+            // Primary: API probing (only if URL detection did not succeed)
+            if (detectionMethod === "none" && slugCandidates.length > 0) {
+              debug("expand", "Starting API probe", {
+                company: disc.name,
+                slugCandidateCount: slugCandidates.length,
+                slugCandidates: slugCandidates.slice(0, 6),
+              });
+
+              const probeOutcome = await probeAtsApis(
+                disc.name,
+                slugCandidates,
               );
-              skippedAts++;
-              continue;
+
+              // Add probe log entries to search steps
+              for (const entry of probeOutcome.log) {
+                searchSteps.push(entry);
+              }
+
+              if (probeOutcome.result) {
+                detectedVendor = probeOutcome.result.vendor;
+                detectedSlug = probeOutcome.result.slug;
+                detectionMethod = "api_probe";
+                detectionConfidence = probeOutcome.result.confidence;
+                probeHits++;
+
+                debug("expand", "API probe matched", {
+                  company: disc.name,
+                  vendor: probeOutcome.result.vendor,
+                  slug: probeOutcome.result.slug,
+                  confidence: probeOutcome.result.confidence,
+                  matchedName: probeOutcome.result.matchedName,
+                });
+              } else {
+                debug("expand", "API probe found no match", {
+                  company: disc.name,
+                  probeAttempts: probeOutcome.log.length,
+                });
+              }
             }
 
-            // 6c. Extract ATS slug
-            const atsSlug = extractAtsSlug(vendor, disc.careersUrl);
-            debug("expand", "ATS slug extraction", {
-              company: disc.name,
-              vendor,
-              atsSlug,
-            });
-            if (!atsSlug) {
-              console.info(
-                `[expand] Skipping ${disc.name}: could not extract ATS slug from ${disc.careersUrl}`,
-              );
-              skippedSlug++;
-              continue;
+            // Build the complete search log
+            const atsSearchLog: AtsSearchLog = {
+              timestamp: detectionStart.toISOString(),
+              slugCandidates,
+              steps: searchSteps,
+              outcome: {
+                vendor: detectedVendor,
+                slug: detectedSlug,
+                method: detectionMethod,
+                confidence: detectionConfidence,
+              },
+            };
+
+            // 6c. ATS dedup (check vendor+slug pair, only for known vendors with a slug)
+            if (detectedSlug) {
+              const atsKey = `${detectedVendor}:${detectedSlug}`;
+              if (existingAtsKeys.has(atsKey)) {
+                console.info(
+                  `[expand] Skipping ${disc.name}: ATS pair ${atsKey} already in DB`,
+                );
+                skippedDup++;
+                continue;
+              }
             }
 
-            // 6d. ATS dedup (check vendor+slug pair)
-            const atsKey = `${vendor}:${atsSlug}`;
-            if (existingAtsKeys.has(atsKey)) {
-              console.info(
-                `[expand] Skipping ${disc.name}: ATS pair ${atsKey} already in DB`,
-              );
-              skippedDuplicateAts++;
-              continue;
-            }
-
-            // 6e. Insert company
-            const companySlug = `${vendor}-${atsSlug}`
-              .toLowerCase()
-              .replace(/[^a-z0-9-]/g, "-");
+            // 6d. Insert company (ALL companies, including unknown ATS)
+            const isKnownAts = SUPPORTED_VENDORS.has(detectedVendor) && detectedSlug !== null;
+            const companySlug = detectedSlug
+              ? `${detectedVendor}-${detectedSlug}`.toLowerCase().replace(/[^a-z0-9-]/g, "-")
+              : `unknown-${(domain ?? disc.name).toLowerCase().replace(/[^a-z0-9-]/g, "-")}`;
 
             const [companyRow] = await db
               .insert(companies)
@@ -345,9 +490,12 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
                 name: disc.name,
                 website: disc.website,
                 industry: disc.industry.map((i) => i.toLowerCase()),
-                atsVendor: vendor,
-                atsSlug,
+                atsVendor: detectedVendor,
+                atsSlug: detectedSlug,
+                atsCareersUrl: disc.careersUrl ?? null,
+                atsSearchLog,
                 source: "auto_discovered",
+                isActive: isKnownAts,
               })
               .onConflictDoNothing()
               .returning();
@@ -357,7 +505,7 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
               console.info(
                 `[expand] Skipping ${disc.name}: insert conflict (already exists)`,
               );
-              skippedDuplicateAts++;
+              skippedDup++;
               continue;
             }
 
@@ -368,24 +516,38 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
               website: companyRow.website,
               atsVendor: companyRow.atsVendor,
               atsSlug: companyRow.atsSlug,
+              isActive: companyRow.isActive,
             });
 
             inserted++;
-            insertedCompanyIds.push(companyRow.id as string);
             if (domain) existingDomains.add(domain);
-            existingAtsKeys.add(atsKey);
+            if (detectedSlug) {
+              existingAtsKeys.add(`${detectedVendor}:${detectedSlug}`);
+            }
 
-            // 6f. Immediate poll (no jitter for expansion)
+            // Unknown ATS companies: saved for audit but not polled
+            if (!isKnownAts) {
+              console.info(
+                `[expand] Saved ${disc.name} with unknown ATS (method: ${detectionMethod})`,
+              );
+              insertedUnknown++;
+              continue;
+            }
+
+            // 6e. Immediate poll for supported-ATS companies
+            const companyId = companyRow.id as string;
+            let pollSucceeded = false;
             try {
-              const result = await pollCompany(db, companyRow);
+              const pollResult = await pollCompany(db, companyRow);
               debug("expand", "Poll result", {
                 company: disc.name,
-                ...result,
+                ...pollResult,
               });
               console.info(
-                `[expand] Polled ${disc.name}: found=${result.jobsFound} new=${result.jobsNew}`,
+                `[expand] Polled ${disc.name}: found=${pollResult.jobsFound} new=${pollResult.jobsNew}`,
               );
               polled++;
+              pollSucceeded = pollResult.jobsFound > 0;
             } catch (pollError) {
               const msg =
                 pollError instanceof Error
@@ -395,6 +557,168 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
                 `[expand] Poll failed for ${disc.name}: ${msg}`,
               );
               pollErrors++;
+            }
+
+            // 6f. Inline Level 2 filtering and scoring enqueue
+            if (pollSucceeded) {
+              try {
+                const companyJobs = await db
+                  .select({
+                    id: jobs.id,
+                    descriptionHash: jobs.descriptionHash,
+                    title: jobs.title,
+                    departmentRaw: jobs.departmentRaw,
+                    locationRaw: jobs.locationRaw,
+                    workplaceType: jobs.workplaceType,
+                  })
+                  .from(jobs)
+                  .where(eq(jobs.companyId, companyId));
+
+                if (companyJobs.length > 0) {
+                  const jobIds = companyJobs.map((j) => j.id);
+
+                  // Check which jobs already have a fresh score for this profile
+                  const existingScores = await db
+                    .select({
+                      jobId: jobMatches.jobId,
+                      jobContentHash: jobMatches.jobContentHash,
+                    })
+                    .from(jobMatches)
+                    .where(
+                      and(
+                        eq(jobMatches.userProfileId, userProfileId),
+                        inArray(jobMatches.jobId, jobIds),
+                      ),
+                    );
+
+                  const scoreByJobId = new Map(
+                    existingScores.map((m) => [m.jobId, m.jobContentHash]),
+                  );
+                  const hashByJobId = new Map(
+                    companyJobs.map((j) => [j.id, j.descriptionHash]),
+                  );
+
+                  for (const job of companyJobs) {
+                    const existingHash = scoreByJobId.get(job.id);
+                    const currentHash = hashByJobId.get(job.id);
+
+                    // Skip if already scored with the current content hash
+                    if (existingHash != null && existingHash === currentHash) {
+                      continue;
+                    }
+
+                    debug("expand:l2", "Evaluating job", {
+                      jobId: job.id,
+                      title: job.title,
+                      departmentRaw: job.departmentRaw,
+                      locationRaw: job.locationRaw,
+                      workplaceType: job.workplaceType,
+                    });
+
+                    // Level 2 filter: role family classification
+                    if (matchedFamilies.length > 0) {
+                      const classified = classifyJobMulti(matchedFamilies, {
+                        title: job.title,
+                        departmentRaw: job.departmentRaw,
+                      });
+                      debug("expand:l2", "Classification result", {
+                        jobId: job.id,
+                        familySlug: classified.familySlug,
+                        score: classified.score,
+                        matchType: classified.matchType,
+                      });
+                      if (classified.score < CLASSIFICATION_THRESHOLD) {
+                        debug(
+                          "expand:l2",
+                          `Filtered: role family score ${classified.score} < ${CLASSIFICATION_THRESHOLD}`,
+                          { jobId: job.id, title: job.title },
+                        );
+                        scoredFiltered++;
+                        continue;
+                      }
+                    }
+
+                    // Level 2 filter: seniority
+                    if (targetSeniority.length > 0) {
+                      const seniority = extractSeniority(job.title);
+                      if (
+                        seniority !== null &&
+                        !targetSeniority.includes(seniority)
+                      ) {
+                        debug(
+                          "expand:l2",
+                          `Filtered: seniority "${seniority}" not in target`,
+                          {
+                            jobId: job.id,
+                            title: job.title,
+                            detectedSeniority: seniority,
+                            targetSeniority,
+                          },
+                        );
+                        scoredFiltered++;
+                        continue;
+                      }
+                    }
+
+                    // Level 2 filter: location matching
+                    if (resolvedTiers.length > 0) {
+                      const locationResult = matchJobToTiers(
+                        job.locationRaw,
+                        job.workplaceType,
+                        resolvedTiers,
+                      );
+                      if (!locationResult.passes) {
+                        debug(
+                          "expand:l2",
+                          `Filtered: location did not match tiers`,
+                          {
+                            jobId: job.id,
+                            title: job.title,
+                            locationRaw: job.locationRaw,
+                            workplaceType: job.workplaceType,
+                          },
+                        );
+                        scoredFiltered++;
+                        continue;
+                      }
+                    }
+
+                    debug("expand:l2", "Passed L2 filter, enqueuing scoring", {
+                      jobId: job.id,
+                      title: job.title,
+                    });
+
+                    try {
+                      await boss.send(
+                        FUTURE_QUEUES.llmScoring,
+                        { jobId: job.id, userProfileId, userId },
+                        {
+                          singletonKey: `${userProfileId}:${job.id}`,
+                          startAfter: SCORING_STAGGER_SECONDS * scoredEnqueued,
+                        },
+                      );
+                      scoredEnqueued++;
+                    } catch (sendError) {
+                      const msg =
+                        sendError instanceof Error
+                          ? sendError.message
+                          : String(sendError);
+                      console.warn(
+                        `[expand] Failed to enqueue scoring for job ${job.id}: ${msg}`,
+                      );
+                    }
+                  }
+                }
+              } catch (scoreError) {
+                // Non-fatal: scoring can be triggered manually later
+                const msg =
+                  scoreError instanceof Error
+                    ? scoreError.message
+                    : String(scoreError);
+                console.warn(
+                  `[expand] Failed to enqueue scoring for ${disc.name}: ${msg}`,
+                );
+              }
             }
           } catch (companyError) {
             const msg =
@@ -409,225 +733,11 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
 
         console.info(
           `[expand] Summary for user ${userId}: ` +
-            `discovered=${discovered.length} inserted=${inserted} polled=${polled} ` +
-            `skipped_domain=${skippedDomain} skipped_ats=${skippedAts} ` +
-            `skipped_slug=${skippedSlug} skipped_dup=${skippedDuplicateAts} ` +
-            `poll_errors=${pollErrors}`,
+            `discovered=${discovered.length} inserted=${inserted} inserted_unknown=${insertedUnknown} ` +
+            `polled=${polled} probe_hits=${probeHits} ` +
+            `skipped_domain=${skippedDomain} skipped_dup=${skippedDup} ` +
+            `poll_errors=${pollErrors} scored_enqueued=${scoredEnqueued} scored_filtered=${scoredFiltered}`,
         );
-
-        // 7. Enqueue LLM scoring for newly inserted companies' jobs
-        //    Only jobs that pass Level 2 filtering are enqueued to avoid
-        //    flooding the API rate limit with irrelevant jobs.
-        if (insertedCompanyIds.length > 0) {
-          try {
-            // 7a. Load user profile for Level 2 filtering
-            const [profile] = await db
-              .select()
-              .from(userProfiles)
-              .where(eq(userProfiles.userId, userId))
-              .limit(1);
-
-            // 7b. Load all role families
-            const allFamilies = await db.select().from(roleFamilies);
-
-            // 7c. Resolve user's target titles to matching role families
-            const targetTitles = profile?.targetTitles ?? [];
-            const matchedFamilies = resolveRoleFamilies(
-              allFamilies,
-              targetTitles,
-            );
-
-            debug("expand:l2", "Role family resolution", {
-              targetTitles,
-              matchedFamilySlugs: matchedFamilies.map((f) => f.slug),
-              totalRoleFamilies: allFamilies.length,
-            });
-
-            // 7d. Resolve user's location preferences into tier structures
-            const locationPreferences = profile?.locationPreferences as {
-              tiers?: unknown;
-            } | null;
-            const rawTiers = locationPreferences?.tiers;
-            const resolvedTiers: ResolvedTierGeo[] = Array.isArray(rawTiers)
-              ? resolveAllTiers(rawTiers)
-              : [];
-
-            const targetSeniority = profile?.targetSeniority ?? [];
-
-            debug("expand:l2", "Location tier resolution", {
-              rawLocationPreferences: locationPreferences,
-              resolvedTierCount: resolvedTiers.length,
-            });
-
-            // 7e. Query jobs with fields needed for Level 2 classification
-            const newJobs = await db
-              .select({
-                id: jobs.id,
-                descriptionHash: jobs.descriptionHash,
-                title: jobs.title,
-                departmentRaw: jobs.departmentRaw,
-                locationRaw: jobs.locationRaw,
-                workplaceType: jobs.workplaceType,
-              })
-              .from(jobs)
-              .where(inArray(jobs.companyId, insertedCompanyIds));
-
-            if (newJobs.length > 0) {
-              const newJobIds = newJobs.map((j) => j.id);
-
-              // Check which jobs already have a fresh score for this profile
-              const existingScores = await db
-                .select({
-                  jobId: jobMatches.jobId,
-                  jobContentHash: jobMatches.jobContentHash,
-                })
-                .from(jobMatches)
-                .where(
-                  and(
-                    eq(jobMatches.userProfileId, userProfileId),
-                    inArray(jobMatches.jobId, newJobIds),
-                  ),
-                );
-
-              const scoreByJobId = new Map(
-                existingScores.map((m) => [m.jobId, m.jobContentHash]),
-              );
-              const hashByJobId = new Map(
-                newJobs.map((j) => [j.id, j.descriptionHash]),
-              );
-
-              // 7f. Filter and enqueue scoring jobs with stagger delay
-              let enqueued = 0;
-              let filteredOut = 0;
-              for (const job of newJobs) {
-                const existingHash = scoreByJobId.get(job.id);
-                const currentHash = hashByJobId.get(job.id);
-
-                // Skip if already scored with the current content hash
-                if (existingHash != null && existingHash === currentHash) {
-                  continue;
-                }
-
-                debug("expand:l2", "Evaluating job", {
-                  jobId: job.id,
-                  title: job.title,
-                  departmentRaw: job.departmentRaw,
-                  locationRaw: job.locationRaw,
-                  workplaceType: job.workplaceType,
-                });
-
-                // Level 2 filter: role family classification
-                if (matchedFamilies.length > 0) {
-                  const classified = classifyJobMulti(matchedFamilies, {
-                    title: job.title,
-                    departmentRaw: job.departmentRaw,
-                  });
-                  debug("expand:l2", "Classification result", {
-                    jobId: job.id,
-                    familySlug: classified.familySlug,
-                    score: classified.score,
-                    matchType: classified.matchType,
-                  });
-                  if (classified.score < CLASSIFICATION_THRESHOLD) {
-                    debug(
-                      "expand:l2",
-                      `Filtered: role family score ${classified.score} < ${CLASSIFICATION_THRESHOLD}`,
-                      { jobId: job.id, title: job.title },
-                    );
-                    filteredOut++;
-                    continue;
-                  }
-                }
-
-                // Level 2 filter: seniority
-                if (targetSeniority.length > 0) {
-                  const seniority = extractSeniority(job.title);
-                  // Pass jobs with no seniority marker (could be any level)
-                  // or where detected seniority overlaps with user's target
-                  if (
-                    seniority !== null &&
-                    !targetSeniority.includes(seniority)
-                  ) {
-                    debug(
-                      "expand:l2",
-                      `Filtered: seniority "${seniority}" not in target`,
-                      {
-                        jobId: job.id,
-                        title: job.title,
-                        detectedSeniority: seniority,
-                        targetSeniority,
-                      },
-                    );
-                    filteredOut++;
-                    continue;
-                  }
-                }
-
-                // Level 2 filter: location matching
-                if (resolvedTiers.length > 0) {
-                  const locationResult = matchJobToTiers(
-                    job.locationRaw,
-                    job.workplaceType,
-                    resolvedTiers,
-                  );
-                  if (!locationResult.passes) {
-                    debug(
-                      "expand:l2",
-                      `Filtered: location did not match tiers`,
-                      {
-                        jobId: job.id,
-                        title: job.title,
-                        locationRaw: job.locationRaw,
-                        workplaceType: job.workplaceType,
-                      },
-                    );
-                    filteredOut++;
-                    continue;
-                  }
-                }
-
-                debug("expand:l2", "Passed L2 filter, enqueuing scoring", {
-                  jobId: job.id,
-                  title: job.title,
-                });
-
-                try {
-                  await boss.send(
-                    FUTURE_QUEUES.llmScoring,
-                    { jobId: job.id, userProfileId, userId },
-                    {
-                      singletonKey: `${userProfileId}:${job.id}`,
-                      startAfter: SCORING_STAGGER_SECONDS * enqueued,
-                    },
-                  );
-                  enqueued++;
-                } catch (sendError) {
-                  const msg =
-                    sendError instanceof Error
-                      ? sendError.message
-                      : String(sendError);
-                  console.warn(
-                    `[expand] Failed to enqueue scoring for job ${job.id}: ${msg}`,
-                  );
-                }
-              }
-
-              console.info(
-                `[expand] Enqueued ${enqueued} scoring jobs for profile ${userProfileId} ` +
-                  `(${filteredOut} filtered by Level 2)`,
-              );
-            }
-          } catch (scoreError) {
-            // Non-fatal: scoring can be triggered manually later
-            const msg =
-              scoreError instanceof Error
-                ? scoreError.message
-                : String(scoreError);
-            console.warn(
-              `[expand] Failed to enqueue scoring: ${msg}`,
-            );
-          }
-        }
       } catch (error) {
         const message =
           error instanceof Error ? error.message : String(error);
