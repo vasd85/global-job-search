@@ -16,6 +16,7 @@ vi.mock("drizzle-orm", () => {
     ilike: vi.fn((col, val) => `ilike(${col},${val})`),
     and: vi.fn((...args: unknown[]) => args),
     or: vi.fn((...args: unknown[]) => `or(${args.join(",")})`),
+    inArray: vi.fn((col, vals) => `inArray(${col},${vals})`),
     isNotNull: vi.fn((col) => `isNotNull(${col})`),
     desc: vi.fn((col) => `desc(${col})`),
     sql: sqlFn,
@@ -336,8 +337,11 @@ describe("GET /api/jobs", () => {
     await getJsonResponse();
 
     const whereArg = getPaginatedWhereArg() as unknown[];
-    // Only status=open should be in the conditions
-    expect(whereArg).toEqual(["eq(jobs.status,open)"]);
+    // status=open + always-on supported ATS vendor filter
+    expect(whereArg).toEqual([
+      "eq(jobs.status,open)",
+      "inArray(companies.atsVendor,greenhouse,lever,ashby,smartrecruiters)",
+    ]);
   });
 
   // --- Error handling ---

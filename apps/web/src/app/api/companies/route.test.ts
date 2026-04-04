@@ -5,7 +5,8 @@
 // ---------------------------------------------------------------------------
 const { mockOrderBy, mockSelect } = vi.hoisted(() => {
   const mockOrderBy = vi.fn();
-  const mockFrom = vi.fn(() => ({ orderBy: mockOrderBy }));
+  const mockWhere = vi.fn(() => ({ orderBy: mockOrderBy }));
+  const mockFrom = vi.fn(() => ({ where: mockWhere }));
   const mockSelect = vi.fn(() => ({ from: mockFrom }));
   return { mockOrderBy, mockSelect };
 });
@@ -31,6 +32,7 @@ vi.mock("@/lib/db/schema", () => ({
 
 vi.mock("drizzle-orm", () => ({
   desc: vi.fn((col: unknown) => `desc(${col})`),
+  inArray: vi.fn((col: unknown, vals: unknown) => `inArray(${col},${vals})`),
 }));
 
 import { desc } from "drizzle-orm";
