@@ -26,7 +26,7 @@ export interface DiscoverCompaniesInput {
 }
 
 const MODEL_ID = "claude-haiku-4-5-20251001";
-const MAX_STEPS = 5;
+const MAX_STEPS = 20;
 
 // ─── Service ────────────────────────────────────────────────────────────────
 
