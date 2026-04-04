@@ -20,6 +20,9 @@ vi.mock("ai", () => ({
   generateText: vi.fn(),
   Output: { object: vi.fn(() => "mock-output-schema") },
   stepCountIs: vi.fn(() => "mock-stop-when"),
+  NoObjectGeneratedError: {
+    isInstance: vi.fn(() => false),
+  },
 }));
 
 // ─── Imports (after mocks) ─────────────────────────────────────────────────
