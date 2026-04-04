@@ -18,6 +18,7 @@ import {
   parseSmartRecruitersCompanyFromCareersUrl,
   generateSlugCandidates,
   probeAtsApis,
+  SUPPORTED_ATS_VENDORS,
 } from "@gjs/ats-core/discovery";
 import type { ProbeLogEntry } from "@gjs/ats-core/discovery";
 import {
@@ -71,12 +72,7 @@ interface UrlDetectionStep {
 }
 
 /** ATS vendors that have working extractors. */
-const SUPPORTED_VENDORS = new Set([
-  "greenhouse",
-  "lever",
-  "ashby",
-  "smartrecruiters",
-]);
+const SUPPORTED_VENDORS = new Set<string>(SUPPORTED_ATS_VENDORS);
 
 /** Minimum classifier score for a job to pass the role family filter. */
 const CLASSIFICATION_THRESHOLD = 0.5;
@@ -594,13 +590,10 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
                   const scoreByJobId = new Map(
                     existingScores.map((m) => [m.jobId, m.jobContentHash]),
                   );
-                  const hashByJobId = new Map(
-                    companyJobs.map((j) => [j.id, j.descriptionHash]),
-                  );
 
                   for (const job of companyJobs) {
                     const existingHash = scoreByJobId.get(job.id);
-                    const currentHash = hashByJobId.get(job.id);
+                    const currentHash = job.descriptionHash;
 
                     // Skip if already scored with the current content hash
                     if (existingHash != null && existingHash === currentHash) {

@@ -1,5 +1,9 @@
 import type { AtsVendor } from "../types";
 
+/** ATS vendors with working extractors and public APIs. */
+export const SUPPORTED_ATS_VENDORS = ["greenhouse", "lever", "ashby", "smartrecruiters"] as const;
+export type SupportedAtsVendor = (typeof SUPPORTED_ATS_VENDORS)[number];
+
 export function detectAtsVendor(url: string | null): AtsVendor {
   if (!url) {
     return "unknown";

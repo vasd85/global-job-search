@@ -24,6 +24,7 @@ export {
   detectAtsVendor,
   isAtsHost,
   isKnownAtsVendor,
+  SUPPORTED_ATS_VENDORS,
   parseGreenhouseBoardToken,
   parseLeverSite,
   parseAshbyBoard,
@@ -33,6 +34,7 @@ export {
   probeAtsApis,
   isNameMatch,
 } from "./discovery/index";
+export type { SupportedAtsVendor } from "./discovery/index";
 export type {
   ProbeResult,
   ProbeConfidence,

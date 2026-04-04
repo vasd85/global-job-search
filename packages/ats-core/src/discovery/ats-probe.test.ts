@@ -38,12 +38,11 @@ describe("isNameMatch", () => {
 
   // -- Important --------------------------------------------------------------
 
-  it("accepts short-name false positives via containment (known limitation)", () => {
-    // TODO: Short normalized names like "ai" will match inside longer names
-    // like "waitercom" because of the bidirectional containment check.
-    // This is a known limitation that the confidence system is designed to
-    // mitigate at the orchestration level.
-    expect(isNameMatch("AI", "Waiter.com")).toBe(true);
+  it("rejects short-name containment false positives via exact-match guard", () => {
+    // Short normalized names (< 3 chars) require exact equality instead of
+    // containment to avoid false positives like "ai" matching "waitercom".
+    expect(isNameMatch("AI", "Waiter.com")).toBe(false);
+    expect(isNameMatch("AI", "AI")).toBe(true);
   });
 
   it("returns true when punctuation and special characters are stripped", () => {
@@ -741,12 +740,7 @@ describe("probeAtsApis", () => {
   });
 
   describe("slug injection / adversarial inputs", () => {
-    it("uses unsanitized slugs directly in URL construction", async () => {
-      // TODO: generateSlugCandidates strips non-alphanumeric chars so these
-      // slugs should never be generated in practice. However, probeAtsApis
-      // accepts raw string[] slugs with no validation. If a caller passes
-      // unsanitized slugs, path traversal or URL injection is possible.
-      // Consider adding slug validation at the probe level as defense-in-depth.
+    it("encodes special characters in slugs via encodeURIComponent", async () => {
       mockFetch.mockResolvedValue(mockResponse(404, "Not Found"));
 
       const { log } = await probeAtsApis(
@@ -759,8 +753,9 @@ describe("probeAtsApis", () => {
       );
 
       const ghEntry = log.find((e) => e.vendor === "greenhouse");
-      // The slug is used as-is in the URL with no sanitization
-      expect(ghEntry?.endpoint).toContain("acme/../../admin");
+      // Slug is encoded with encodeURIComponent for defense-in-depth
+      expect(ghEntry?.endpoint).toContain(encodeURIComponent("acme/../../admin"));
+      expect(ghEntry?.endpoint).not.toContain("acme/../../admin");
     });
   });
 

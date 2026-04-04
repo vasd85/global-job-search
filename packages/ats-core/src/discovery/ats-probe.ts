@@ -121,6 +121,11 @@ export function isNameMatch(expected: string, actual: string): boolean {
     return false;
   }
 
+  // Short names are collision-prone — require exact match
+  if (a.length < 3 || b.length < 3) {
+    return a === b;
+  }
+
   return a === b || a.includes(b) || b.includes(a);
 }
 
@@ -140,7 +145,7 @@ async function probeGreenhouse(
   slug: string,
   timeoutMs: number,
 ): Promise<{ endpoint: string; result: VendorProbeResult }> {
-  const endpoint = `https://boards-api.greenhouse.io/v1/boards/${slug}`;
+  const endpoint = `https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(slug)}`;
   const resp = await probeFetch(endpoint, undefined, timeoutMs);
 
   if (!resp) {
@@ -182,7 +187,7 @@ async function probeSmartRecruiters(
   slug: string,
   timeoutMs: number,
 ): Promise<{ endpoint: string; result: VendorProbeResult }> {
-  const endpoint = `https://api.smartrecruiters.com/v1/companies/${slug}/postings?limit=1`;
+  const endpoint = `https://api.smartrecruiters.com/v1/companies/${encodeURIComponent(slug)}/postings?limit=1`;
   const resp = await probeFetch(endpoint, undefined, timeoutMs);
 
   if (!resp) {
@@ -276,7 +281,7 @@ async function probeLever(
   slug: string,
   timeoutMs: number,
 ): Promise<{ endpoint: string; result: VendorProbeResult }> {
-  const endpoint = `https://api.lever.co/v0/postings/${slug}?mode=json&limit=1`;
+  const endpoint = `https://api.lever.co/v0/postings/${encodeURIComponent(slug)}?mode=json&limit=1`;
   const resp = await probeFetch(endpoint, undefined, timeoutMs);
 
   if (!resp) {

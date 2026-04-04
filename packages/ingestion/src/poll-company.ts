@@ -9,6 +9,7 @@ import {
   buildCareersUrl,
   createEmptyDiagnostics,
   sha256,
+  SUPPORTED_ATS_VENDORS,
   type AllJob,
   type ExtractionContext,
   type ExtractionResult,
@@ -36,12 +37,7 @@ type JobRow = typeof jobs.$inferSelect;
 
 // ─── ATS Extractor Dispatch ─────────────────────────────────────────────────
 
-const SUPPORTED_VENDORS = new Set<string>([
-  "greenhouse",
-  "lever",
-  "ashby",
-  "smartrecruiters",
-]);
+const SUPPORTED_VENDORS = new Set<string>(SUPPORTED_ATS_VENDORS);
 
 async function fetchJobsFromAts(
   vendor: string,

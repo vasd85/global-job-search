@@ -33,6 +33,7 @@ vi.mock("@gjs/ats-core", () => ({
     notes: [],
   }),
   sha256: mockSha256,
+  SUPPORTED_ATS_VENDORS: ["greenhouse", "lever", "ashby", "smartrecruiters"],
 }));
 
 const { pollCompany } = await import("./poll-company");

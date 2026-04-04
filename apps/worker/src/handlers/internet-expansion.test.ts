@@ -74,6 +74,7 @@ vi.mock("@gjs/ats-core/discovery", () => ({
   parseSmartRecruitersCompanyFromCareersUrl: vi.fn(),
   generateSlugCandidates: vi.fn().mockReturnValue([]),
   probeAtsApis: vi.fn().mockResolvedValue({ result: null, log: [] }),
+  SUPPORTED_ATS_VENDORS: ["greenhouse", "lever", "ashby", "smartrecruiters"],
 }));
 
 vi.mock("@gjs/ats-core", () => ({
@@ -647,9 +648,13 @@ describe("createInternetExpansionHandler", () => {
   test("DB insert conflict (onConflictDoNothing returns empty) -- company skipped, no poll", async () => {
     setupHappyPath();
 
-    // select 1: prefs, select 2: existing (empty)
+    // select 1: prefs, select 2: existing (empty),
+    // select 3: user profile, select 4: role families
     // insert returns empty array (conflict)
-    const { db } = createMockDb([[makePrefsRow()], []], [[]]);
+    const { db } = createMockDb(
+      [[makePrefsRow()], [], [makeProfileRow()], [makeRoleFamilyRow()]],
+      [[]],
+    );
     const boss = createMockBoss();
 
     const handler = createInternetExpansionHandler(db, boss);
@@ -684,10 +689,12 @@ describe("createInternetExpansionHandler", () => {
     mockParseGreenhouseBoardToken.mockReturnValue("successco");
 
     const companyRow = makeCompanyRow({ name: "SuccessCo", slug: "greenhouse-successco" });
-    // select 1: prefs, select 2: existing (empty)
+    // select 1: prefs, select 2: existing (empty),
+    // select 3: user profile, select 4: role families,
+    // select 5: jobs for second company (empty)
     // insert: only second company succeeds
     const { db } = createMockDb(
-      [[makePrefsRow()], []],
+      [[makePrefsRow()], [], [makeProfileRow()], [makeRoleFamilyRow()], []],
       [[companyRow]],
     );
     const boss = createMockBoss();
@@ -751,8 +758,11 @@ describe("createInternetExpansionHandler", () => {
 
     const row0 = makeCompanyRow({ id: "c0", slug: "greenhouse-co0", name: "Co0" });
     const row1 = makeCompanyRow({ id: "c1", slug: "greenhouse-co1", name: "Co1" });
+    // select 1: prefs, select 2: existing (empty),
+    // select 3: user profile, select 4: role families,
+    // select 5: jobs for co0 (empty), select 6: jobs for co1 (empty)
     const { db } = createMockDb(
-      [[makePrefsRow()], []],
+      [[makePrefsRow()], [], [makeProfileRow()], [makeRoleFamilyRow()], [], []],
       [[row0], [row1]],
     );
     const boss = createMockBoss();
@@ -840,7 +850,11 @@ describe("createInternetExpansionHandler", () => {
     setupHappyPath();
     mockDetectAtsVendor.mockReturnValue("workday");
 
-    const { db } = createMockDb([[makePrefsRow()], []]);
+    // select 1: prefs, select 2: existing (empty),
+    // select 3: user profile, select 4: role families
+    const { db } = createMockDb(
+      [[makePrefsRow()], [], [makeProfileRow()], [makeRoleFamilyRow()]],
+    );
     const boss = createMockBoss();
 
     const handler = createInternetExpansionHandler(db, boss);
@@ -1292,11 +1306,12 @@ describe("createInternetExpansionHandler", () => {
     setupHappyPath();
 
     const companyRow = makeCompanyRow();
-    const jobRows = [{ id: "job-1", descriptionHash: "hash-1" }];
+    const jobRows = [{ id: "job-1", descriptionHash: "hash-1", title: "Software Engineer", departmentRaw: "Engineering", locationRaw: "Remote", workplaceType: "remote" }];
     // select 1: prefs, select 2: existing companies (empty),
-    // select 3: jobs from new companies, select 4: existing scores (empty)
+    // select 3: user profile, select 4: role families,
+    // select 5: jobs from new companies, select 6: existing scores (empty)
     const { db } = createMockDb(
-      [[makePrefsRow()], [], jobRows, []],
+      [[makePrefsRow()], [], [makeProfileRow()], [makeRoleFamilyRow()], jobRows, []],
       [[companyRow]],
     );
     const boss = createMockBoss();

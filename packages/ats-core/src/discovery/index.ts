@@ -1,4 +1,5 @@
-export { detectAtsVendor, isAtsHost, isKnownAtsVendor } from "./ats-detect";
+export { detectAtsVendor, isAtsHost, isKnownAtsVendor, SUPPORTED_ATS_VENDORS } from "./ats-detect";
+export type { SupportedAtsVendor } from "./ats-detect";
 export {
   parseGreenhouseBoardToken,
   parseLeverSite,
