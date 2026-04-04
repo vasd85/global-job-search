@@ -100,9 +100,10 @@ export const companies = pgTable(
     website: text("website"),
     industry: text("industry").array(),
 
-    atsVendor: text("ats_vendor").notNull(), // greenhouse | lever | ashby | smartrecruiters
-    atsSlug: text("ats_slug").notNull(),
+    atsVendor: text("ats_vendor").notNull(), // greenhouse | lever | ashby | smartrecruiters | unknown
+    atsSlug: text("ats_slug"),
     atsCareersUrl: text("ats_careers_url"),
+    atsSearchLog: jsonb("ats_search_log"), // AtsSearchLog: detection audit trail (url_detection + api_probe steps)
 
     source: text("source").notNull().default("seed_list"), // seed_list | user_submission | auto_discovered
     isActive: boolean("is_active").notNull().default(true),

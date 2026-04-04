@@ -57,6 +57,13 @@
       "when": 1775064955196,
       "tag": "0007_romantic_the_captain",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1775322310262,
+      "tag": "0008_large_grandmaster",
+      "breakpoints": true
     }
   ]
 }

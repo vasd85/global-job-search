@@ -6,3 +6,12 @@ export {
   parseSmartRecruitersCompanyFromCareersUrl,
   buildCareersUrl
 } from "./identifiers";
+export { generateSlugCandidates } from "./slug-candidates";
+export { probeAtsApis, isNameMatch } from "./ats-probe";
+export type {
+  ProbeResult,
+  ProbeConfidence,
+  ProbeOptions,
+  ProbeLogEntry,
+  ProbeOutcome,
+} from "./ats-probe";

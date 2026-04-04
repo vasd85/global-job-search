@@ -28,7 +28,17 @@ export {
   parseLeverSite,
   parseAshbyBoard,
   parseSmartRecruitersCompanyFromCareersUrl,
-  buildCareersUrl
+  buildCareersUrl,
+  generateSlugCandidates,
+  probeAtsApis,
+  isNameMatch,
+} from "./discovery/index";
+export type {
+  ProbeResult,
+  ProbeConfidence,
+  ProbeOptions,
+  ProbeLogEntry,
+  ProbeOutcome,
 } from "./discovery/index";
 
 // Normalizer

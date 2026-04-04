@@ -11,7 +11,7 @@ interface JobRow {
 }
 
 interface CompanyRow {
-  atsSlug: string;
+  atsSlug: string | null;
 }
 
 const FETCH_TIMEOUT_MS = 10_000;
@@ -32,6 +32,8 @@ export async function fetchJobDescription(
 
   // Only SmartRecruiters needs a detail fetch; other vendors provide descriptions in the list API
   if (jobRow.sourceRef !== "smartrecruiters") return null;
+
+  if (!companyRow.atsSlug) return null;
 
   const detailUrl = `https://api.smartrecruiters.com/v1/companies/${encodeURIComponent(companyRow.atsSlug)}/postings/${encodeURIComponent(jobRow.atsJobId)}`;
 

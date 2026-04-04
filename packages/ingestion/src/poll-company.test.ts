@@ -75,6 +75,7 @@ function makeFakeCompany(overrides: Record<string, unknown> = {}) {
     atsVendor: "greenhouse",
     atsSlug: "acme",
     atsCareersUrl: "https://boards.greenhouse.io/acme",
+    atsSearchLog: null,
     source: "seed_list",
     isActive: true,
     lastPolledAt: null,
