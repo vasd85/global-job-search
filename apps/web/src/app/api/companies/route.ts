@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { companies } from "@/lib/db/schema";
-import { desc } from "drizzle-orm";
+import { desc, inArray } from "drizzle-orm";
 
 export async function GET() {
   try {
@@ -19,6 +19,7 @@ export async function GET() {
         jobsCount: companies.jobsCount,
       })
       .from(companies)
+      .where(inArray(companies.atsVendor, ["greenhouse", "lever", "ashby", "smartrecruiters"]))
       .orderBy(desc(companies.jobsCount));
 
     return NextResponse.json({ companies: result, total: result.length });
