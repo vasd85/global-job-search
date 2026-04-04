@@ -35,6 +35,12 @@ export async function seedPollingConfig(db: Database): Promise<void> {
         description:
           "Days before a stale job is marked closed. Takes effect on next poll cycle.",
       },
+      {
+        key: "search.max_new_companies_per_request",
+        value: 20,
+        description:
+          "Max new companies discovered per internet expansion. Takes effect on next expansion job.",
+      },
     ])
     .onConflictDoNothing();
 }

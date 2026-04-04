@@ -4,6 +4,7 @@ import { registerHandlers } from "./index";
 
 const mockPollHandler = vi.fn();
 const mockScoringHandler = vi.fn();
+const mockExpansionHandler = vi.fn();
 
 vi.mock("./poll-company", () => ({
   createPollCompanyHandler: vi.fn(() => mockPollHandler),
@@ -13,8 +14,11 @@ vi.mock("./llm-scoring", () => ({
   createLlmScoringHandler: vi.fn(() => mockScoringHandler),
 }));
 
+vi.mock("./internet-expansion", () => ({
+  createInternetExpansionHandler: vi.fn(() => mockExpansionHandler),
+}));
+
 vi.mock("./stubs", () => ({
-  handleInternetExpansion: vi.fn(),
   handleDescriptionFetch: vi.fn(),
   handleRoleTaxonomy: vi.fn(),
 }));
@@ -27,8 +31,8 @@ vi.mock("../lib/app-config", () => ({
 
 import { createPollCompanyHandler } from "./poll-company";
 import { createLlmScoringHandler } from "./llm-scoring";
+import { createInternetExpansionHandler } from "./internet-expansion";
 import {
-  handleInternetExpansion,
   handleDescriptionFetch,
   handleRoleTaxonomy,
 } from "./stubs";
@@ -57,6 +61,7 @@ describe("registerHandlers(boss, db)", () => {
     // Re-set mock return values after clearAllMocks
     (createPollCompanyHandler as ReturnType<typeof vi.fn>).mockReturnValue(mockPollHandler);
     (createLlmScoringHandler as ReturnType<typeof vi.fn>).mockReturnValue(mockScoringHandler);
+    (createInternetExpansionHandler as ReturnType<typeof vi.fn>).mockReturnValue(mockExpansionHandler);
   });
 
   afterEach(() => {
@@ -121,7 +126,23 @@ describe("registerHandlers(boss, db)", () => {
     expect(scoringCall![2]).toBe(mockScoringHandler);
   });
 
-  test("registers remaining 3 future queues with their stub handlers", async () => {
+  test("registers internet expansion with localConcurrency: 1 and the real handler", async () => {
+    const boss = createMockBoss();
+    const db = createMockDb();
+
+    await registerHandlers(boss, db);
+
+    const workCalls = (boss.work as ReturnType<typeof vi.fn>).mock.calls;
+
+    const expansionCall = workCalls.find(
+      (c: unknown[]) => c[0] === FUTURE_QUEUES.internetExpansion,
+    );
+    expect(expansionCall).toBeDefined();
+    expect(expansionCall![1]).toEqual({ localConcurrency: 1 });
+    expect(expansionCall![2]).toBe(mockExpansionHandler);
+  });
+
+  test("registers remaining 2 future queues with their stub handlers", async () => {
     const boss = createMockBoss();
     const db = createMockDb();
 
@@ -131,7 +152,6 @@ describe("registerHandlers(boss, db)", () => {
 
     // Remaining stub queue calls: boss.work(queueName, handler) -- no options object
     const stubMapping: [string, unknown][] = [
-      [FUTURE_QUEUES.internetExpansion, handleInternetExpansion],
       [FUTURE_QUEUES.descriptionFetch, handleDescriptionFetch],
       [FUTURE_QUEUES.roleTaxonomy, handleRoleTaxonomy],
     ];
@@ -202,6 +222,16 @@ describe("registerHandlers(boss, db)", () => {
 
     expect(createLlmScoringHandler).toHaveBeenCalledOnce();
     expect(createLlmScoringHandler).toHaveBeenCalledWith(db);
+  });
+
+  test("createInternetExpansionHandler is called once with db and boss", async () => {
+    const boss = createMockBoss();
+    const db = createMockDb();
+
+    await registerHandlers(boss, db);
+
+    expect(createInternetExpansionHandler).toHaveBeenCalledOnce();
+    expect(createInternetExpansionHandler).toHaveBeenCalledWith(db, boss);
   });
 
   // ── Config wiring scenarios ──────────────────────────────────────────────

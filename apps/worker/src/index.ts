@@ -24,6 +24,7 @@ boss.on("error", (error: Error) => {
 async function start(): Promise<void> {
   await boss.start();
   console.info("[worker] pg-boss started");
+  console.info(`[worker] LOG_LEVEL=${process.env.LOG_LEVEL ?? "info (default)"}`);
 
   await seedPollingConfig(db);
   console.info("[worker] Polling config seeded");

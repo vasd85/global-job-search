@@ -32,7 +32,7 @@ describe("seedPollingConfig(db)", () => {
 
   // ── Critical ──────────────────────────────────────────────────────────
 
-  test("seeds all four config rows with correct keys, values, and descriptions", async () => {
+  test("seeds all five config rows with correct keys, values, and descriptions", async () => {
     const { db, mocks } = createMockDb();
 
     await seedPollingConfig(db);
@@ -46,7 +46,7 @@ describe("seedPollingConfig(db)", () => {
       description: string;
     }>;
 
-    expect(rows).toHaveLength(4);
+    expect(rows).toHaveLength(5);
 
     // Verify each expected config row
     const byKey = new Map(rows.map((r) => [r.key, r]));
@@ -62,6 +62,9 @@ describe("seedPollingConfig(db)", () => {
     );
     expect(byKey.get("polling.closed_threshold_days")).toEqual(
       expect.objectContaining({ value: 30 }),
+    );
+    expect(byKey.get("search.max_new_companies_per_request")).toEqual(
+      expect.objectContaining({ value: 20 }),
     );
 
     // All rows should have a description

@@ -3,8 +3,8 @@ import type { Database } from "@gjs/db";
 import { VENDOR_QUEUES, FUTURE_QUEUES } from "@gjs/ingestion";
 import { createPollCompanyHandler } from "./poll-company";
 import { createLlmScoringHandler } from "./llm-scoring";
+import { createInternetExpansionHandler } from "./internet-expansion";
 import {
-  handleInternetExpansion,
   handleDescriptionFetch,
   handleRoleTaxonomy,
 } from "./stubs";
@@ -15,6 +15,9 @@ const DEFAULT_VENDOR_CONCURRENCY = 5;
 
 /** Concurrent LLM scoring jobs (global, not per-user for MVP). */
 const SCORING_CONCURRENCY = 3;
+
+/** One expansion job at a time per worker (per-user singleton enforced by job key). */
+const EXPANSION_CONCURRENCY = 1;
 
 /**
  * Create all queues and register work handlers with pg-boss.
@@ -68,10 +71,15 @@ export async function registerHandlers(
   );
   console.info(`[handlers] Registered ${FUTURE_QUEUES.llmScoring} (concurrency: ${SCORING_CONCURRENCY})`);
 
-  // Register stub handlers for remaining future queues
-  await boss.work(FUTURE_QUEUES.internetExpansion, handleInternetExpansion);
-  console.info(`[handlers] Registered ${FUTURE_QUEUES.internetExpansion} (stub)`);
+  // Register internet expansion handler
+  await boss.work(
+    FUTURE_QUEUES.internetExpansion,
+    { localConcurrency: EXPANSION_CONCURRENCY },
+    createInternetExpansionHandler(db, boss),
+  );
+  console.info(`[handlers] Registered ${FUTURE_QUEUES.internetExpansion} (concurrency: ${EXPANSION_CONCURRENCY})`);
 
+  // Register stub handlers for remaining future queues
   await boss.work(FUTURE_QUEUES.descriptionFetch, handleDescriptionFetch);
   console.info(`[handlers] Registered ${FUTURE_QUEUES.descriptionFetch} (stub)`);
 
