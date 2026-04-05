@@ -544,6 +544,125 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
               );
               polled++;
               pollSucceeded = pollResult.jobsFound > 0;
+
+              // 6e-ii. Re-probe when URL fast-path company has 0 jobs
+              // The AI may have found an abandoned ATS page. Try other vendors.
+              if (
+                !pollSucceeded &&
+                detectionMethod === "url_detection" &&
+                slugCandidates.length > 0
+              ) {
+                debug("expand", "URL-detected company has 0 jobs, re-probing", {
+                  company: disc.name,
+                  originalVendor: detectedVendor,
+                  originalSlug: detectedSlug,
+                });
+
+                const reprobeOutcome = await probeAtsApis(
+                  disc.name,
+                  slugCandidates,
+                  { skipVendors: new Set([detectedVendor]) },
+                );
+
+                for (const entry of reprobeOutcome.log) {
+                  searchSteps.push(entry);
+                }
+
+                if (reprobeOutcome.result) {
+                  // Found on a different vendor — update company record
+                  const newVendor = reprobeOutcome.result.vendor;
+                  const newSlug = reprobeOutcome.result.slug;
+
+                  console.info(
+                    `[expand] Re-probe found ${disc.name} on ${newVendor} (was ${detectedVendor}), updating`,
+                  );
+
+                  detectedVendor = newVendor;
+                  detectedSlug = newSlug;
+                  detectionMethod = "api_probe";
+                  detectionConfidence = reprobeOutcome.result.confidence;
+                  probeHits++;
+
+                  // Update the search log outcome
+                  atsSearchLog.steps = searchSteps;
+                  atsSearchLog.outcome = {
+                    vendor: newVendor,
+                    slug: newSlug,
+                    method: "api_probe",
+                    confidence: reprobeOutcome.result.confidence,
+                  };
+
+                  await db
+                    .update(companies)
+                    .set({
+                      atsVendor: newVendor,
+                      atsSlug: newSlug,
+                      atsSearchLog,
+                      updatedAt: new Date(),
+                    })
+                    .where(eq(companies.id, companyId));
+
+                  // Update dedup sets
+                  if (detectedSlug) {
+                    existingAtsKeys.add(`${newVendor}:${newSlug}`);
+                  }
+
+                  // Re-poll with new vendor
+                  const updatedCompany = {
+                    ...companyRow,
+                    atsVendor: newVendor,
+                    atsSlug: newSlug,
+                  };
+                  try {
+                    const repollResult = await pollCompany(db, updatedCompany);
+                    debug("expand", "Re-poll result", {
+                      company: disc.name,
+                      ...repollResult,
+                    });
+                    console.info(
+                      `[expand] Re-polled ${disc.name} on ${newVendor}: found=${repollResult.jobsFound} new=${repollResult.jobsNew}`,
+                    );
+                    pollSucceeded = repollResult.jobsFound > 0;
+                  } catch (repollError) {
+                    const msg =
+                      repollError instanceof Error
+                        ? repollError.message
+                        : String(repollError);
+                    console.error(
+                      `[expand] Re-poll failed for ${disc.name}: ${msg}`,
+                    );
+                  }
+                } else if (detectedVendor === "smartrecruiters") {
+                  // SmartRecruiters with 0 jobs + no other vendor found:
+                  // almost certainly an abandoned page. Downgrade to unknown.
+                  console.info(
+                    `[expand] Downgrading ${disc.name} from smartrecruiters to unknown (0 jobs, no alt vendor)`,
+                  );
+
+                  atsSearchLog.steps = searchSteps;
+                  atsSearchLog.outcome = {
+                    vendor: "unknown",
+                    slug: null,
+                    method: "none",
+                    confidence: null,
+                  };
+
+                  await db
+                    .update(companies)
+                    .set({
+                      atsVendor: "unknown",
+                      atsSlug: null,
+                      atsSearchLog,
+                      isActive: false,
+                      updatedAt: new Date(),
+                    })
+                    .where(eq(companies.id, companyId));
+
+                  insertedUnknown++;
+                  inserted--; // was counted as inserted, now unknown
+                  continue; // skip L2 filtering for this company
+                }
+              }
             } catch (pollError) {
               const msg =
                 pollError instanceof Error

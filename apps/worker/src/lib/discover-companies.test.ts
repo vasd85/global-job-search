@@ -33,7 +33,7 @@ import { generateText, stepCountIs, NoObjectGeneratedError } from "ai";
 const mockCreateAnthropic = createAnthropic as ReturnType<typeof vi.fn>;
 const mockGenerateText = generateText as ReturnType<typeof vi.fn>;
 const mockStepCountIs = stepCountIs as ReturnType<typeof vi.fn>;
-const mockNoObjectIsInstance = (NoObjectGeneratedError as { isInstance: ReturnType<typeof vi.fn> }).isInstance;
+const mockNoObjectIsInstance = (NoObjectGeneratedError as unknown as { isInstance: ReturnType<typeof vi.fn> }).isInstance;
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
