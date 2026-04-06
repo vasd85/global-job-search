@@ -7,8 +7,10 @@
 INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 
-# Only process git commit commands
-if ! echo "$COMMAND" | grep -qE '^\s*git\s+commit\b'; then
+# Only process git commit commands.
+# Match at start-of-line OR after a shell operator (; && || | &) so compound
+# commands like `git add . && git commit -F ...` are not bypassed.
+if ! echo "$COMMAND" | grep -qE '(^|[;&|]+\s*)git\s+commit\b'; then
   exit 0
 fi
 
