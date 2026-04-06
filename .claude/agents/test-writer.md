@@ -4,7 +4,7 @@ description: >-
   Specialized test writer for this monorepo. Implements test scenarios
   designed by test-scenario-designer, or writes tests from git diff when
   no scenarios are provided. Uses Vitest and project conventions.
-tools: Read, Write, Edit, Bash, Grep, Glob
+tools: Read, Write, Edit, Bash, Grep, Glob, LSP
 model: opus
 skills: [project-context, testing-principles]
 hooks:

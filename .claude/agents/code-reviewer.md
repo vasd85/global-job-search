@@ -5,7 +5,7 @@ description: >-
   and adherence to project conventions. Thinker agent — read-only, writes
   review report to scratchpad. Use before opening a PR for branches that
   modify source code.
-tools: Read, Write, Glob, Grep, Bash
+tools: Read, Write, Glob, Grep, Bash, LSP
 model: opus
 effort: max
 memory: project
