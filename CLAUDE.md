@@ -23,7 +23,7 @@ Package manager: **pnpm** with workspaces. Node ≥22 required.
 Next.js 16 (App Router) + React 19 + Tailwind CSS 4, backed by PostgreSQL via Drizzle ORM.
 
 Key files:
-- `src/lib/db/schema.ts` — all table definitions (company, job, user_profile, job_match, poll_log, company_submission)
+- `src/lib/db/schema.ts` — re-exports all table definitions from `packages/db/src/schema.ts` (company, job, user_profile, job_match, poll_log, company_submission)
 - `src/app/api/jobs/route.ts` — jobs search/filter API
 - `src/app/api/companies/route.ts` — companies list API
 - `src/lib/ingestion/` — poll-company, seed-companies, run-ingestion
