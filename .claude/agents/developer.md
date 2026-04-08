@@ -36,8 +36,20 @@ Start by reading the plan file to understand the full context.
 4. **Before every commit:**
    - Run `pnpm typecheck && pnpm lint` — fix any failures before committing.
    - Stage specific files by name (`git add <file1> <file2>`).
-   - Write commit message to `/tmp/gjs_msg.txt` following Conventional Commits.
-   - Commit: `git commit -F /tmp/gjs_msg.txt`.
+   - Commit using a stdin HEREDOC (delimiter must be `'EOF'`):
+     ```bash
+     git commit -F - <<'EOF'
+     type(scope): description
+
+     Optional body.
+     EOF
+     ```
+   - Do NOT add a `Co-Authored-By:` trailer — this project does not use
+     AI-attribution trailers.
+   - The commit-guard hook re-runs typecheck + lint and validates the
+     Conventional Commits subject. Running them yourself first is faster
+     than waiting for the hook to fail.
+   - Push and open PRs with `gh pr create` — both are auto-approved.
 5. **After all changes**, write a brief progress summary to
    `.claude/scratchpads/<task>/dev-progress.md` covering:
    - What was implemented
