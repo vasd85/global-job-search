@@ -1,9 +1,10 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { generateText, Output, stepCountIs } from "ai";
+import { generateText, NoObjectGeneratedError, Output, stepCountIs } from "ai";
 
 import {
   DiscoveryOutputSchema,
   type DiscoveredCompany,
+  type DiscoveryOutput,
 } from "./discover-companies-schema";
 import { buildDiscoveryPrompt } from "./discover-companies-prompt";
 import { debug } from "./logger";
@@ -25,7 +26,7 @@ export interface DiscoverCompaniesInput {
 }
 
 const MODEL_ID = "claude-haiku-4-5-20251001";
-const MAX_STEPS = 5;
+const MAX_STEPS = 20;
 
 // ─── Service ────────────────────────────────────────────────────────────────
 
@@ -93,8 +94,90 @@ export async function discoverCompanies(
     );
     return discoveryOutput.companies;
   } catch (error) {
+    // NoObjectGeneratedError means the model responded but not with valid JSON.
+    // Common cause: model wraps JSON in markdown fences or mixes with text.
+    // Try to extract JSON manually before giving up.
+    if (NoObjectGeneratedError.isInstance(error)) {
+      const rawText = (error as { text?: string }).text ?? "";
+      debug("discover", "NoObjectGeneratedError — attempting manual parse", {
+        rawTextPreview: rawText.slice(0, 500),
+        cause: String((error as { cause?: unknown }).cause),
+      });
+
+      const fallback = tryExtractJson(rawText);
+      if (fallback) {
+        console.info(
+          `[discover] Fallback parse recovered ${fallback.companies.length} companies`,
+        );
+        return fallback.companies;
+      }
+
+      console.error(
+        `[discover] AI web search failed: model returned unparseable text`,
+      );
+      debug("discover", "Full raw text from model", { rawText });
+      return [];
+    }
+
     const message = error instanceof Error ? error.message : String(error);
     console.error(`[discover] AI web search failed: ${message}`);
     return [];
+  }
+}
+
+// ─── Fallback JSON extraction ──────────────────────────────────────────────
+
+/**
+ * Try to extract and validate a DiscoveryOutput from model text that isn't
+ * pure JSON. Handles markdown-fenced JSON, JSON embedded in prose, etc.
+ */
+function tryExtractJson(text: string): DiscoveryOutput | null {
+  // 1. Try stripping markdown code fences: ```json ... ``` or ``` ... ```
+  const fenceMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)```/);
+  if (fenceMatch?.[1]) {
+    const parsed = safeParse(fenceMatch[1]);
+    if (parsed) return parsed;
+  }
+
+  // 2. Handle concatenated JSON objects from multi-step output.
+  //    The AI SDK concatenates each step's output, producing e.g.:
+  //    {"companies": []}{"companies": []}{"companies": [{...data...}]}
+  //    Split on }{ boundaries and try each fragment (last one usually has data).
+  if (text.includes("}{")) {
+    const fragments = text.split(/\}\s*\{/).map((frag, i, arr) => {
+      if (i === 0) return frag + "}";
+      if (i === arr.length - 1) return "{" + frag;
+      return "{" + frag + "}";
+    });
+    // Try fragments in reverse — last step most likely has the real data
+    for (let i = fragments.length - 1; i >= 0; i--) {
+      const parsed = safeParse(fragments[i]);
+      if (parsed && parsed.companies.length > 0) return parsed;
+    }
+    // If none had data, try any valid one
+    for (let i = fragments.length - 1; i >= 0; i--) {
+      const parsed = safeParse(fragments[i]);
+      if (parsed) return parsed;
+    }
+  }
+
+  // 3. Try finding the first { ... } that looks like our schema
+  const braceStart = text.indexOf("{");
+  const braceEnd = text.lastIndexOf("}");
+  if (braceStart !== -1 && braceEnd > braceStart) {
+    const parsed = safeParse(text.slice(braceStart, braceEnd + 1));
+    if (parsed) return parsed;
+  }
+
+  return null;
+}
+
+function safeParse(jsonStr: string): DiscoveryOutput | null {
+  try {
+    const raw: unknown = JSON.parse(jsonStr);
+    const result = DiscoveryOutputSchema.safeParse(raw);
+    return result.success ? result.data : null;
+  } catch {
+    return null;
   }
 }

@@ -11,7 +11,9 @@
     "build": "pnpm --filter @gjs/web build",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "db:generate": "pnpm --filter @gjs/web exec drizzle-kit generate",
+    "db:migrate": "pnpm --filter @gjs/web exec drizzle-kit migrate"
   },
   "devDependencies": {
     "vitest": "^4.0.18"

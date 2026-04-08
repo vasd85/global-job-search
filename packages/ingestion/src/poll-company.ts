@@ -9,6 +9,7 @@ import {
   buildCareersUrl,
   createEmptyDiagnostics,
   sha256,
+  SUPPORTED_ATS_VENDORS,
   type AllJob,
   type ExtractionContext,
   type ExtractionResult,
@@ -36,12 +37,7 @@ type JobRow = typeof jobs.$inferSelect;
 
 // ─── ATS Extractor Dispatch ─────────────────────────────────────────────────
 
-const SUPPORTED_VENDORS = new Set<string>([
-  "greenhouse",
-  "lever",
-  "ashby",
-  "smartrecruiters",
-]);
+const SUPPORTED_VENDORS = new Set<string>(SUPPORTED_ATS_VENDORS);
 
 async function fetchJobsFromAts(
   vendor: string,
@@ -218,6 +214,10 @@ export async function pollCompany(
 
   try {
     // 1. Fetch fresh jobs from ATS API
+    if (!company.atsSlug) {
+      const durationMs = Date.now() - startTime;
+      return { status: "error", jobsFound: 0, jobsNew: 0, jobsClosed: 0, jobsUpdated: 0, errorMessage: "Company has no ATS slug", durationMs };
+    }
     const result = await fetchJobsFromAts(company.atsVendor, company.atsSlug);
 
     if (result.errors.length > 0 && result.jobs.length === 0) {

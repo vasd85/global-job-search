@@ -33,6 +33,7 @@ vi.mock("@gjs/ats-core", () => ({
     notes: [],
   }),
   sha256: mockSha256,
+  SUPPORTED_ATS_VENDORS: ["greenhouse", "lever", "ashby", "smartrecruiters"],
 }));
 
 const { pollCompany } = await import("./poll-company");
@@ -75,6 +76,7 @@ function makeFakeCompany(overrides: Record<string, unknown> = {}) {
     atsVendor: "greenhouse",
     atsSlug: "acme",
     atsCareersUrl: "https://boards.greenhouse.io/acme",
+    atsSearchLog: null,
     source: "seed_list",
     isActive: true,
     lastPolledAt: null,

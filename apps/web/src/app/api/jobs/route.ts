@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { jobs, companies } from "@/lib/db/schema";
-import { eq, desc, and, ilike, or, sql, isNotNull } from "drizzle-orm";
+import { eq, desc, and, ilike, or, sql, isNotNull, inArray } from "drizzle-orm";
+import { SUPPORTED_ATS_VENDORS } from "@gjs/ats-core/discovery";
 
 export async function GET(request: Request) {
   try {
@@ -16,7 +17,9 @@ export async function GET(request: Request) {
     const offset = parseInt(searchParams.get("offset") ?? "0");
 
     const jobConditions = [eq(jobs.status, status)];
-    const companyConditions: ReturnType<typeof eq>[] = [];
+    const companyConditions: ReturnType<typeof eq>[] = [
+      inArray(companies.atsVendor, [...SUPPORTED_ATS_VENDORS]),
+    ];
 
     if (search) {
       jobConditions.push(

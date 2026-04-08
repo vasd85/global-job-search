@@ -23,7 +23,7 @@ Package manager: **pnpm** with workspaces. Node ≥22 required.
 Next.js 16 (App Router) + React 19 + Tailwind CSS 4, backed by PostgreSQL via Drizzle ORM.
 
 Key files:
-- `src/lib/db/schema.ts` — all table definitions (company, job, user_profile, job_match, poll_log, company_submission)
+- `src/lib/db/schema.ts` — re-exports all table definitions from `packages/db/src/schema.ts` (company, job, user_profile, job_match, poll_log, company_submission)
 - `src/app/api/jobs/route.ts` — jobs search/filter API
 - `src/app/api/companies/route.ts` — companies list API
 - `src/lib/ingestion/` — poll-company, seed-companies, run-ingestion
@@ -61,7 +61,20 @@ All packages use `"type": "module"` with ES2022/ESNext TypeScript.
 - Types: `feat`, `fix`, `refactor`, `chore`, `docs`, `test`
 - Scopes: `web`, `ats-core`, `db`, `api`
 - One commit = one logical change.
-- Commit via temp file: `git commit -F /tmp/gjs_msg.txt` (Cursor index.lock race — `git commit -m` is blocked by deny list).
+- Commit via stdin HEREDOC — `-m` and `-am` are blocked by deny list:
+  ```bash
+  git add <specific files>
+  git commit -F - <<'EOF'
+  type(scope): description
+
+  Optional body explaining why.
+  EOF
+  ```
+  The HEREDOC delimiter must be exactly `EOF` (single-quoted) so the
+  commit-guard hook can extract and validate the message. No temp file —
+  previous `/tmp/gjs_msg.txt` convention is retired. Do not add a
+  `Co-Authored-By:` trailer — this is a solo personal project and the
+  attribution is noise. `git log` is your audit trail.
 - Push only when changeset is complete, reviewed, and all checks pass.
 - PRs via `gh pr create` with title and description. Rebase on main first.
 

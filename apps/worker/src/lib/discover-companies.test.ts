@@ -20,16 +20,20 @@ vi.mock("ai", () => ({
   generateText: vi.fn(),
   Output: { object: vi.fn(() => "mock-output-schema") },
   stepCountIs: vi.fn(() => "mock-stop-when"),
+  NoObjectGeneratedError: {
+    isInstance: vi.fn(() => false),
+  },
 }));
 
 // ─── Imports (after mocks) ─────────────────────────────────────────────────
 
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { generateText, stepCountIs } from "ai";
+import { generateText, stepCountIs, NoObjectGeneratedError } from "ai";
 
 const mockCreateAnthropic = createAnthropic as ReturnType<typeof vi.fn>;
 const mockGenerateText = generateText as ReturnType<typeof vi.fn>;
 const mockStepCountIs = stepCountIs as ReturnType<typeof vi.fn>;
+const mockNoObjectIsInstance = (NoObjectGeneratedError as unknown as { isInstance: ReturnType<typeof vi.fn> }).isInstance;
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -158,8 +162,8 @@ describe("discoverCompanies", () => {
     // Output schema was applied
     expect(callArgs.output).toBe("mock-output-schema");
 
-    // stepCountIs(5) was used
-    expect(mockStepCountIs).toHaveBeenCalledWith(5);
+    // stepCountIs(20) was used
+    expect(mockStepCountIs).toHaveBeenCalledWith(20);
     expect(callArgs.stopWhen).toBe("mock-stop-when");
 
     // System and user prompts are strings from buildDiscoveryPrompt
@@ -176,5 +180,50 @@ describe("discoverCompanies", () => {
     const result = await discoverCompanies(makeInput());
 
     expect(result).toEqual([]);
+  });
+
+  // ── Fallback JSON extraction ──────────────────────────────────────────
+
+  test("concatenated JSON objects from multi-step output -- extracts last non-empty fragment", async () => {
+    const company = makeDiscoveredCompany({ name: "Marqeta" });
+    // Simulate multi-step output: empty steps + final step with data
+    const concatenated =
+      '{"companies": []}{"companies": []}{"companies": []}' +
+      JSON.stringify({ companies: [company] });
+
+    const error = Object.assign(new Error("parse failed"), { text: concatenated });
+    mockGenerateText.mockRejectedValue(error);
+    mockNoObjectIsInstance.mockReturnValueOnce(true);
+
+    const result = await discoverCompanies(makeInput());
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual(expect.objectContaining({ name: "Marqeta" }));
+  });
+
+  test("concatenated JSON objects all empty -- returns empty array from first valid fragment", async () => {
+    const concatenated = '{"companies": []}{"companies": []}{"companies": []}';
+
+    const error = Object.assign(new Error("parse failed"), { text: concatenated });
+    mockGenerateText.mockRejectedValue(error);
+    mockNoObjectIsInstance.mockReturnValueOnce(true);
+
+    const result = await discoverCompanies(makeInput());
+
+    expect(result).toEqual([]);
+  });
+
+  test("markdown-fenced JSON -- extracts from code fence", async () => {
+    const company = makeDiscoveredCompany({ name: "TRM Labs" });
+    const fenced = '```json\n' + JSON.stringify({ companies: [company] }) + '\n```';
+
+    const error = Object.assign(new Error("parse failed"), { text: fenced });
+    mockGenerateText.mockRejectedValue(error);
+    mockNoObjectIsInstance.mockReturnValueOnce(true);
+
+    const result = await discoverCompanies(makeInput());
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual(expect.objectContaining({ name: "TRM Labs" }));
   });
 });
