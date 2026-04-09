@@ -1,4 +1,4 @@
-import type { ResolvedTierGeo } from "./types";
+import type { ResolvedImmigration, ResolvedTierGeo } from "./types";
 import { lookupCountry } from "./country-data";
 import { lookupRegion } from "./composite-regions";
 import { lookupTimezoneGroup } from "./timezone-groups";
@@ -8,6 +8,12 @@ import { lookupCity } from "./city-index";
  * The input tier shape -- matches the Zod-inferred LocationPreferenceTier
  * from apps/web/src/lib/chatbot/schemas.ts. Defined here as a structural
  * type to avoid importing from apps/web (ats-core must not depend on apps/web).
+ *
+ * `immigrationFlags` is optional — added in Chunk B of the
+ * separate-match-signals refactor. Chatbot schemas may or may not populate
+ * it yet (Chunk C). Legacy callers that don't set it get
+ * `immigrationFlags: undefined` on the output, which `immigrationMatch`
+ * treats as "no constraint — always pass".
  */
 export interface LocationPreferenceTierInput {
   rank: number;
@@ -17,6 +23,7 @@ export interface LocationPreferenceTierInput {
     include: string[];
     exclude?: string[];
   };
+  immigrationFlags?: ResolvedImmigration;
 }
 
 /**
@@ -30,6 +37,11 @@ export interface LocationPreferenceTierInput {
  * - "cities"     -> lookupCity each; add city name + countryCode; unresolved
  *
  * Exclusions are processed identically, then subtracted from resolved codes.
+ *
+ * `tier.immigrationFlags` (optional) is passed through unchanged onto the
+ * output `ResolvedTierGeo.immigrationFlags`. No runtime compat shim for
+ * legacy `workFormats: ["relocation", ...]` data — per Q2 decision, the
+ * DB is empty and the shim is removed.
  */
 export function resolveTierGeo(tier: LocationPreferenceTierInput): ResolvedTierGeo {
   const resolved: ResolvedTierGeo = {
@@ -40,6 +52,7 @@ export function resolveTierGeo(tier: LocationPreferenceTierInput): ResolvedTierG
     isAny: false,
     excludedCountryCodes: new Set<string>(),
     unresolvedEntries: [],
+    immigrationFlags: tier.immigrationFlags,
   };
 
   const { type, include, exclude } = tier.scope;
