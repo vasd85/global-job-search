@@ -1509,7 +1509,12 @@ describe("POST /api/chatbot/save", () => {
       expect(profileValues.preferredLocations).toEqual(["US", "NYC", "SF"]);
     });
 
-    test("legacy draft (no locationPreferences, has preferredLocations) is auto-converted", async () => {
+    test("legacy flat fields without locationPreferences are ignored (no legacy shim)", async () => {
+      // Per Q2 decision in the separate-match-signals refactor: the DB was
+      // wiped and no back-compat is maintained. If a draft somehow ends up
+      // with only legacy flat fields, the save route treats it as if there
+      // were no location preferences at all -- locationPreferences becomes
+      // null, preferredLocations becomes [], remotePreference becomes "any".
       setupSaveRoute(makeValidDraft({
         preferredLocations: ["Israel"],
         remotePreference: "hybrid_ok",
@@ -1519,17 +1524,9 @@ describe("POST /api/chatbot/save", () => {
       await savePost(jsonRequest("POST"));
 
       const profileValues = txInsertValuesCalls[0] as Record<string, unknown>;
-      expect(profileValues.locationPreferences).toEqual({
-        tiers: [
-          {
-            rank: 1,
-            workFormats: ["remote", "hybrid"],
-            scope: { type: "countries", include: ["Israel"] },
-          },
-        ],
-      });
-      expect(profileValues.preferredLocations).toEqual(["Israel"]);
-      expect(profileValues.remotePreference).toBe("hybrid_ok");
+      expect(profileValues.locationPreferences).toBeNull();
+      expect(profileValues.preferredLocations).toEqual([]);
+      expect(profileValues.remotePreference).toBe("any");
     });
 
     test("draft with neither locationPreferences nor preferredLocations uses fallback defaults", async () => {

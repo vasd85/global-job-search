@@ -8,6 +8,7 @@ import {
   LocationPreferenceTierSchema,
   LocationPreferencesSchema,
   LocationScopeSchema,
+  TierImmigrationFlagsSchema,
   TargetRolesExtractionSchema,
   CoreSkillsExtractionSchema,
   GrowthSkillsExtractionSchema,
@@ -232,7 +233,15 @@ describe("LocationPreferenceTierSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  test.each<[string]>([["remote"], ["relocation"], ["hybrid"], ["onsite"]])(
+  test('rejects legacy "relocation" workFormat (moved to immigrationFlags)', () => {
+    const result = LocationPreferenceTierSchema.safeParse({
+      ...validTier,
+      workFormats: ["relocation"],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  test.each<[string]>([["remote"], ["hybrid"], ["onsite"]])(
     "accepts valid TierWorkFormat value %s",
     (format) => {
       const result = LocationPreferenceTierSchema.safeParse({
@@ -259,6 +268,82 @@ describe("LocationPreferenceTierSchema", () => {
   test("accepts minimal tier without optional fields", () => {
     const result = LocationPreferenceTierSchema.safeParse(validTier);
     expect(result.success).toBe(true);
+  });
+
+  test("accepts tier with immigrationFlags present", () => {
+    const result = LocationPreferenceTierSchema.safeParse({
+      ...validTier,
+      immigrationFlags: {
+        needsVisaSponsorship: true,
+        wantsRelocationPackage: true,
+      },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.immigrationFlags?.needsVisaSponsorship).toBe(true);
+      expect(result.data.immigrationFlags?.wantsRelocationPackage).toBe(true);
+    }
+  });
+
+  test("accepts tier with immigrationFlags absent (default)", () => {
+    const result = LocationPreferenceTierSchema.safeParse(validTier);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.immigrationFlags).toBeUndefined();
+    }
+  });
+});
+
+// ─── TierImmigrationFlagsSchema ─────────────────────────────────────────────
+
+describe("TierImmigrationFlagsSchema", () => {
+  test("accepts an empty object (all flags absent)", () => {
+    const result = TierImmigrationFlagsSchema.safeParse({});
+    expect(result.success).toBe(true);
+  });
+
+  test("accepts all three flags set to true", () => {
+    const result = TierImmigrationFlagsSchema.safeParse({
+      needsVisaSponsorship: true,
+      wantsRelocationPackage: true,
+      needsUnrestrictedWorkAuth: true,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  test("accepts a partial flag combo", () => {
+    const result = TierImmigrationFlagsSchema.safeParse({
+      wantsRelocationPackage: true,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.wantsRelocationPackage).toBe(true);
+      expect(result.data.needsVisaSponsorship).toBeUndefined();
+    }
+  });
+
+  test("accepts explicit false values alongside true values", () => {
+    const result = TierImmigrationFlagsSchema.safeParse({
+      needsVisaSponsorship: false,
+      wantsRelocationPackage: true,
+      needsUnrestrictedWorkAuth: false,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  test("rejects unknown keys via .strict()", () => {
+    const result = TierImmigrationFlagsSchema.safeParse({
+      needsVisaSponsorship: true,
+      bogusFlag: true,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  test("rejects non-boolean flag value", () => {
+    const result = TierImmigrationFlagsSchema.safeParse({
+      needsVisaSponsorship: "yes",
+    });
+    expect(result.success).toBe(false);
   });
 });
 

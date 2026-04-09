@@ -219,7 +219,8 @@ describe("formatDraftContext: locationPreferences", () => {
         tiers: [
           {
             rank: 1,
-            workFormats: ["relocation"],
+            workFormats: ["onsite"],
+            immigrationFlags: { wantsRelocationPackage: true },
             scope: { type: "cities", include: ["NYC"] },
           },
           {
@@ -229,7 +230,8 @@ describe("formatDraftContext: locationPreferences", () => {
           },
           {
             rank: 2,
-            workFormats: ["relocation"],
+            workFormats: ["remote", "hybrid", "onsite"],
+            immigrationFlags: { wantsRelocationPackage: true },
             scope: { type: "any", include: [] },
           },
         ],
@@ -306,7 +308,8 @@ describe("formatLocationTier behavior (via formatDraftContext)", () => {
         tiers: [
           {
             rank: 1,
-            workFormats: ["relocation"],
+            workFormats: ["onsite"],
+            immigrationFlags: { wantsRelocationPackage: true },
             scope: { type: "countries", include: ["USA"] },
           },
         ],
@@ -338,7 +341,8 @@ describe("formatLocationTier behavior (via formatDraftContext)", () => {
         tiers: [
           {
             rank: 1,
-            workFormats: ["relocation"],
+            workFormats: ["remote", "hybrid", "onsite"],
+            immigrationFlags: { wantsRelocationPackage: true },
             scope: { type: "any", include: [] },
             qualitativeConstraint: "good tech scene",
           },

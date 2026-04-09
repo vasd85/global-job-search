@@ -50,14 +50,48 @@ export type ExtractionConfidence = z.infer<typeof ExtractionConfidence>;
 
 // ─── Location Preference Tiers ──────────────────────────────────────────────
 
-/** Work format per tier — more expressive than the global RemotePreference enum. */
-export const TierWorkFormat = z.enum([
-  "remote",
-  "relocation",
-  "hybrid",
-  "onsite",
-]);
+/**
+ * Work format per tier — restricted to the three real workplace types.
+ * Immigration / relocation intent lives separately on `TierImmigrationFlagsSchema`.
+ */
+export const TierWorkFormat = z.enum(["remote", "hybrid", "onsite"]);
 export type TierWorkFormat = z.infer<typeof TierWorkFormat>;
+
+/**
+ * Per-tier immigration / work-authorization flags. All optional.
+ *
+ * `wantsRelocationPackage` is intentionally a "wants" flag rather than a "needs"
+ * flag: it informs scoring (the LLM may upweight jobs that mention paid
+ * relocation) but it never gates the L2 filter — many candidates are willing
+ * to relocate without an employer-funded package, so a hard filter would drop
+ * too many viable jobs.
+ */
+export const TierImmigrationFlagsSchema = z
+  .object({
+    /** Tier requires jobs that offer visa sponsorship. */
+    needsVisaSponsorship: z
+      .boolean()
+      .optional()
+      .describe(
+        "true if the user needs the employer to sponsor their visa (H1B, skilled worker, etc)",
+      ),
+    /** Tier prefers jobs offering a relocation package. SCORE-ONLY — not a filter gate. */
+    wantsRelocationPackage: z
+      .boolean()
+      .optional()
+      .describe(
+        "true if the user wants relocation support. Not a filter; influences scoring only.",
+      ),
+    /** Tier requires the job to NOT restrict work authorization to local citizens/residents. */
+    needsUnrestrictedWorkAuth: z
+      .boolean()
+      .optional()
+      .describe(
+        "true if the user is not a local citizen/resident and the job must not be 'citizens only' or 'locals only'",
+      ),
+  })
+  .strict();
+export type TierImmigrationFlags = z.infer<typeof TierImmigrationFlagsSchema>;
 
 /** How the geographic scope of a tier is expressed. */
 export const LocationScopeType = z.enum([
@@ -96,7 +130,13 @@ export const LocationPreferenceTierSchema = z.object({
   workFormats: z
     .array(TierWorkFormat)
     .min(1)
-    .describe("Acceptable work formats for this tier"),
+    .describe(
+      "Acceptable work formats: remote, hybrid, onsite. Relocation intent moves to immigrationFlags.",
+    ),
+  /** Optional immigration / work-authorization requirements for this tier. */
+  immigrationFlags: TierImmigrationFlagsSchema.optional().describe(
+    "Visa sponsorship, relocation package, and unrestricted work authorization preferences",
+  ),
   /** Geographic scope for this tier */
   scope: LocationScopeSchema,
   /** Free-text qualitative constraint, if any */
