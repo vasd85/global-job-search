@@ -7,10 +7,10 @@ export type Job = {
   id: string;
   title: string;
   url: string;
-  locationRaw: string | null;
-  departmentRaw: string | null;
+  location: string | null;
+  department: string | null;
   workplaceType: string | null;
-  salaryRaw: string | null;
+  salary: string | null;
   firstSeenAt: string;
   applyUrl: string | null;
   sourceRef: string;
@@ -269,9 +269,9 @@ function JobCard({ job }: { job: Job }) {
             <span className="font-medium text-zinc-700 dark:text-zinc-300">
               {job.companyName}
             </span>
-            {job.departmentRaw && (
+            {job.department && (
               <span className="text-zinc-400 dark:text-zinc-500">
-                · {job.departmentRaw}
+                · {job.department}
               </span>
             )}
           </div>
@@ -290,9 +290,9 @@ function JobCard({ job }: { job: Job }) {
 
           {/* Meta tags */}
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
-            {job.locationRaw && (
+            {job.location && (
               <span>
-                📍 <span>{job.locationRaw}</span>
+                📍 <span>{job.location}</span>
               </span>
             )}
             {job.workplaceType && (
@@ -305,7 +305,7 @@ function JobCard({ job }: { job: Job }) {
                 {job.workplaceType}
               </span>
             )}
-            {job.salaryRaw && <span>💰 {job.salaryRaw}</span>}
+            {job.salary && <span>💰 {job.salary}</span>}
             <span className="text-zinc-300 dark:text-zinc-700">·</span>
             <span>Added {postedDate}</span>
           </div>

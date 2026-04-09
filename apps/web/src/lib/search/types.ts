@@ -5,10 +5,10 @@ export interface SearchResultJob {
   title: string;
   url: string;
   applyUrl: string | null;
-  locationRaw: string | null;
-  departmentRaw: string | null;
+  location: string | null;
+  department: string | null;
   workplaceType: string | null;
-  salaryRaw: string | null;
+  salary: string | null;
   firstSeenAt: Date;
   lastSeenAt: Date;
   // Company fields

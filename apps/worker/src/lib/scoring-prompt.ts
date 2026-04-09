@@ -3,9 +3,9 @@ const MAX_DESCRIPTION_CHARS = 4000;
 interface JobData {
   title: string;
   descriptionText: string | null;
-  locationRaw: string | null;
+  location: string | null;
   workplaceType: string | null;
-  salaryRaw: string | null;
+  salary: string | null;
   url: string;
 }
 
@@ -104,9 +104,9 @@ export function buildScoringPrompt(params: ScoringPromptParams): { system: strin
 Title: ${job.title}
 Company: ${company.name}
 Company Industries: ${joinOrDefault(company.industry)}
-Location: ${job.locationRaw ?? "Not specified"}
+Location: ${job.location ?? "Not specified"}
 Work Format: ${job.workplaceType ?? "Not specified"}
-Salary: ${job.salaryRaw ?? "Not specified"}
+Salary: ${job.salary ?? "Not specified"}
 URL: ${job.url}
 
 ### Description

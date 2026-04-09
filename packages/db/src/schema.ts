@@ -139,13 +139,25 @@ export const jobs = pgTable(
     title: text("title").notNull(),
     url: text("url").notNull(),
     canonicalUrl: text("canonical_url").notNull(),
-    locationRaw: text("location_raw"),
-    departmentRaw: text("department_raw"),
-    postedDateRaw: text("posted_date_raw"),
-    employmentTypeRaw: text("employment_type_raw"),
+    location: text("location"),
+    department: text("department"),
+    postedAt: timestamp("posted_at", { withTimezone: true }),
+    employmentType: text("employment_type"), // full_time | part_time | contract | intern | temp
     descriptionText: text("description_text"),
-    salaryRaw: text("salary_raw"),
+    salary: text("salary"),
     workplaceType: text("workplace_type"), // remote | hybrid | onsite
+    // LLM-extracted immigration signals. yes | no | unknown. Default "unknown".
+    visaSponsorship: text("visa_sponsorship").notNull().default("unknown"),
+    relocationPackage: text("relocation_package").notNull().default("unknown"),
+    workAuthRestriction: text("work_auth_restriction").notNull().default("unknown"), // none | locals_only | region_only | unknown
+    // LLM-extracted soft signals (nullable — surface in scoring prompt, do not filter)
+    languageRequirements: text("language_requirements").array(),
+    travelPercent: integer("travel_percent"),
+    securityClearance: text("security_clearance"),
+    shiftPattern: text("shift_pattern"),
+    // Provenance + idempotency for signal extraction
+    signalsExtractedAt: timestamp("signals_extracted_at", { withTimezone: true }),
+    signalsExtractedFromHash: text("signals_extracted_from_hash"),
     applyUrl: text("apply_url"),
 
     descriptionHash: text("description_hash"),

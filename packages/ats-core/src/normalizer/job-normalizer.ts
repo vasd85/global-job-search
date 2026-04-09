@@ -13,6 +13,28 @@ function cleanText(input: string | null | undefined): string | null {
   return normalizeText(input);
 }
 
+/**
+ * Minimal ISO-8601 parser for the `posted_at` field. Returns `null` for
+ * anything that isn't an ISO-shaped date string (YYYY-MM-DD or full ISO
+ * timestamp). Non-ISO values (relative dates, long-form) become null and
+ * will be backfilled by the next poll once a richer normalizer lands.
+ * See plan.md §12 and Chunk F step 23 for the full treatment.
+ */
+function parseIsoDate(input: string | null | undefined): Date | null {
+  const cleaned = cleanText(input);
+  if (!cleaned) {
+    return null;
+  }
+  if (!/^\d{4}-\d{2}-\d{2}/.test(cleaned)) {
+    return null;
+  }
+  const date = new Date(cleaned);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return date;
+}
+
 function mergeDescriptionText(raw: BuildJobArgs["raw"]): string | null {
   let merged = cleanText(raw.descriptionText) ?? htmlToText(raw.descriptionHtml);
   const sections: Array<{ label: string; value: string | null }> = [
@@ -53,7 +75,7 @@ export function buildJob(args: BuildJobArgs): AllJob | null {
   const jobUid = sha1(canonicalUrl);
   const jobId = cleanText(args.raw.jobIdHint) ?? jobUid.slice(0, 12);
   const descriptionText = mergeDescriptionText(args.raw);
-  const salaryRaw = cleanText(args.raw.salaryRaw);
+  const salary = cleanText(args.raw.salaryRaw);
   const workplaceType = cleanText(args.raw.workplaceType);
   const applyUrl = normalizeUrl(args.raw.applyUrl ?? "", args.baseUrl);
   const sourceDetailUrl = normalizeUrl(args.raw.sourceDetailUrl ?? "", args.baseUrl);
@@ -67,12 +89,12 @@ export function buildJob(args: BuildJobArgs): AllJob | null {
     title,
     url: normalizedUrl,
     canonical_url: canonicalUrl,
-    location_raw: cleanText(args.raw.locationRaw),
-    department_raw: cleanText(args.raw.departmentRaw),
-    posted_date_raw: cleanText(args.raw.postedDateRaw),
-    employment_type_raw: cleanText(args.raw.employmentTypeRaw),
+    location: cleanText(args.raw.locationRaw),
+    department: cleanText(args.raw.departmentRaw),
+    posted_at: parseIsoDate(args.raw.postedDateRaw),
+    employment_type: cleanText(args.raw.employmentTypeRaw),
     ...(descriptionText !== null ? { description_text: descriptionText } : {}),
-    ...(salaryRaw !== null ? { salary_raw: salaryRaw } : {}),
+    ...(salary !== null ? { salary } : {}),
     ...(workplaceType !== null ? { workplace_type: workplaceType } : {}),
     ...(applyUrl !== null ? { apply_url: applyUrl } : {}),
     ...(sourceDetailUrl !== null ? { source_detail_url: sourceDetailUrl } : {}),

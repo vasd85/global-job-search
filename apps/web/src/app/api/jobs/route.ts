@@ -25,7 +25,7 @@ export async function GET(request: Request) {
       jobConditions.push(
         or(
           ilike(jobs.title, `%${search}%`),
-          ilike(jobs.departmentRaw, `%${search}%`)
+          ilike(jobs.department, `%${search}%`)
         )!
       );
     }
@@ -53,10 +53,10 @@ export async function GET(request: Request) {
         id: jobs.id,
         title: jobs.title,
         url: jobs.url,
-        locationRaw: jobs.locationRaw,
-        departmentRaw: jobs.departmentRaw,
+        location: jobs.location,
+        department: jobs.department,
         workplaceType: jobs.workplaceType,
-        salaryRaw: jobs.salaryRaw,
+        salary: jobs.salary,
         firstSeenAt: jobs.firstSeenAt,
         lastSeenAt: jobs.lastSeenAt,
         applyUrl: jobs.applyUrl,

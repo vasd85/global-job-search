@@ -54,10 +54,10 @@ vi.mock("@/lib/db/schema", () => ({
     title: "jobs.title",
     url: "jobs.url",
     applyUrl: "jobs.applyUrl",
-    locationRaw: "jobs.locationRaw",
-    departmentRaw: "jobs.departmentRaw",
+    location: "jobs.location",
+    department: "jobs.department",
     workplaceType: "jobs.workplaceType",
-    salaryRaw: "jobs.salaryRaw",
+    salary: "jobs.salary",
     firstSeenAt: "jobs.firstSeenAt",
     lastSeenAt: "jobs.lastSeenAt",
     companyId: "jobs.companyId",
@@ -207,10 +207,10 @@ function makeCandidateRow(overrides: Record<string, unknown> = {}) {
     title: "QA Engineer",
     url: "https://boards.greenhouse.io/company/jobs/123",
     applyUrl: "https://boards.greenhouse.io/company/jobs/123/apply",
-    locationRaw: "San Francisco, CA, United States",
-    departmentRaw: "Engineering",
+    location: "San Francisco, CA, United States",
+    department: "Engineering",
     workplaceType: "remote",
-    salaryRaw: "$120k-$150k",
+    salary: "$120k-$150k",
     firstSeenAt: new Date("2025-06-15T12:00:00Z"),
     lastSeenAt: new Date("2025-06-20T12:00:00Z"),
     companyName: "Acme Corp",
@@ -563,7 +563,7 @@ describe("searchJobs -- in-memory classification filter", () => {
 
   test("department exclusion causes score 0 -- job is excluded", async () => {
     setupStandardFlow({
-      batches: [[makeCandidateRow({ departmentRaw: "Finance" })]],
+      batches: [[makeCandidateRow({ department: "Finance" })]],
     });
 
     classifyJobMultiMock
@@ -908,7 +908,7 @@ describe("searchJobs -- location filter (processInBatches)", () => {
       batches: [
         [
           makeCandidateRow({
-            locationRaw: "Berlin, Germany",
+            location: "Berlin, Germany",
             workplaceType: "hybrid",
           }),
         ],
@@ -929,9 +929,9 @@ describe("searchJobs -- location filter (processInBatches)", () => {
     );
   });
 
-  test("job with null locationRaw -- matchJobToTiers receives null", async () => {
+  test("job with null location -- matchJobToTiers receives null", async () => {
     setupWithLocationTiers({
-      batches: [[makeCandidateRow({ locationRaw: null })]],
+      batches: [[makeCandidateRow({ location: null })]],
     });
     matchJobToTiersMock.mockReturnValue({ passes: true, matchedTier: null });
 
@@ -955,7 +955,7 @@ describe("searchJobs -- location filter (processInBatches)", () => {
       batches: [
         [
           makeCandidateRow({
-            locationRaw: "London, UK",
+            location: "London, UK",
             workplaceType: null,
           }),
         ],
@@ -1456,7 +1456,7 @@ describe("searchJobs -- filter interactions", () => {
         [
           makeCandidateRow({
             title: "Senior QA Engineer",
-            locationRaw: "San Francisco, CA, United States",
+            location: "San Francisco, CA, United States",
           }),
         ],
       ],
@@ -1497,7 +1497,7 @@ describe("searchJobs -- filter interactions", () => {
         [
           makeCandidateRow({
             title: "Senior QA Engineer",
-            locationRaw: "San Francisco, CA, United States",
+            location: "San Francisco, CA, United States",
           }),
         ],
       ],
@@ -1649,10 +1649,10 @@ describe("searchJobs -- data shape edge cases", () => {
         [
           makeCandidateRow({
             applyUrl: null,
-            locationRaw: null,
-            departmentRaw: null,
+            location: null,
+            department: null,
             workplaceType: null,
-            salaryRaw: null,
+            salary: null,
             companyIndustry: null,
           }),
         ],
@@ -1668,10 +1668,10 @@ describe("searchJobs -- data shape edge cases", () => {
     expect(result.jobs.length).toBe(1);
     const job = result.jobs[0];
     expect(job.applyUrl).toBeNull();
-    expect(job.locationRaw).toBeNull();
-    expect(job.departmentRaw).toBeNull();
+    expect(job.location).toBeNull();
+    expect(job.department).toBeNull();
     expect(job.workplaceType).toBeNull();
-    expect(job.salaryRaw).toBeNull();
+    expect(job.salary).toBeNull();
     expect(job.companyIndustry).toBeNull();
     expect(job.matchedLocationTier).toBeNull();
   });
@@ -1688,7 +1688,7 @@ describe("searchJobs -- data shape edge cases", () => {
       batches: [
         [
           makeCandidateRow({
-            locationRaw: "Berlin, Germany",
+            location: "Berlin, Germany",
           }),
         ],
       ],

@@ -163,10 +163,10 @@ interface MinimalJob {
   title: string;
   url: string;
   applyUrl: string | null;
-  locationRaw: string | null;
-  departmentRaw: string | null;
+  location: string | null;
+  department: string | null;
   workplaceType: string | null;
-  salaryRaw: string | null;
+  salary: string | null;
   firstSeenAt: Date;
   lastSeenAt: Date;
   companyName: string;
@@ -185,10 +185,10 @@ function makeJob(id: string): MinimalJob {
     title: `Job ${id}`,
     url: `https://example.com/jobs/${id}`,
     applyUrl: null,
-    locationRaw: "Remote",
-    departmentRaw: "Engineering",
+    location: "Remote",
+    department: "Engineering",
     workplaceType: "remote",
-    salaryRaw: null,
+    salary: null,
     firstSeenAt: new Date("2025-06-15T12:00:00Z"),
     lastSeenAt: new Date("2025-06-20T12:00:00Z"),
     companyName: "Acme",

@@ -7,9 +7,9 @@ function fullParams(overrides: Partial<ScoringPromptParams> = {}): ScoringPrompt
     job: {
       title: "Senior Software Engineer",
       descriptionText: "Build amazing products with TypeScript.",
-      locationRaw: "New York, NY",
+      location: "New York, NY",
       workplaceType: "hybrid",
-      salaryRaw: "$150,000 - $180,000",
+      salary: "$150,000 - $180,000",
       url: "https://example.com/job/123",
       ...overrides.job,
     },

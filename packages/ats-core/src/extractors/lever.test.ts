@@ -404,39 +404,39 @@ describe("extractFromLever", () => {
       ["team absent, falls back to department", { categories: { location: "SF", department: "Research", commitment: "FT" } }, "Research"],
       ["both absent", { categories: {} }, null],
       ["categories missing entirely", { categories: undefined }, null],
-    ])("department_raw: %s", async (_label, overrides, expected) => {
+    ])("department: %s", async (_label, overrides, expected) => {
       mockSuccessResponse([makePosting(overrides)]);
       const result = await extractFromLever(makeContext());
-      expect(result.jobs[0].department_raw).toBe(expected);
+      expect(result.jobs[0].department).toBe(expected);
     });
 
     test.each([
       ["location present", {}, "San Francisco, CA"],
       ["categories empty", { categories: {} }, null],
       ["categories missing", { categories: undefined }, null],
-    ])("location_raw: %s", async (_label, overrides, expected) => {
+    ])("location: %s", async (_label, overrides, expected) => {
       mockSuccessResponse([makePosting(overrides)]);
       const result = await extractFromLever(makeContext());
-      expect(result.jobs[0].location_raw).toBe(expected);
+      expect(result.jobs[0].location).toBe(expected);
     });
 
     test.each([
       ["commitment present", {}, "Full-time"],
       ["commitment absent", { categories: {} }, null],
       ["categories missing", { categories: undefined }, null],
-    ])("employment_type_raw: %s", async (_label, overrides, expected) => {
+    ])("employment_type: %s", async (_label, overrides, expected) => {
       mockSuccessResponse([makePosting(overrides)]);
       const result = await extractFromLever(makeContext());
-      expect(result.jobs[0].employment_type_raw).toBe(expected);
+      expect(result.jobs[0].employment_type).toBe(expected);
     });
 
     test.each([
-      ["createdAt present", {}, "2023-11-14T22:13:20.000Z"],
+      ["createdAt present", {}, new Date("2023-11-14T22:13:20.000Z")],
       ["createdAt absent", { createdAt: undefined }, null],
-    ])("posted_date_raw: %s", async (_label, overrides, expected) => {
+    ] as Array<[string, Record<string, unknown>, Date | null]>)("posted_at: %s", async (_label, overrides, expected) => {
       mockSuccessResponse([makePosting(overrides)]);
       const result = await extractFromLever(makeContext());
-      expect(result.jobs[0].posted_date_raw).toBe(expected);
+      expect(result.jobs[0].posted_at).toEqual(expected);
     });
 
     test.each([
@@ -598,17 +598,17 @@ describe("extractFromLever", () => {
     // Staff Engineer — fully populated
     const staff = result.jobs[0];
     expect(staff.title).toBe("Staff Engineer");
-    expect(staff.location_raw).toBe("Remote, US");
-    expect(staff.department_raw).toBe("Platform");
+    expect(staff.location).toBe("Remote, US");
+    expect(staff.department).toBe("Platform");
     expect(staff.workplace_type).toBe("remote");
     expect(staff.description_text).toContain("10+ years experience");
 
     // Junior Developer — minimal
     const junior = result.jobs[1];
     expect(junior.title).toBe("Junior Developer");
-    expect(junior.location_raw).toBeNull();
-    expect(junior.department_raw).toBeNull();
+    expect(junior.location).toBeNull();
+    expect(junior.department).toBeNull();
     expect(junior).not.toHaveProperty("workplace_type");
-    expect(junior.posted_date_raw).toBeNull();
+    expect(junior.posted_at).toBeNull();
   });
 });

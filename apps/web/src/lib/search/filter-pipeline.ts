@@ -236,10 +236,10 @@ interface CandidateRow {
   title: string;
   url: string;
   applyUrl: string | null;
-  locationRaw: string | null;
-  departmentRaw: string | null;
+  location: string | null;
+  department: string | null;
   workplaceType: string | null;
-  salaryRaw: string | null;
+  salary: string | null;
   firstSeenAt: Date;
   lastSeenAt: Date;
   companyName: string;
@@ -274,7 +274,7 @@ async function processInBatches(
     for (const row of batch) {
       const classified = classifyJobMulti(matchedFamilies, {
         title: row.title,
-        departmentRaw: row.departmentRaw,
+        departmentRaw: row.department,
       });
 
       if (classified.score < CLASSIFICATION_THRESHOLD) continue;
@@ -295,7 +295,7 @@ async function processInBatches(
       let matchedTierRank: number | null = null;
       if (resolvedTiers.length > 0) {
         const locationResult = matchJobToTiers(
-          row.locationRaw,
+          row.location,
           row.workplaceType,
           resolvedTiers,
         );
@@ -308,10 +308,10 @@ async function processInBatches(
         title: row.title,
         url: row.url,
         applyUrl: row.applyUrl,
-        locationRaw: row.locationRaw,
-        departmentRaw: row.departmentRaw,
+        location: row.location,
+        department: row.department,
         workplaceType: row.workplaceType,
-        salaryRaw: row.salaryRaw,
+        salary: row.salary,
         firstSeenAt: row.firstSeenAt,
         lastSeenAt: row.lastSeenAt,
         companyName: row.companyName,
@@ -373,10 +373,10 @@ async function fetchBatch(
       title: jobs.title,
       url: jobs.url,
       applyUrl: jobs.applyUrl,
-      locationRaw: jobs.locationRaw,
-      departmentRaw: jobs.departmentRaw,
+      location: jobs.location,
+      department: jobs.department,
       workplaceType: jobs.workplaceType,
-      salaryRaw: jobs.salaryRaw,
+      salary: jobs.salary,
       firstSeenAt: jobs.firstSeenAt,
       lastSeenAt: jobs.lastSeenAt,
       companyName: companies.name,

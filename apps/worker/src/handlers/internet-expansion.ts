@@ -682,8 +682,8 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
                     id: jobs.id,
                     descriptionHash: jobs.descriptionHash,
                     title: jobs.title,
-                    departmentRaw: jobs.departmentRaw,
-                    locationRaw: jobs.locationRaw,
+                    department: jobs.department,
+                    location: jobs.location,
                     workplaceType: jobs.workplaceType,
                   })
                   .from(jobs)
@@ -722,8 +722,8 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
                     debug("expand:l2", "Evaluating job", {
                       jobId: job.id,
                       title: job.title,
-                      departmentRaw: job.departmentRaw,
-                      locationRaw: job.locationRaw,
+                      department: job.department,
+                      location: job.location,
                       workplaceType: job.workplaceType,
                     });
 
@@ -731,7 +731,7 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
                     if (matchedFamilies.length > 0) {
                       const classified = classifyJobMulti(matchedFamilies, {
                         title: job.title,
-                        departmentRaw: job.departmentRaw,
+                        departmentRaw: job.department,
                       });
                       debug("expand:l2", "Classification result", {
                         jobId: job.id,
@@ -775,7 +775,7 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
                     // Level 2 filter: location matching
                     if (resolvedTiers.length > 0) {
                       const locationResult = matchJobToTiers(
-                        job.locationRaw,
+                        job.location,
                         job.workplaceType,
                         resolvedTiers,
                       );
@@ -786,7 +786,7 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
                           {
                             jobId: job.id,
                             title: job.title,
-                            locationRaw: job.locationRaw,
+                            location: job.location,
                             workplaceType: job.workplaceType,
                           },
                         );

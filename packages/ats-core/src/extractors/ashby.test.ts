@@ -168,10 +168,10 @@ describe("extractFromAshby", () => {
     expect(job.title).toBe("Senior Software Engineer");
     expect(job.url).toBe("https://jobs.ashbyhq.com/acmecorp/job-abc-123");
     expect(job.job_id).toBe("job-abc-123");
-    expect(job.location_raw).toBe("San Francisco, CA");
-    expect(job.department_raw).toBe("Engineering");
-    expect(job.posted_date_raw).toBe("2025-11-01");
-    expect(job.employment_type_raw).toBe("FullTime");
+    expect(job.location).toBe("San Francisco, CA");
+    expect(job.department).toBe("Engineering");
+    expect(job.posted_at).toEqual(new Date("2025-11-01"));
+    expect(job.employment_type).toBe("FullTime");
     expect(job.workplace_type).toBe("Hybrid");
     expect(job.description_text).toContain("We are looking for a talented engineer");
     expect(job.apply_url).toBe("https://jobs.ashbyhq.com/acmecorp/job-abc-123/application");
@@ -209,10 +209,10 @@ describe("extractFromAshby", () => {
       ["location missing, uses secondaryLocations", { location: undefined, secondaryLocations: [{ location: "Berlin, DE" }, { location: "London, UK" }] }, "Berlin, DE, London, UK"],
       ["secondaryLocations uses title fallback", { location: undefined, secondaryLocations: [{ title: "Remote US" }, { location: "Paris, FR" }] }, "Remote US, Paris, FR"],
       ["both absent", { location: undefined, secondaryLocations: undefined }, null],
-    ])("location_raw: %s", async (_label, overrides, expected) => {
+    ])("location: %s", async (_label, overrides, expected) => {
       mockSuccessResponse([makeAshbyJob(overrides)]);
       const result = await extractFromAshby(makeContext());
-      expect(result.jobs[0].location_raw).toBe(expected);
+      expect(result.jobs[0].location).toBe(expected);
     });
 
     test.each([
@@ -220,20 +220,20 @@ describe("extractFromAshby", () => {
       ["departmentName missing, falls back to department", { departmentName: undefined }, "Eng"],
       ["both missing, falls back to team", { departmentName: undefined, department: undefined }, "Platform"],
       ["all absent", { departmentName: undefined, department: undefined, team: undefined }, null],
-    ])("department_raw: %s", async (_label, overrides, expected) => {
+    ])("department: %s", async (_label, overrides, expected) => {
       mockSuccessResponse([makeAshbyJob(overrides)]);
       const result = await extractFromAshby(makeContext());
-      expect(result.jobs[0].department_raw).toBe(expected);
+      expect(result.jobs[0].department).toBe(expected);
     });
 
     test.each([
-      ["publishedDate present", {}, "2025-11-01"],
-      ["publishedDate missing, falls back to publishedAt", { publishedDate: undefined }, "2025-11-01T12:00:00Z"],
+      ["publishedDate present", {}, new Date("2025-11-01")],
+      ["publishedDate missing, falls back to publishedAt", { publishedDate: undefined }, new Date("2025-11-01T12:00:00Z")],
       ["both absent", { publishedDate: undefined, publishedAt: undefined }, null],
-    ])("posted_date_raw: %s", async (_label, overrides, expected) => {
+    ] as Array<[string, Record<string, unknown>, Date | null]>)("posted_at: %s", async (_label, overrides, expected) => {
       mockSuccessResponse([makeAshbyJob(overrides)]);
       const result = await extractFromAshby(makeContext());
-      expect(result.jobs[0].posted_date_raw).toBe(expected);
+      expect(result.jobs[0].posted_at).toEqual(expected);
     });
 
     test.each([
@@ -267,10 +267,10 @@ describe("extractFromAshby", () => {
       expect(result.errors).toEqual([]);
       expect(result.jobs).toHaveLength(1);
       expect(result.jobs[0].title).toBe("QA Analyst");
-      expect(result.jobs[0].location_raw).toBeNull();
-      expect(result.jobs[0].department_raw).toBeNull();
-      expect(result.jobs[0].posted_date_raw).toBeNull();
-      expect(result.jobs[0].employment_type_raw).toBeNull();
+      expect(result.jobs[0].location).toBeNull();
+      expect(result.jobs[0].department).toBeNull();
+      expect(result.jobs[0].posted_at).toBeNull();
+      expect(result.jobs[0].employment_type).toBeNull();
     });
 
     test("filters out jobs with empty or missing title", async () => {
@@ -302,7 +302,7 @@ describe("extractFromAshby", () => {
         ],
       })]);
       const result = await extractFromAshby(makeContext());
-      expect(result.jobs[0].location_raw).toBe("Austin, TX");
+      expect(result.jobs[0].location).toBe("Austin, TX");
     });
 
     test("extracts multiple jobs from a single API response", async () => {

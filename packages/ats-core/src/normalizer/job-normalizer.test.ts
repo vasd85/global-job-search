@@ -105,24 +105,28 @@ describe("buildJob", () => {
   // -- Optional fields: present when provided ------------------------------
 
   test.each<[string, Partial<BuildJobArgs["raw"]>, string]>([
-    ["location_raw", { locationRaw: "  New York, NY  " }, "New York, NY"],
-    ["department_raw", { departmentRaw: "Engineering" }, "Engineering"],
-    ["posted_date_raw", { postedDateRaw: "2025-01-15" }, "2025-01-15"],
-    ["employment_type_raw", { employmentTypeRaw: "Full-time" }, "Full-time"],
-    ["salary_raw", { salaryRaw: "$120,000 - $150,000" }, "$120,000 - $150,000"],
+    ["location", { locationRaw: "  New York, NY  " }, "New York, NY"],
+    ["department", { departmentRaw: "Engineering" }, "Engineering"],
+    ["employment_type", { employmentTypeRaw: "Full-time" }, "Full-time"],
+    ["salary", { salaryRaw: "$120,000 - $150,000" }, "$120,000 - $150,000"],
     ["workplace_type", { workplaceType: "Remote" }, "Remote"],
   ])("includes %s when provided (trimmed)", (field, rawOverrides, expected) => {
     const job = buildValidJob({ raw: rawOverrides });
     expect(job[field as keyof AllJob]).toBe(expected);
   });
 
+  test("posted_at parses ISO date strings to Date objects", () => {
+    const job = buildValidJob({ raw: { postedDateRaw: "2025-01-15" } });
+    expect(job.posted_at).toEqual(new Date("2025-01-15"));
+  });
+
   // -- Optional fields: null or omitted when absent ------------------------
 
   test.each<[string]>([
-    ["location_raw"],
-    ["department_raw"],
-    ["posted_date_raw"],
-    ["employment_type_raw"],
+    ["location"],
+    ["department"],
+    ["posted_at"],
+    ["employment_type"],
   ])("%s defaults to null when not provided", (field) => {
     const job = buildValidJob();
     expect(job[field as keyof AllJob]).toBeNull();
@@ -130,7 +134,7 @@ describe("buildJob", () => {
 
   test.each<[string]>([
     ["description_text"],
-    ["salary_raw"],
+    ["salary"],
     ["workplace_type"],
     ["source_job_raw"],
     ["detail_fetch_status"],
@@ -284,10 +288,10 @@ describe("dedupeJobs", () => {
       title: "Software Engineer",
       url,
       canonical_url: url,
-      location_raw: null,
-      department_raw: null,
-      posted_date_raw: null,
-      employment_type_raw: null,
+      location: null,
+      department: null,
+      posted_at: null,
+      employment_type: null,
       source_type: "html",
       source_ref: "greenhouse",
       ...overrides,

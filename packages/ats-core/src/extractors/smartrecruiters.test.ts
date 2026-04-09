@@ -162,10 +162,10 @@ describe("extractFromSmartRecruiters", () => {
 
     const job = result.jobs[0];
     expect(job.title).toBe("Senior Software Engineer");
-    expect(job.location_raw).toBe("Berlin, Berlin, Germany");
-    expect(job.department_raw).toBe("Engineering");
-    expect(job.employment_type_raw).toBe("Full-time");
-    expect(job.posted_date_raw).toBe("2026-01-15T12:00:00.000Z");
+    expect(job.location).toBe("Berlin, Berlin, Germany");
+    expect(job.department).toBe("Engineering");
+    expect(job.employment_type).toBe("Full-time");
+    expect(job.posted_at).toEqual(new Date("2026-01-15T12:00:00.000Z"));
     expect(job.source_type).toBe("ats_api");
     expect(job.source_ref).toBe("smartrecruiters");
     expect(job.job_id).toBe("743999987654321");
@@ -211,37 +211,37 @@ describe("extractFromSmartRecruiters", () => {
       ["region and country only", { location: { region: "California", country: "US" } }, "California, US"],
       ["location undefined", { location: undefined }, null],
       ["location empty object", { location: {} }, null],
-    ])("location_raw: %s", async (_label, overrides, expected) => {
+    ])("location: %s", async (_label, overrides, expected) => {
       mockSuccessResponse([makePosting(overrides)]);
       const result = await extractFromSmartRecruiters(makeContext());
-      expect(result.jobs[0].location_raw).toBe(expected);
+      expect(result.jobs[0].location).toBe(expected);
     });
 
     test.each([
       ["present", {}, "Engineering"],
       ["absent", { department: undefined }, null],
-    ])("department_raw: %s", async (_label, overrides, expected) => {
+    ])("department: %s", async (_label, overrides, expected) => {
       mockSuccessResponse([makePosting(overrides)]);
       const result = await extractFromSmartRecruiters(makeContext());
-      expect(result.jobs[0].department_raw).toBe(expected);
+      expect(result.jobs[0].department).toBe(expected);
     });
 
     test.each([
       ["present", {}, "Full-time"],
       ["absent", { typeOfEmployment: undefined }, null],
-    ])("employment_type_raw: %s", async (_label, overrides, expected) => {
+    ])("employment_type: %s", async (_label, overrides, expected) => {
       mockSuccessResponse([makePosting(overrides)]);
       const result = await extractFromSmartRecruiters(makeContext());
-      expect(result.jobs[0].employment_type_raw).toBe(expected);
+      expect(result.jobs[0].employment_type).toBe(expected);
     });
 
     test.each([
-      ["present", {}, "2026-01-15T12:00:00.000Z"],
+      ["present", {}, new Date("2026-01-15T12:00:00.000Z")],
       ["absent", { releasedDate: undefined }, null],
-    ])("posted_date_raw: %s", async (_label, overrides, expected) => {
+    ] as Array<[string, Record<string, unknown>, Date | null]>)("posted_at: %s", async (_label, overrides, expected) => {
       mockSuccessResponse([makePosting(overrides)]);
       const result = await extractFromSmartRecruiters(makeContext());
-      expect(result.jobs[0].posted_date_raw).toBe(expected);
+      expect(result.jobs[0].posted_at).toEqual(expected);
     });
 
     test.each([

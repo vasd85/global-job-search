@@ -47,12 +47,12 @@ export interface AllJob {
   title: string;
   url: string;
   canonical_url: string;
-  location_raw: string | null;
-  department_raw: string | null;
-  posted_date_raw: string | null;
-  employment_type_raw: string | null;
+  location: string | null;
+  department: string | null;
+  posted_at: Date | null;
+  employment_type: string | null;
   description_text?: string | null;
-  salary_raw?: string | null;
+  salary?: string | null;
   workplace_type?: string | null;
   apply_url?: string | null;
   source_detail_url?: string | null;

@@ -43,9 +43,9 @@ export function createLlmScoringHandler(db: Database) {
             title: jobs.title,
             descriptionText: jobs.descriptionText,
             descriptionHash: jobs.descriptionHash,
-            locationRaw: jobs.locationRaw,
+            location: jobs.location,
             workplaceType: jobs.workplaceType,
-            salaryRaw: jobs.salaryRaw,
+            salary: jobs.salary,
             url: jobs.url,
             atsJobId: jobs.atsJobId,
             sourceRef: jobs.sourceRef,
@@ -108,9 +108,9 @@ export function createLlmScoringHandler(db: Database) {
           job: {
             title: jobRow.title,
             descriptionText,
-            locationRaw: jobRow.locationRaw,
+            location: jobRow.location,
             workplaceType: jobRow.workplaceType,
-            salaryRaw: jobRow.salaryRaw,
+            salary: jobRow.salary,
             url: jobRow.url,
           },
           company: {
