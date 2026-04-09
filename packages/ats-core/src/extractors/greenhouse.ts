@@ -58,6 +58,7 @@ export async function extractFromGreenhouse(context: ExtractionContext): Promise
           descriptionHtml: raw.content ?? null,
           applyUrl: raw.absolute_url ?? null,
           sourceDetailUrl: raw.absolute_url ?? null,
+          sourceJobRaw: raw,
           detailFetchStatus: raw.content ? "ok" : undefined
         },
         sourceType: "ats_api",

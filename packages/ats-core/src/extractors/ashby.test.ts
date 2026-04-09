@@ -171,14 +171,23 @@ describe("extractFromAshby", () => {
     expect(job.location).toBe("San Francisco, CA");
     expect(job.department).toBe("Engineering");
     expect(job.posted_at).toEqual(new Date("2025-11-01"));
-    expect(job.employment_type).toBe("FullTime");
-    expect(job.workplace_type).toBe("Hybrid");
+    // Normalized at ingest: "FullTime" -> "fulltime" -> "full_time"
+    expect(job.employment_type).toBe("full_time");
+    // workplace_type "Hybrid" is normalized to lowercase "hybrid"
+    expect(job.workplace_type).toBe("hybrid");
     expect(job.description_text).toContain("We are looking for a talented engineer");
     expect(job.apply_url).toBe("https://jobs.ashbyhq.com/acmecorp/job-abc-123/application");
     expect(job.source_detail_url).toBe("https://jobs.ashbyhq.com/acmecorp/job-abc-123");
     expect(job.detail_fetch_status).toBe("ok");
     expect(job.source_type).toBe("ats_api");
     expect(job.source_ref).toBe("ashby");
+  });
+
+  test("source_job_raw is the full ATS posting payload", async () => {
+    const ashbyJob = makeAshbyJob({ id: "raw-trace-1" });
+    mockSuccessResponse([ashbyJob]);
+    const result = await extractFromAshby(makeContext());
+    expect(result.jobs[0].source_job_raw).toEqual(ashbyJob);
   });
 
   // -------------------------------------------------------------------------

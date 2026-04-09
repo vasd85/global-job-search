@@ -107,17 +107,66 @@ describe("buildJob", () => {
   test.each<[string, Partial<BuildJobArgs["raw"]>, string]>([
     ["location", { locationRaw: "  New York, NY  " }, "New York, NY"],
     ["department", { departmentRaw: "Engineering" }, "Engineering"],
-    ["employment_type", { employmentTypeRaw: "Full-time" }, "Full-time"],
     ["salary", { salaryRaw: "$120,000 - $150,000" }, "$120,000 - $150,000"],
-    ["workplace_type", { workplaceType: "Remote" }, "Remote"],
   ])("includes %s when provided (trimmed)", (field, rawOverrides, expected) => {
     const job = buildValidJob({ raw: rawOverrides });
     expect(job[field as keyof AllJob]).toBe(expected);
   });
 
+  // -- Field normalization at ingest ---------------------------------------
+
+  test.each<[string, string]>([
+    ["Hybrid", "hybrid"],
+    ["Remote", "remote"],
+    ["On-Site", "onsite"],
+    ["on_site", "onsite"],
+  ])("workplace_type '%s' is normalized to '%s'", (input, expected) => {
+    const job = buildValidJob({ raw: { workplaceType: input } });
+    expect(job.workplace_type).toBe(expected);
+  });
+
+  test("workplace_type is omitted when value is unrecognized", () => {
+    const job = buildValidJob({ raw: { workplaceType: "Weird value" } });
+    expect(job).not.toHaveProperty("workplace_type");
+  });
+
+  test.each<[string, string]>([
+    ["Full-time", "full_time"],
+    ["FullTime", "full_time"],
+    ["Full Time", "full_time"],
+    ["Permanent", "full_time"],
+    ["Part-time", "part_time"],
+    ["Contractor", "contract"],
+    ["Internship", "intern"],
+    ["Temporary", "temp"],
+  ])("employment_type '%s' is normalized to '%s'", (input, expected) => {
+    const job = buildValidJob({ raw: { employmentTypeRaw: input } });
+    expect(job.employment_type).toBe(expected);
+  });
+
+  test("employment_type becomes null when value is unrecognized", () => {
+    const job = buildValidJob({ raw: { employmentTypeRaw: "Weird value" } });
+    expect(job.employment_type).toBeNull();
+  });
+
   test("posted_at parses ISO date strings to Date objects", () => {
     const job = buildValidJob({ raw: { postedDateRaw: "2025-01-15" } });
     expect(job.posted_at).toEqual(new Date("2025-01-15"));
+  });
+
+  test("posted_at parses full ISO timestamps to Date objects", () => {
+    const job = buildValidJob({ raw: { postedDateRaw: "2026-01-15T10:00:00Z" } });
+    expect(job.posted_at).toEqual(new Date("2026-01-15T10:00:00Z"));
+  });
+
+  test("posted_at is null when value is unparseable", () => {
+    const job = buildValidJob({ raw: { postedDateRaw: "foo bar" } });
+    expect(job.posted_at).toBeNull();
+  });
+
+  test("posted_at is null when raw value is null", () => {
+    const job = buildValidJob({ raw: { postedDateRaw: null } });
+    expect(job.posted_at).toBeNull();
   });
 
   // -- Optional fields: null or omitted when absent ------------------------

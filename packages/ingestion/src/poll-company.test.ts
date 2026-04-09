@@ -221,6 +221,35 @@ describe("pollCompany — sync: new jobs are inserted", () => {
       );
     }
   );
+
+  test("persists source_job_raw audit payload as sourceRaw on insert", async () => {
+    const sourceRawPayload = { id: "ats-raw-trace-1", custom: true };
+    const job = makeFakeJob({
+      job_id: "raw-1",
+      job_uid: "uid-raw-1",
+      source_job_raw: sourceRawPayload,
+    });
+    mockExtractFromGreenhouse.mockResolvedValueOnce({ jobs: [job], errors: [] });
+    const { db, insertedRows } = makeMockDb([]);
+
+    await pollCompany(db, makeFakeCompany());
+
+    const jobInsert = insertedRows.find((r) => r._table === jobs);
+    expect(jobInsert).toBeDefined();
+    expect(jobInsert!.sourceRaw).toEqual(sourceRawPayload);
+  });
+
+  test("sourceRaw is null when extractor omits source_job_raw", async () => {
+    const job = makeFakeJob({ job_id: "noraw-1", job_uid: "uid-noraw-1" });
+    mockExtractFromGreenhouse.mockResolvedValueOnce({ jobs: [job], errors: [] });
+    const { db, insertedRows } = makeMockDb([]);
+
+    await pollCompany(db, makeFakeCompany());
+
+    const jobInsert = insertedRows.find((r) => r._table === jobs);
+    expect(jobInsert).toBeDefined();
+    expect(jobInsert!.sourceRaw).toBeNull();
+  });
 });
 
 // ─── syncCompanyJobs: existing job content change detection ─────────────────
@@ -267,6 +296,42 @@ describe("pollCompany — sync: existing jobs update detection", () => {
       }
     }
   );
+
+  test("content-change UPDATE refreshes sourceRaw audit payload", async () => {
+    const storedHash = expectedHash("Old description");
+    const storedJob = {
+      id: "job-uuid-1",
+      companyId: "company-uuid-1",
+      atsJobId: "ats-1",
+      jobUid: "uid-1",
+      title: "Software Engineer",
+      url: "https://example.com/jobs/1",
+      canonicalUrl: "https://example.com/jobs/1",
+      status: "open",
+      descriptionHash: storedHash,
+      lastSeenAt: new Date("2025-06-14T12:00:00Z"),
+      firstSeenAt: new Date("2025-06-01T12:00:00Z"),
+      createdAt: new Date("2025-06-01T12:00:00Z"),
+      updatedAt: new Date("2025-06-14T12:00:00Z"),
+    };
+
+    const freshSourceRaw = { id: "fresh-raw-payload", refreshed: true };
+    const freshJob = makeFakeJob({
+      job_id: "ats-1",
+      description_text: "New description",
+      source_job_raw: freshSourceRaw,
+    });
+    mockExtractFromGreenhouse.mockResolvedValueOnce({ jobs: [freshJob], errors: [] });
+    const { db, updatedSets } = makeMockDb([storedJob]);
+
+    await pollCompany(db, makeFakeCompany());
+
+    const jobUpdate = updatedSets.find(
+      (s) => s._table === jobs && s.contentUpdatedAt !== undefined,
+    );
+    expect(jobUpdate).toBeDefined();
+    expect(jobUpdate!.sourceRaw).toEqual(freshSourceRaw);
+  });
 });
 
 // ─── syncCompanyJobs: stale/closed thresholds ───────────────────────────────

@@ -341,6 +341,13 @@ describe("extractFromLever", () => {
     expect(job.detail_fetch_status).toBe("ok");
   });
 
+  test("source_job_raw is the full Lever posting payload", async () => {
+    const posting = makePosting({ id: "raw-trace-1" });
+    mockSuccessResponse([posting]);
+    const result = await extractFromLever(makeContext());
+    expect(result.jobs[0].source_job_raw).toEqual(posting);
+  });
+
   test("extracts multiple postings into multiple jobs", async () => {
     mockSuccessResponse([
       makePosting({ text: "Frontend Engineer", id: "fe-1", hostedUrl: "https://jobs.lever.co/acmecorp/fe-1" }),
@@ -420,8 +427,9 @@ describe("extractFromLever", () => {
       expect(result.jobs[0].location).toBe(expected);
     });
 
-    test.each([
-      ["commitment present", {}, "Full-time"],
+    test.each<[string, Record<string, unknown>, string | null]>([
+      // Normalized at ingest: "Full-time" -> "full_time"
+      ["commitment present", {}, "full_time"],
       ["commitment absent", { categories: {} }, null],
       ["categories missing", { categories: undefined }, null],
     ])("employment_type: %s", async (_label, overrides, expected) => {

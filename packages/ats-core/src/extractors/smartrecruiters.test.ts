@@ -164,11 +164,19 @@ describe("extractFromSmartRecruiters", () => {
     expect(job.title).toBe("Senior Software Engineer");
     expect(job.location).toBe("Berlin, Berlin, Germany");
     expect(job.department).toBe("Engineering");
-    expect(job.employment_type).toBe("Full-time");
+    // Normalized at ingest: "Full-time" -> "full_time"
+    expect(job.employment_type).toBe("full_time");
     expect(job.posted_at).toEqual(new Date("2026-01-15T12:00:00.000Z"));
     expect(job.source_type).toBe("ats_api");
     expect(job.source_ref).toBe("smartrecruiters");
     expect(job.job_id).toBe("743999987654321");
+  });
+
+  test("source_job_raw is the full ATS posting payload", async () => {
+    const posting = makePosting({ id: "raw-trace-1" });
+    mockSuccessResponse([posting]);
+    const result = await extractFromSmartRecruiters(makeContext());
+    expect(result.jobs[0].source_job_raw).toEqual(posting);
   });
 
   test("extracts multiple jobs from a single API response", async () => {
@@ -226,8 +234,9 @@ describe("extractFromSmartRecruiters", () => {
       expect(result.jobs[0].department).toBe(expected);
     });
 
-    test.each([
-      ["present", {}, "Full-time"],
+    test.each<[string, Record<string, unknown>, string | null]>([
+      // Normalized at ingest: "Full-time" -> "full_time"
+      ["present", {}, "full_time"],
       ["absent", { typeOfEmployment: undefined }, null],
     ])("employment_type: %s", async (_label, overrides, expected) => {
       mockSuccessResponse([makePosting(overrides)]);

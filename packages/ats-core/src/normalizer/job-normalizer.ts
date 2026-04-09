@@ -3,6 +3,11 @@ import { sha1 } from "../utils/hash";
 import { htmlToText, normalizeText } from "../utils/job-text";
 import { normalizeUrl } from "../utils/url";
 import type { BuildJobArgs } from "../extractors/extractor-types";
+import { normalizeWorkplaceType } from "../geo/match-location";
+import {
+  normalizeEmploymentType,
+  normalizePostedDate,
+} from "./field-normalizers";
 
 const GENERIC_TITLE_REGEX =
   /^(details|view details|learn more|read more|apply now(?: for this position)?|click here|open roles?|view jobs?|job openings?|jobs?|careers?)$/i;
@@ -11,28 +16,6 @@ const LOCATION_OR_META_REGEX =
 
 function cleanText(input: string | null | undefined): string | null {
   return normalizeText(input);
-}
-
-/**
- * Minimal ISO-8601 parser for the `posted_at` field. Returns `null` for
- * anything that isn't an ISO-shaped date string (YYYY-MM-DD or full ISO
- * timestamp). Non-ISO values (relative dates, long-form) become null and
- * will be backfilled by the next poll once a richer normalizer lands.
- * See plan.md §12 and Chunk F step 23 for the full treatment.
- */
-function parseIsoDate(input: string | null | undefined): Date | null {
-  const cleaned = cleanText(input);
-  if (!cleaned) {
-    return null;
-  }
-  if (!/^\d{4}-\d{2}-\d{2}/.test(cleaned)) {
-    return null;
-  }
-  const date = new Date(cleaned);
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-  return date;
 }
 
 function mergeDescriptionText(raw: BuildJobArgs["raw"]): string | null {
@@ -76,7 +59,14 @@ export function buildJob(args: BuildJobArgs): AllJob | null {
   const jobId = cleanText(args.raw.jobIdHint) ?? jobUid.slice(0, 12);
   const descriptionText = mergeDescriptionText(args.raw);
   const salary = cleanText(args.raw.salaryRaw);
-  const workplaceType = cleanText(args.raw.workplaceType);
+  const workplaceType = normalizeWorkplaceType(cleanText(args.raw.workplaceType));
+  const employmentType = normalizeEmploymentType(
+    cleanText(args.raw.employmentTypeRaw),
+  );
+  const postedAt = normalizePostedDate(
+    cleanText(args.raw.postedDateRaw),
+    args.pollTimestamp ?? new Date(),
+  );
   const applyUrl = normalizeUrl(args.raw.applyUrl ?? "", args.baseUrl);
   const sourceDetailUrl = normalizeUrl(args.raw.sourceDetailUrl ?? "", args.baseUrl);
   const sourceJobRaw = args.raw.sourceJobRaw ?? null;
@@ -91,8 +81,8 @@ export function buildJob(args: BuildJobArgs): AllJob | null {
     canonical_url: canonicalUrl,
     location: cleanText(args.raw.locationRaw),
     department: cleanText(args.raw.departmentRaw),
-    posted_at: parseIsoDate(args.raw.postedDateRaw),
-    employment_type: cleanText(args.raw.employmentTypeRaw),
+    posted_at: postedAt,
+    employment_type: employmentType,
     ...(descriptionText !== null ? { description_text: descriptionText } : {}),
     ...(salary !== null ? { salary } : {}),
     ...(workplaceType !== null ? { workplace_type: workplaceType } : {}),

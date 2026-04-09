@@ -181,6 +181,13 @@ describe("extractFromGreenhouse", () => {
     expect(job.source_detail_url).toBe("https://boards.greenhouse.io/acmecorp/jobs/4012345");
   });
 
+  test("source_job_raw is the full Greenhouse job payload", async () => {
+    const ghJob = makeGreenhouseJob({ id: 4012345 });
+    mockSuccessResponse([ghJob]);
+    const result = await extractFromGreenhouse(makeContext());
+    expect(result.jobs[0].source_job_raw).toEqual(ghJob);
+  });
+
   test("extracts multiple jobs from a single API response", async () => {
     mockSuccessResponse([
       makeGreenhouseJob({ id: 100, title: "Engineer", absolute_url: "https://boards.greenhouse.io/acmecorp/jobs/100" }),

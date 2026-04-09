@@ -64,6 +64,7 @@ export async function extractFromAshby(context: ExtractionContext): Promise<Extr
           workplaceType: posting.workplaceType ?? null,
           applyUrl: posting.applyUrl ?? posting.jobUrl ?? null,
           sourceDetailUrl: posting.jobUrl ?? posting.applyUrl ?? null,
+          sourceJobRaw: posting,
           detailFetchStatus: posting.descriptionHtml || posting.descriptionPlain ? "ok" : undefined
         },
         sourceType: "ats_api",

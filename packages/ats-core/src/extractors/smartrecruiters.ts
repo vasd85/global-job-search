@@ -87,7 +87,8 @@ export async function extractFromSmartRecruiters(
           postedDateRaw: posting.releasedDate ?? null,
           employmentTypeRaw: posting.typeOfEmployment?.label ?? null,
           applyUrl: buildHostedUrl(context.careersUrl, company, posting),
-          sourceDetailUrl: buildDetailUrl(company, posting.id)
+          sourceDetailUrl: buildDetailUrl(company, posting.id),
+          sourceJobRaw: posting
         },
         sourceType: "ats_api",
         sourceRef: "smartrecruiters",
