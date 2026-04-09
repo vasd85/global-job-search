@@ -255,3 +255,56 @@ describe("buildScoringPrompt", () => {
     expect(user).toContain(JSON.stringify(["NYC", "SF"]));
   });
 });
+
+// ── Signal Extraction prompt section ──────────────────────────────────────
+
+describe("buildScoringPrompt — Signal Extraction section", () => {
+  test("system prompt contains the Signal Extraction header", () => {
+    const { system } = buildScoringPrompt(fullParams());
+
+    expect(system).toContain("## Signal Extraction");
+  });
+
+  test("system prompt mentions extractedSignals output field", () => {
+    const { system } = buildScoringPrompt(fullParams());
+
+    expect(system).toContain("extractedSignals");
+  });
+
+  test("system prompt enforces the 'silence is NOT a no' rule", () => {
+    const { system } = buildScoringPrompt(fullParams());
+
+    // The CRITICAL RULES block must spell this out so the LLM does not
+    // turn missing data into a "no" answer.
+    expect(system).toMatch(/silence is not a "no"/i);
+  });
+
+  test("system prompt lists all five workAuthRestriction enum values", () => {
+    const { system } = buildScoringPrompt(fullParams());
+
+    // Each value must be present so the LLM can pick the right one.
+    expect(system).toContain("citizens_only");
+    expect(system).toContain("residents_only");
+    expect(system).toContain("region_only");
+    expect(system).toContain('"none"');
+    expect(system).toContain('"unknown"');
+  });
+
+  test("system prompt names every extracted signal field", () => {
+    const { system } = buildScoringPrompt(fullParams());
+
+    expect(system).toContain("visaSponsorship");
+    expect(system).toContain("relocationPackage");
+    expect(system).toContain("workAuthRestriction");
+    expect(system).toContain("languageRequirements");
+    expect(system).toContain("travelPercent");
+    expect(system).toContain("securityClearance");
+    expect(system).toContain("shiftPattern");
+  });
+
+  test("system prompt warns against the visa-yes + residents_only contradiction", () => {
+    const { system } = buildScoringPrompt(fullParams());
+
+    expect(system).toMatch(/mutually exclusive/i);
+  });
+});

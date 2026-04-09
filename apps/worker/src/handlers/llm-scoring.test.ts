@@ -1,5 +1,5 @@
 import type { Job } from "pg-boss";
-import { createLlmScoringHandler } from "./llm-scoring";
+import { createLlmScoringHandler, mergeEnum } from "./llm-scoring";
 
 // ─── Module mocks ──────────────────────────────────────────────────────────
 
@@ -37,7 +37,21 @@ vi.mock("drizzle-orm", () => ({
 }));
 
 vi.mock("@gjs/db/schema", () => ({
-  jobs: { id: Symbol("jobs.id"), companyId: Symbol("jobs.companyId"), descriptionHash: Symbol("jobs.descriptionHash") },
+  jobs: {
+    id: Symbol("jobs.id"),
+    companyId: Symbol("jobs.companyId"),
+    descriptionHash: Symbol("jobs.descriptionHash"),
+    visaSponsorship: Symbol("jobs.visaSponsorship"),
+    relocationPackage: Symbol("jobs.relocationPackage"),
+    workAuthRestriction: Symbol("jobs.workAuthRestriction"),
+    languageRequirements: Symbol("jobs.languageRequirements"),
+    travelPercent: Symbol("jobs.travelPercent"),
+    securityClearance: Symbol("jobs.securityClearance"),
+    shiftPattern: Symbol("jobs.shiftPattern"),
+    signalsExtractedAt: Symbol("jobs.signalsExtractedAt"),
+    signalsExtractedFromHash: Symbol("jobs.signalsExtractedFromHash"),
+    updatedAt: Symbol("jobs.updatedAt"),
+  },
   companies: { id: Symbol("companies.id") },
   userProfiles: { id: Symbol("userProfiles.id") },
   jobMatches: { userProfileId: Symbol("jobMatches.userProfileId"), jobId: Symbol("jobMatches.jobId") },
@@ -90,9 +104,9 @@ function makeJobRow(overrides: Record<string, unknown> = {}) {
     title: "Senior Engineer",
     descriptionText: "Build products with TypeScript.",
     descriptionHash: "hash-original",
-    locationRaw: "NYC",
+    location: "NYC",
     workplaceType: "hybrid",
-    salaryRaw: "$150k",
+    salary: "$150k",
     url: "https://example.com/job/1",
     atsJobId: "posting-1",
     sourceRef: "greenhouse",
@@ -100,6 +114,14 @@ function makeJobRow(overrides: Record<string, unknown> = {}) {
     companyName: "Acme Corp",
     companyIndustry: ["Tech"],
     companyAtsSlug: "acme",
+    // Signal columns surfaced for the L3 → L2 promotion write-back
+    visaSponsorship: "unknown",
+    relocationPackage: "unknown",
+    workAuthRestriction: "unknown",
+    languageRequirements: null,
+    travelPercent: null,
+    securityClearance: null,
+    shiftPattern: null,
     ...overrides,
   };
 }
@@ -130,6 +152,19 @@ function makeProfile(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function makeExtractedSignals(overrides: Record<string, unknown> = {}) {
+  return {
+    visaSponsorship: "unknown",
+    relocationPackage: "unknown",
+    workAuthRestriction: "unknown",
+    languageRequirements: [] as string[],
+    travelPercent: null,
+    securityClearance: null,
+    shiftPattern: null,
+    ...overrides,
+  };
+}
+
 function makeScoringOutput(overrides: Record<string, unknown> = {}) {
   return {
     scoreR: 8,
@@ -141,6 +176,7 @@ function makeScoringOutput(overrides: Record<string, unknown> = {}) {
     evidenceQuotes: ["TypeScript mentioned"],
     hasGrowthSkillMatch: false,
     dealBreakerTriggered: false,
+    extractedSignals: makeExtractedSignals(),
     ...overrides,
   };
 }
@@ -149,7 +185,8 @@ function makeScoringOutput(overrides: Record<string, unknown> = {}) {
  * Build a mock DB that supports:
  * - Multiple select invocations returning different results
  * - innerJoin chain (for job+company query)
- * - insert chain with onConflictDoUpdate
+ * - insert chain with onConflictDoUpdate (job_match upsert)
+ * - update chain with set/where (job signal write-back)
  *
  * selectResults: array of results, consumed in order.
  * Each invocation of limit() returns the next result.
@@ -157,6 +194,7 @@ function makeScoringOutput(overrides: Record<string, unknown> = {}) {
 function createMockDb(
   selectResults: unknown[][],
   insertCalls: { values: unknown; onConflict: unknown }[] = [],
+  updateCalls: { set: unknown }[] = [],
 ) {
   let selectIndex = 0;
 
@@ -173,6 +211,16 @@ function createMockDb(
   });
 
   const mockInsert = vi.fn().mockReturnValue({ values: mockValues });
+
+  // db.update(table).set(values).where(cond) → Promise<void>
+  const mockUpdateWhere = vi
+    .fn()
+    .mockImplementation(() => Promise.resolve(undefined));
+  const mockUpdateSet = vi.fn().mockImplementation((values: unknown) => {
+    updateCalls.push({ set: values });
+    return { where: mockUpdateWhere };
+  });
+  const mockUpdate = vi.fn().mockReturnValue({ set: mockUpdateSet });
 
   const mockLimit = vi.fn().mockImplementation(() => {
     const result = selectResults[selectIndex] ?? [];
@@ -192,6 +240,7 @@ function createMockDb(
     db: {
       select: mockSelect,
       insert: mockInsert,
+      update: mockUpdate,
     } as unknown as Parameters<typeof createLlmScoringHandler>[0],
     mocks: {
       mockSelect,
@@ -202,8 +251,12 @@ function createMockDb(
       mockInsert,
       mockValues,
       mockOnConflictDoUpdate,
+      mockUpdate,
+      mockUpdateSet,
+      mockUpdateWhere,
     },
     insertCalls,
+    updateCalls,
   };
 }
 
@@ -604,5 +657,292 @@ describe("createLlmScoringHandler", () => {
 
     expect(db.select).not.toHaveBeenCalled();
     expect(mockGenerateText).not.toHaveBeenCalled();
+  });
+
+  // ── Signal write-back ─────────────────────────────────────────────────
+
+  test("happy path writes extracted signals back to job row with stamped provenance", async () => {
+    const jobRow = makeJobRow({
+      descriptionHash: "hash-abc",
+    });
+    const profile = makeProfile();
+    const insertCalls: { values: unknown; onConflict: unknown }[] = [];
+    const updateCalls: { set: unknown }[] = [];
+
+    const scoringOutput = makeScoringOutput({
+      extractedSignals: makeExtractedSignals({
+        visaSponsorship: "yes",
+        relocationPackage: "no",
+        workAuthRestriction: "residents_only",
+        languageRequirements: ["en", "de"],
+        travelPercent: 25,
+        securityClearance: "US Secret",
+        shiftPattern: "rotating on-call",
+      }),
+    });
+
+    const { db } = createMockDb([[jobRow], [profile]], insertCalls, updateCalls);
+    setupDefaultMocks(scoringOutput);
+
+    const handler = createLlmScoringHandler(db);
+    await handler([
+      makeBatchJob({ jobId: "job-1", userProfileId: "profile-1", userId: "user-1" }),
+    ]);
+
+    // Score upsert still happens.
+    expect(insertCalls).toHaveLength(1);
+
+    // Signal write-back fires exactly once.
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0].set).toEqual(
+      expect.objectContaining({
+        visaSponsorship: "yes",
+        relocationPackage: "no",
+        workAuthRestriction: "residents_only",
+        languageRequirements: ["en", "de"],
+        travelPercent: 25,
+        securityClearance: "US Secret",
+        shiftPattern: "rotating on-call",
+        signalsExtractedFromHash: "hash-abc",
+      }),
+    );
+    // signalsExtractedAt is stamped from the FIXED_NOW system clock.
+    expect(updateCalls[0].set).toHaveProperty("signalsExtractedAt");
+    expect((updateCalls[0].set as Record<string, unknown>).signalsExtractedAt).toBeInstanceOf(Date);
+  });
+
+  test("incoming unknown signals do NOT downgrade existing concrete answers", async () => {
+    // jobRow already has concrete persisted answers from a prior LLM run.
+    const jobRow = makeJobRow({
+      visaSponsorship: "yes",
+      relocationPackage: "no",
+      workAuthRestriction: "citizens_only",
+    });
+    const profile = makeProfile();
+    const updateCalls: { set: unknown }[] = [];
+
+    // The new LLM output is "unknown" for all three enums (e.g. prompt drift,
+    // model uncertainty, or a description rewrite that dropped the signals).
+    const scoringOutput = makeScoringOutput({
+      extractedSignals: makeExtractedSignals({
+        visaSponsorship: "unknown",
+        relocationPackage: "unknown",
+        workAuthRestriction: "unknown",
+      }),
+    });
+
+    const { db } = createMockDb([[jobRow], [profile]], [], updateCalls);
+    setupDefaultMocks(scoringOutput);
+
+    const handler = createLlmScoringHandler(db);
+    await handler([
+      makeBatchJob({ jobId: "job-1", userProfileId: "profile-1", userId: "user-1" }),
+    ]);
+
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0].set).toEqual(
+      expect.objectContaining({
+        visaSponsorship: "yes",
+        relocationPackage: "no",
+        workAuthRestriction: "citizens_only",
+      }),
+    );
+  });
+
+  test("soft signals (null / empty) do NOT overwrite existing concrete values", async () => {
+    const jobRow = makeJobRow({
+      languageRequirements: ["en"],
+      travelPercent: 20,
+      securityClearance: "US Secret",
+      shiftPattern: "overnight",
+    });
+    const profile = makeProfile();
+    const updateCalls: { set: unknown }[] = [];
+
+    // New extraction returned no info on any soft signal.
+    const scoringOutput = makeScoringOutput({
+      extractedSignals: makeExtractedSignals({
+        languageRequirements: [],
+        travelPercent: null,
+        securityClearance: null,
+        shiftPattern: null,
+      }),
+    });
+
+    const { db } = createMockDb([[jobRow], [profile]], [], updateCalls);
+    setupDefaultMocks(scoringOutput);
+
+    const handler = createLlmScoringHandler(db);
+    await handler([
+      makeBatchJob({ jobId: "job-1", userProfileId: "profile-1", userId: "user-1" }),
+    ]);
+
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0].set).toEqual(
+      expect.objectContaining({
+        languageRequirements: ["en"],
+        travelPercent: 20,
+        securityClearance: "US Secret",
+        shiftPattern: "overnight",
+      }),
+    );
+  });
+
+  test("incoming concrete signals DO overwrite existing concrete answers", async () => {
+    // The user has updated the job description and the new extraction is
+    // more accurate; the old "yes" should yield to the new "no".
+    const jobRow = makeJobRow({
+      visaSponsorship: "yes",
+      languageRequirements: ["en"],
+    });
+    const profile = makeProfile();
+    const updateCalls: { set: unknown }[] = [];
+
+    const scoringOutput = makeScoringOutput({
+      extractedSignals: makeExtractedSignals({
+        visaSponsorship: "no",
+        languageRequirements: ["fr"],
+      }),
+    });
+
+    const { db } = createMockDb([[jobRow], [profile]], [], updateCalls);
+    setupDefaultMocks(scoringOutput);
+
+    const handler = createLlmScoringHandler(db);
+    await handler([
+      makeBatchJob({ jobId: "job-1", userProfileId: "profile-1", userId: "user-1" }),
+    ]);
+
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0].set).toEqual(
+      expect.objectContaining({
+        visaSponsorship: "no",
+        languageRequirements: ["fr"],
+      }),
+    );
+  });
+
+  test("travelPercent over 100 is clamped before persistence", async () => {
+    // Anthropic structured output rejects min/max constraints; the schema
+    // accepts any number and the handler clamps to 0-100 before write.
+    const jobRow = makeJobRow();
+    const profile = makeProfile();
+    const updateCalls: { set: unknown }[] = [];
+
+    const scoringOutput = makeScoringOutput({
+      extractedSignals: makeExtractedSignals({ travelPercent: 150 }),
+    });
+
+    const { db } = createMockDb([[jobRow], [profile]], [], updateCalls);
+    setupDefaultMocks(scoringOutput);
+
+    const handler = createLlmScoringHandler(db);
+    await handler([
+      makeBatchJob({ jobId: "job-1", userProfileId: "profile-1", userId: "user-1" }),
+    ]);
+
+    expect(updateCalls).toHaveLength(1);
+    expect((updateCalls[0].set as Record<string, unknown>).travelPercent).toBe(100);
+  });
+
+  test("signalsExtractedFromHash uses the reloaded hash when description was fetched", async () => {
+    const jobRow = makeJobRow({
+      descriptionText: null,
+      descriptionHash: "old-hash",
+    });
+    const profile = makeProfile();
+    const insertCalls: { values: unknown; onConflict: unknown }[] = [];
+    const updateCalls: { set: unknown }[] = [];
+
+    // select 1: job, select 2: profile, select 3: hash reload after fetch
+    const { db } = createMockDb(
+      [[jobRow], [profile], [{ descriptionHash: "new-hash" }]],
+      insertCalls,
+      updateCalls,
+    );
+    setupDefaultMocks();
+    mockFetchJobDescription.mockResolvedValue("new text");
+
+    const handler = createLlmScoringHandler(db);
+    await handler([
+      makeBatchJob({ jobId: "job-1", userProfileId: "profile-1", userId: "user-1" }),
+    ]);
+
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0].set).toEqual(
+      expect.objectContaining({ signalsExtractedFromHash: "new-hash" }),
+    );
+  });
+
+  test("signal write failure does NOT lose the score upsert", async () => {
+    const jobRow = makeJobRow();
+    const profile = makeProfile();
+    const insertCalls: { values: unknown; onConflict: unknown }[] = [];
+    const updateCalls: { set: unknown }[] = [];
+
+    const { db, mocks } = createMockDb(
+      [[jobRow], [profile]],
+      insertCalls,
+      updateCalls,
+    );
+    setupDefaultMocks();
+
+    // Force the signal write to fail.
+    mocks.mockUpdateWhere.mockRejectedValueOnce(new Error("update boom"));
+
+    const handler = createLlmScoringHandler(db);
+    await expect(
+      handler([
+        makeBatchJob({ jobId: "job-1", userProfileId: "profile-1", userId: "user-1" }),
+      ]),
+    ).resolves.toBeUndefined();
+
+    // Score was still persisted.
+    expect(insertCalls).toHaveLength(1);
+    // The update was attempted (and threw inside the nested try/catch).
+    expect(updateCalls).toHaveLength(1);
+  });
+});
+
+// ── mergeEnum unit tests ──────────────────────────────────────────────────
+
+describe("mergeEnum", () => {
+  test("incoming concrete answer wins over existing concrete answer", () => {
+    expect(mergeEnum("yes", "no", "unknown")).toBe("no");
+    expect(mergeEnum("no", "yes", "unknown")).toBe("yes");
+  });
+
+  test("incoming concrete answer wins over existing unknown", () => {
+    expect(mergeEnum("unknown", "yes", "unknown")).toBe("yes");
+    expect(mergeEnum("unknown", "no", "unknown")).toBe("no");
+  });
+
+  test("incoming unknown does NOT downgrade an existing concrete answer", () => {
+    expect(mergeEnum("yes", "unknown", "unknown")).toBe("yes");
+    expect(mergeEnum("no", "unknown", "unknown")).toBe("no");
+  });
+
+  test("both unknown returns unknown", () => {
+    expect(mergeEnum("unknown", "unknown", "unknown")).toBe("unknown");
+  });
+
+  test("works with the workAuthRestriction five-value enum", () => {
+    // Concrete -> concrete: incoming wins.
+    expect(
+      mergeEnum<"none" | "citizens_only" | "residents_only" | "region_only" | "unknown">(
+        "none",
+        "residents_only",
+        "unknown",
+      ),
+    ).toBe("residents_only");
+
+    // Concrete -> unknown: existing preserved.
+    expect(
+      mergeEnum<"none" | "citizens_only" | "residents_only" | "region_only" | "unknown">(
+        "region_only",
+        "unknown",
+        "unknown",
+      ),
+    ).toBe("region_only");
   });
 });
