@@ -149,7 +149,7 @@ export const jobs = pgTable(
     // LLM-extracted immigration signals. yes | no | unknown. Default "unknown".
     visaSponsorship: text("visa_sponsorship").notNull().default("unknown"),
     relocationPackage: text("relocation_package").notNull().default("unknown"),
-    workAuthRestriction: text("work_auth_restriction").notNull().default("unknown"), // none | locals_only | region_only | unknown
+    workAuthRestriction: text("work_auth_restriction").notNull().default("unknown"), // none | citizens_only | residents_only | region_only | unknown
     // LLM-extracted soft signals (nullable — surface in scoring prompt, do not filter)
     languageRequirements: text("language_requirements").array(),
     travelPercent: integer("travel_percent"),
