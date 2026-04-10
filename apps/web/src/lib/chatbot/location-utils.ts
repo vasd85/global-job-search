@@ -18,6 +18,8 @@ export function deriveRemotePreference(
 ): RemotePreference {
   const allFormats = new Set(tiers.flatMap((t) => t.workFormats));
   if (allFormats.size === 0) return "any";
+  // Priority: remote_only (remote alone) > onsite_ok (onsite without remote)
+  // > hybrid_ok (hybrid without onsite) > any (everything else / mixed)
   if (allFormats.size === 1 && allFormats.has("remote")) return "remote_only";
   if (allFormats.has("onsite") && !allFormats.has("remote")) return "onsite_ok";
   if (allFormats.has("hybrid") && !allFormats.has("onsite")) return "hybrid_ok";

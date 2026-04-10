@@ -778,6 +778,7 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
 
                     // Level 2 filter: location matching
                     if (resolvedTiers.length > 0) {
+                      // Safe casts: these columns are NOT NULL DEFAULT 'unknown' in the schema.
                       const jobSignals: JobImmigrationSignals = {
                         visaSponsorship: job.visaSponsorship as JobImmigrationSignals["visaSponsorship"],
                         relocationPackage: job.relocationPackage as JobImmigrationSignals["relocationPackage"],

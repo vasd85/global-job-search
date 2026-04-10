@@ -298,6 +298,7 @@ async function processInBatches(
       // Location filter (structured geo matching)
       let matchedTierRank: number | null = null;
       if (resolvedTiers.length > 0) {
+        // Safe casts: these columns are NOT NULL DEFAULT 'unknown' in the schema.
         const jobSignals: JobImmigrationSignals = {
           visaSponsorship: row.visaSponsorship as JobImmigrationSignals["visaSponsorship"],
           relocationPackage: row.relocationPackage as JobImmigrationSignals["relocationPackage"],
