@@ -926,6 +926,26 @@ describe("mergeEnum", () => {
     expect(mergeEnum("unknown", "unknown", "unknown")).toBe("unknown");
   });
 
+  test("null existing (pre-migration row) treated as unknown -- incoming concrete wins", () => {
+    // The DB columns are NOT NULL with DEFAULT 'unknown', so null should
+    // never appear in practice. However, if a pre-migration row somehow
+    // had null, mergeEnum receives it as a non-matching unknownValue and
+    // the incoming concrete value should win. This tests the runtime
+    // behavior as defense-in-depth.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(mergeEnum(null as any, "yes", "unknown")).toBe("yes");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(mergeEnum(null as any, "no", "unknown")).toBe("no");
+  });
+
+  test("null existing with unknown incoming returns null (not ideal but documents behavior)", () => {
+    // When existing is null and incoming is "unknown", the function returns
+    // existing (null) because incoming === unknownValue. This is technically
+    // a bug if null leaks from the DB, but the schema prevents it.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(mergeEnum(null as any, "unknown", "unknown")).toBe(null);
+  });
+
   test("works with the workAuthRestriction five-value enum", () => {
     // Concrete -> concrete: incoming wins.
     expect(

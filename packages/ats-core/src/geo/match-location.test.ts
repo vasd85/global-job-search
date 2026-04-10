@@ -781,6 +781,37 @@ describe("matchJobToTiers", () => {
     expect(result.matchedTier).toBe(1);
   });
 
+  test("multi-tier immigration fallback: tier 1 fails on visa, tier 2 (no flags) catches", () => {
+    // Tier 1 requires visa sponsorship, but the job says "no".
+    // Tier 2 has no immigration flags and the same geo scope -- the job
+    // should pass via tier 2.
+    const tier1 = makeTier({
+      rank: 1,
+      workFormats: ["remote", "hybrid", "onsite"],
+      resolvedCountryCodes: new Set(["ES"]),
+      immigrationFlags: { needsVisaSponsorship: true },
+    });
+    const tier2 = makeTier({
+      rank: 2,
+      workFormats: ["remote", "hybrid", "onsite"],
+      resolvedCountryCodes: new Set(["ES"]),
+      // No immigrationFlags -- no immigration constraint
+    });
+    const signals = makeSignals({
+      visaSponsorship: "no",
+      relocationPackage: "unknown",
+      workAuthRestriction: "unknown",
+    });
+    const result = matchJobToTiers(
+      "Barcelona, Spain",
+      "hybrid",
+      [tier1, tier2],
+      signals,
+    );
+    expect(result.passes).toBe(true);
+    expect(result.matchedTier).toBe(2);
+  });
+
   test("immigration work-auth restriction fails tier even when geo+format match", () => {
     const tier = makeTier({
       rank: 1,

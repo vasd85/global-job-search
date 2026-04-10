@@ -1563,6 +1563,37 @@ describe("POST /api/chatbot/save", () => {
       expect(profileValues.remotePreference).toBe("remote_only");
     });
 
+    test("tier with immigrationFlags survives persist round-trip", async () => {
+      const locationPreferences = {
+        tiers: [
+          {
+            rank: 1,
+            workFormats: ["remote", "hybrid", "onsite"],
+            immigrationFlags: { needsVisaSponsorship: true, wantsRelocationPackage: true },
+            scope: { type: "cities", include: ["Barcelona"] },
+          },
+          {
+            rank: 2,
+            workFormats: ["remote"],
+            scope: { type: "regions", include: ["EU"] },
+          },
+        ],
+      };
+      setupSaveRoute(makeValidDraft({ locationPreferences }));
+
+      await savePost(jsonRequest("POST"));
+
+      const profileValues = txInsertValuesCalls[0] as Record<string, unknown>;
+      const persisted = profileValues.locationPreferences as { tiers: Array<Record<string, unknown>> };
+      // immigrationFlags on tier 1 must survive the persist round-trip
+      expect(persisted.tiers[0].immigrationFlags).toEqual({
+        needsVisaSponsorship: true,
+        wantsRelocationPackage: true,
+      });
+      // tier 2 has no immigrationFlags -- must not be added spuriously
+      expect(persisted.tiers[1]).not.toHaveProperty("immigrationFlags");
+    });
+
     test("locationPreferences is persisted to BOTH insert values AND onConflictDoUpdate set", async () => {
       const locationPreferences = {
         tiers: [

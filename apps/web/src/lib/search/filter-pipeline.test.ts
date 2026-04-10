@@ -1095,6 +1095,51 @@ describe("searchJobs -- location filter (processInBatches)", () => {
       ).toBe(true);
     }
   });
+
+  test("visa-rejection: job with visaSponsorship='no' excluded when tier needs sponsorship", async () => {
+    // Scenario 8: semantic end-to-end immigration rejection.
+    // The mock returns passes:false for a job whose concrete immigration
+    // signals would fail the tier's needsVisaSponsorship constraint.
+    setupWithLocationTiers({
+      batches: [
+        [
+          makeCandidateRow({
+            id: "visa-reject-job",
+            location: "Barcelona, Spain",
+            workplaceType: "hybrid",
+            visaSponsorship: "no",
+            relocationPackage: "unknown",
+            workAuthRestriction: "unknown",
+          }),
+        ],
+      ],
+    });
+    // The matcher rejects because the tier requires visa sponsorship
+    // and the job explicitly says "no".
+    matchJobToTiersMock.mockReturnValue({ passes: false, matchedTier: null });
+
+    const result = await searchJobs(
+      db as unknown as Database,
+      "profile-1",
+      defaultPagination,
+    );
+
+    // Job excluded from results
+    expect(result.jobs).toEqual([]);
+    expect(result.total).toBe(0);
+
+    // Verify the immigration signals were plumbed through to the matcher
+    expect(matchJobToTiersMock).toHaveBeenCalledWith(
+      "Barcelona, Spain",
+      "hybrid",
+      [resolvedTier],
+      {
+        visaSponsorship: "no",
+        relocationPackage: "unknown",
+        workAuthRestriction: "unknown",
+      },
+    );
+  });
 });
 
 describe("searchJobs -- location filter error handling", () => {
