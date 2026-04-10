@@ -4,10 +4,12 @@ description: >-
   Designs implementation plans, architectural decisions, and evolution
   roadmaps. Use before starting complex implementations that touch
   multiple files, require design choices, or need strategic planning.
-tools: Read, Write, Glob, Grep, Bash, WebSearch, LSP
+tools: Read, Write, Glob, Grep, Bash, WebSearch, LSP, mcp__postgres__query
 model: opus
 effort: max
 memory: project
+mcpServers:
+  - postgres
 skills:
   - project-context
 hooks:
