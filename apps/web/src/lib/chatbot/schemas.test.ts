@@ -363,7 +363,14 @@ describe("LocationPreferencesSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  test("rejects more than 5 tiers", () => {
+  test("rejects more than 10 tiers", () => {
+    const result = LocationPreferencesSchema.safeParse({
+      tiers: Array.from({ length: 11 }, (_, i) => makeTier(i + 1)),
+    });
+    expect(result.success).toBe(false);
+  });
+
+  test("accepts exactly 10 tiers (max boundary)", () => {
     const result = LocationPreferencesSchema.safeParse({
       tiers: [
         makeTier(1),
@@ -372,19 +379,10 @@ describe("LocationPreferencesSchema", () => {
         makeTier(4),
         makeTier(5),
         makeTier(6),
-      ],
-    });
-    expect(result.success).toBe(false);
-  });
-
-  test("accepts exactly 5 tiers (max boundary)", () => {
-    const result = LocationPreferencesSchema.safeParse({
-      tiers: [
-        makeTier(1),
-        makeTier(2),
-        makeTier(3),
-        makeTier(4),
-        makeTier(5),
+        makeTier(7),
+        makeTier(8),
+        makeTier(9),
+        makeTier(10),
       ],
     });
     expect(result.success).toBe(true);

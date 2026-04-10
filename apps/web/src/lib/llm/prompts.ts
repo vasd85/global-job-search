@@ -146,6 +146,11 @@ GENERAL TIER STRUCTURE
 - Split different scope types at the same priority into separate tiers
   (e.g., "USA, Canada, EU except Cyprus" -> two tiers at rank 1: one for
   countries [USA, Canada], one for regions [EU] with exclude [Cyprus]).
+- Do NOT split a single preference into separate tiers by work format.
+  If the user says "relocation or remote in X", that is ONE tier per
+  scope type with workFormats: ["remote","hybrid","onsite"] and
+  immigrationFlags: { wantsRelocationPackage: true }. The "relocation"
+  intent and the "remote" intent combine into one tier, not two.
 
 WORK FORMATS (workFormats)
 - workFormats may ONLY contain values from this set:

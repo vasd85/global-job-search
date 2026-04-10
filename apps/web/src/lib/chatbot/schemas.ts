@@ -161,7 +161,7 @@ export const LocationPreferencesSchema = z.object({
   tiers: z
     .array(LocationPreferenceTierSchema)
     .min(1)
-    .max(5)
+    .max(10)
     .describe("Ranked location preference tiers, ordered by priority"),
 });
 export type LocationPreferences = z.infer<typeof LocationPreferencesSchema>;
