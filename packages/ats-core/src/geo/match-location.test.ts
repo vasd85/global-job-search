@@ -194,7 +194,7 @@ describe("immigrationMatch", () => {
     expect(immigrationMatch(UNKNOWN_JOB_SIGNALS, undefined)).toBe(true);
     expect(
       immigrationMatch(
-        makeSignals({ visaSponsorship: "no", workAuthRestriction: "locals_only" }),
+        makeSignals({ visaSponsorship: "no", workAuthRestriction: "citizens_only" }),
         undefined,
       ),
     ).toBe(true);
@@ -262,9 +262,15 @@ describe("immigrationMatch", () => {
     expect(immigrationMatch(signals, tierFlags)).toBe(true);
   });
 
-  test("needsUnrestrictedWorkAuth + workAuthRestriction='locals_only' FAILS", () => {
+  test("needsUnrestrictedWorkAuth + workAuthRestriction='citizens_only' FAILS", () => {
     const tierFlags: ResolvedImmigration = { needsUnrestrictedWorkAuth: true };
-    const signals = makeSignals({ workAuthRestriction: "locals_only" });
+    const signals = makeSignals({ workAuthRestriction: "citizens_only" });
+    expect(immigrationMatch(signals, tierFlags)).toBe(false);
+  });
+
+  test("needsUnrestrictedWorkAuth + workAuthRestriction='residents_only' FAILS", () => {
+    const tierFlags: ResolvedImmigration = { needsUnrestrictedWorkAuth: true };
+    const signals = makeSignals({ workAuthRestriction: "residents_only" });
     expect(immigrationMatch(signals, tierFlags)).toBe(false);
   });
 
@@ -334,14 +340,14 @@ describe("immigrationMatch", () => {
     expect(immigrationMatch(signals, tierFlags)).toBe(false);
   });
 
-  test("needsVisa + needsAuth combined: visa='yes' fails with auth='locals_only'", () => {
+  test("needsVisa + needsAuth combined: visa='yes' fails with auth='citizens_only'", () => {
     const tierFlags: ResolvedImmigration = {
       needsVisaSponsorship: true,
       needsUnrestrictedWorkAuth: true,
     };
     const signals = makeSignals({
       visaSponsorship: "yes",
-      workAuthRestriction: "locals_only",
+      workAuthRestriction: "citizens_only",
     });
     expect(immigrationMatch(signals, tierFlags)).toBe(false);
   });
@@ -782,7 +788,25 @@ describe("matchJobToTiers", () => {
       resolvedCountryCodes: new Set(["ES"]),
       immigrationFlags: { needsUnrestrictedWorkAuth: true },
     });
-    const signals = makeSignals({ workAuthRestriction: "locals_only" });
+    const signals = makeSignals({ workAuthRestriction: "citizens_only" });
+    const result = matchJobToTiers(
+      "Barcelona, Spain",
+      "hybrid",
+      [tier],
+      signals,
+    );
+    expect(result.passes).toBe(false);
+    expect(result.matchedTier).toBeNull();
+  });
+
+  test("immigration work-auth 'residents_only' also fails tier requiring unrestricted auth", () => {
+    const tier = makeTier({
+      rank: 1,
+      workFormats: ["remote", "hybrid", "onsite"],
+      resolvedCountryCodes: new Set(["ES"]),
+      immigrationFlags: { needsUnrestrictedWorkAuth: true },
+    });
+    const signals = makeSignals({ workAuthRestriction: "residents_only" });
     const result = matchJobToTiers(
       "Barcelona, Spain",
       "hybrid",

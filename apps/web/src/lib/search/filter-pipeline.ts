@@ -8,6 +8,7 @@ import {
   type RoleFamilyDef,
   type ResolvedTierGeo,
 } from "@gjs/ats-core";
+import type { JobImmigrationSignals } from "@gjs/ats-core/geo";
 import type { Database } from "@/lib/db";
 import { expandTerms } from "@/lib/search/synonym-cache";
 import {
@@ -245,6 +246,9 @@ interface CandidateRow {
   companyName: string;
   companySlug: string;
   companyIndustry: string[] | null;
+  visaSponsorship: string;
+  relocationPackage: string;
+  workAuthRestriction: string;
 }
 
 /**
@@ -294,10 +298,16 @@ async function processInBatches(
       // Location filter (structured geo matching)
       let matchedTierRank: number | null = null;
       if (resolvedTiers.length > 0) {
+        const jobSignals: JobImmigrationSignals = {
+          visaSponsorship: row.visaSponsorship as JobImmigrationSignals["visaSponsorship"],
+          relocationPackage: row.relocationPackage as JobImmigrationSignals["relocationPackage"],
+          workAuthRestriction: row.workAuthRestriction as JobImmigrationSignals["workAuthRestriction"],
+        };
         const locationResult = matchJobToTiers(
           row.location,
           row.workplaceType,
           resolvedTiers,
+          jobSignals,
         );
         if (!locationResult.passes) continue;
         matchedTierRank = locationResult.matchedTier;
@@ -382,6 +392,9 @@ async function fetchBatch(
       companyName: companies.name,
       companySlug: companies.slug,
       companyIndustry: companies.industry,
+      visaSponsorship: jobs.visaSponsorship,
+      relocationPackage: jobs.relocationPackage,
+      workAuthRestriction: jobs.workAuthRestriction,
     })
     .from(jobs)
     .innerJoin(companies, eq(jobs.companyId, companies.id))

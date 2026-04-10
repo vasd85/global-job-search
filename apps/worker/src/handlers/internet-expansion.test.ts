@@ -41,6 +41,9 @@ vi.mock("@gjs/db/schema", () => ({
     departmentRaw: Symbol("jobs.departmentRaw"),
     locationRaw: Symbol("jobs.locationRaw"),
     workplaceType: Symbol("jobs.workplaceType"),
+    visaSponsorship: Symbol("jobs.visaSponsorship"),
+    relocationPackage: Symbol("jobs.relocationPackage"),
+    workAuthRestriction: Symbol("jobs.workAuthRestriction"),
   },
   jobMatches: {
     jobId: Symbol("jobMatches.jobId"),
@@ -391,8 +394,8 @@ describe("createInternetExpansionHandler", () => {
 
     const companyRow = makeCompanyRow();
     const jobRows = [
-      { id: "job-1", descriptionHash: "hash-1", title: "Software Engineer", departmentRaw: "Engineering", locationRaw: "Remote", workplaceType: "remote" },
-      { id: "job-2", descriptionHash: "hash-2", title: "Backend Engineer", departmentRaw: "Engineering", locationRaw: "NYC", workplaceType: "onsite" },
+      { id: "job-1", descriptionHash: "hash-1", title: "Software Engineer", department: "Engineering", location: "Remote", workplaceType: "remote", visaSponsorship: "unknown", relocationPackage: "unknown", workAuthRestriction: "unknown" },
+      { id: "job-2", descriptionHash: "hash-2", title: "Backend Engineer", department: "Engineering", location: "NYC", workplaceType: "onsite", visaSponsorship: "unknown", relocationPackage: "unknown", workAuthRestriction: "unknown" },
     ];
     // select 1: preferences, select 2: existing companies (empty),
     // select 3: user profile, select 4: role families,
@@ -2034,7 +2037,7 @@ describe("createInternetExpansionHandler", () => {
 
       const companyRow = makeCompanyRow();
       const jobRows = [
-        { id: "job-1", descriptionHash: "hash-1", title: "Software Engineer", departmentRaw: "Engineering", locationRaw: "London, UK", workplaceType: "onsite" },
+        { id: "job-1", descriptionHash: "hash-1", title: "Software Engineer", department: "Engineering", location: "London, UK", workplaceType: "onsite", visaSponsorship: "unknown", relocationPackage: "unknown", workAuthRestriction: "unknown" },
       ];
 
       const { db } = createMockDb(

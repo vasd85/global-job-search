@@ -68,7 +68,7 @@ export function workFormatMatch(
  *   → lenient pass on every flag.
  * - `needsVisaSponsorship: true` + `visaSponsorship === 'no'` → fail.
  * - `needsUnrestrictedWorkAuth: true` + `workAuthRestriction ∈
- *   {'locals_only','region_only'}` → fail.
+ *   {'citizens_only','residents_only','region_only'}` → fail.
  * - `wantsRelocationPackage` is SCORE-ONLY and intentionally NOT gated here.
  */
 export function immigrationMatch(
@@ -87,7 +87,8 @@ export function immigrationMatch(
 
   if (
     tierFlags.needsUnrestrictedWorkAuth === true &&
-    (signals.workAuthRestriction === "locals_only" ||
+    (signals.workAuthRestriction === "citizens_only" ||
+      signals.workAuthRestriction === "residents_only" ||
       signals.workAuthRestriction === "region_only")
   ) {
     return false;

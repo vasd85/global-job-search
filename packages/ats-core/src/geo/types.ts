@@ -64,7 +64,7 @@ export interface ResolvedImmigration {
 export interface JobImmigrationSignals {
   visaSponsorship: "yes" | "no" | "unknown";
   relocationPackage: "yes" | "no" | "unknown";
-  workAuthRestriction: "none" | "locals_only" | "region_only" | "unknown";
+  workAuthRestriction: "none" | "citizens_only" | "residents_only" | "region_only" | "unknown";
 }
 
 /** Factory for a fully-unknown signal object. Used as a safe default. */

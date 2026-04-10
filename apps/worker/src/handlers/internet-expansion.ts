@@ -29,6 +29,7 @@ import {
   type RoleFamilyDef,
   type ResolvedTierGeo,
 } from "@gjs/ats-core";
+import type { JobImmigrationSignals } from "@gjs/ats-core/geo";
 
 import { decryptUserKey } from "../lib/decrypt-user-key";
 import { getAppConfigValue } from "../lib/app-config";
@@ -685,6 +686,9 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
                     department: jobs.department,
                     location: jobs.location,
                     workplaceType: jobs.workplaceType,
+                    visaSponsorship: jobs.visaSponsorship,
+                    relocationPackage: jobs.relocationPackage,
+                    workAuthRestriction: jobs.workAuthRestriction,
                   })
                   .from(jobs)
                   .where(eq(jobs.companyId, companyId));
@@ -774,10 +778,16 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
 
                     // Level 2 filter: location matching
                     if (resolvedTiers.length > 0) {
+                      const jobSignals: JobImmigrationSignals = {
+                        visaSponsorship: job.visaSponsorship as JobImmigrationSignals["visaSponsorship"],
+                        relocationPackage: job.relocationPackage as JobImmigrationSignals["relocationPackage"],
+                        workAuthRestriction: job.workAuthRestriction as JobImmigrationSignals["workAuthRestriction"],
+                      };
                       const locationResult = matchJobToTiers(
                         job.location,
                         job.workplaceType,
                         resolvedTiers,
+                        jobSignals,
                       );
                       if (!locationResult.passes) {
                         debug(

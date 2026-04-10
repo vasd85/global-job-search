@@ -62,6 +62,9 @@ vi.mock("@/lib/db/schema", () => ({
     lastSeenAt: "jobs.lastSeenAt",
     companyId: "jobs.companyId",
     status: "jobs.status",
+    visaSponsorship: "jobs.visaSponsorship",
+    relocationPackage: "jobs.relocationPackage",
+    workAuthRestriction: "jobs.workAuthRestriction",
   },
   companies: {
     id: "companies.id",
@@ -216,6 +219,9 @@ function makeCandidateRow(overrides: Record<string, unknown> = {}) {
     companyName: "Acme Corp",
     companySlug: "acme-corp",
     companyIndustry: ["fintech"],
+    visaSponsorship: "unknown",
+    relocationPackage: "unknown",
+    workAuthRestriction: "unknown",
     ...overrides,
   };
 }
@@ -903,13 +909,16 @@ describe("searchJobs -- location filter (processInBatches)", () => {
     expect(result.jobs[0].matchedLocationTier).toBeNull();
   });
 
-  test("matchJobToTiers receives correct arguments from the row", async () => {
+  test("matchJobToTiers receives correct arguments from the row including immigration signals", async () => {
     setupWithLocationTiers({
       batches: [
         [
           makeCandidateRow({
             location: "Berlin, Germany",
             workplaceType: "hybrid",
+            visaSponsorship: "yes",
+            relocationPackage: "no",
+            workAuthRestriction: "none",
           }),
         ],
       ],
@@ -926,6 +935,11 @@ describe("searchJobs -- location filter (processInBatches)", () => {
       "Berlin, Germany",
       "hybrid",
       [resolvedTier],
+      {
+        visaSponsorship: "yes",
+        relocationPackage: "no",
+        workAuthRestriction: "none",
+      },
     );
   });
 
@@ -945,6 +959,11 @@ describe("searchJobs -- location filter (processInBatches)", () => {
       null,
       "remote",
       [resolvedTier],
+      {
+        visaSponsorship: "unknown",
+        relocationPackage: "unknown",
+        workAuthRestriction: "unknown",
+      },
     );
     expect(result.jobs.length).toBe(1);
     expect(result.jobs[0].matchedLocationTier).toBeNull();
@@ -973,6 +992,11 @@ describe("searchJobs -- location filter (processInBatches)", () => {
       "London, UK",
       null,
       [resolvedTier],
+      {
+        visaSponsorship: "unknown",
+        relocationPackage: "unknown",
+        workAuthRestriction: "unknown",
+      },
     );
   });
 
