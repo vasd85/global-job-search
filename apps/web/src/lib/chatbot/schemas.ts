@@ -210,6 +210,8 @@ export const ConversationStateSchema = z.object({
   completedSteps: z.array(z.string()),
   status: ConversationStatus,
   editingFromReview: z.boolean().optional(),
+  /** Tracks how many clarification follow-ups fired on the current step. Reset on advance. */
+  stepClarificationCount: z.number().int().min(0).optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
