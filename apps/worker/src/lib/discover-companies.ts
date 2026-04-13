@@ -96,7 +96,11 @@ export async function discoverCompanies(
     return discoveryOutput.companies;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    const stack = error instanceof Error ? error.stack : undefined;
     console.error(`[discover] AI web search failed: ${message}`);
+    if (stack) {
+      debug("discover", "Error stack trace", { stack });
+    }
     return [];
   }
 }

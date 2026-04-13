@@ -749,7 +749,7 @@ describe("probeAtsApis", () => {
   });
 
   describe("Ashby GraphQL error response", () => {
-    it("returns not_found when GraphQL returns errors without organization", async () => {
+    it("returns error with graphql_error detail when GraphQL returns errors", async () => {
       setupFetchByUrl([
         {
           match: "ashbyhq.com",
@@ -764,9 +764,10 @@ describe("probeAtsApis", () => {
       });
 
       expect(result).toBeNull();
-      // data.data?.organization is undefined, so result is not_found
       const ashbyEntry = log.find((e) => e.vendor === "ashby");
-      expect(ashbyEntry?.result).toBe("not_found");
+      expect(ashbyEntry?.result).toBe("error");
+      expect(ashbyEntry?.error).toContain("graphql_error");
+      expect(ashbyEntry?.error).toContain("Internal error");
     });
   });
 
