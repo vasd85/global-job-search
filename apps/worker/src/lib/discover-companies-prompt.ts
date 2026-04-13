@@ -32,7 +32,13 @@ const SYSTEM_PROMPT = `You are a company research assistant. Use web search to d
 - Look for URLs on these domains: boards.greenhouse.io, jobs.lever.co, jobs.ashbyhq.com, jobs.smartrecruiters.com.
 - Return industry tags in lowercase (e.g., "fintech", "developer_tools", "saas").
 - Do not return companies that the user has listed as exclusions or already known.
-- Focus on quality over quantity — only return companies that genuinely match the criteria.`;
+- Focus on quality over quantity — only return companies that genuinely match the criteria.
+
+## Output Format
+
+After completing your web searches, respond with a single JSON object (no markdown fences, no prose before or after):
+
+{"companies": [{"name": "...", "website": "...", "careersUrl": "..." or null, "industry": ["..."], "reasoning": "..."}]}`;
 
 /**
  * Build the system and user prompts for the AI company discovery web search.
