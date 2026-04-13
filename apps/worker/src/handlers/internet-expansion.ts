@@ -633,11 +633,11 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
                       `[expand] Re-poll failed for ${disc.name}: ${msg}`,
                     );
                   }
-                } else if (detectedVendor === "smartrecruiters") {
-                  // SmartRecruiters with 0 jobs + no other vendor found:
-                  // almost certainly an abandoned page. Downgrade to unknown.
+                } else {
+                  // URL-detected vendor with 0 jobs + no other vendor found:
+                  // abandoned page or wrong slug. Downgrade to unknown.
                   console.info(
-                    `[expand] Downgrading ${disc.name} from smartrecruiters to unknown (0 jobs, no alt vendor)`,
+                    `[expand] Downgrading ${disc.name} from ${detectedVendor} to unknown (0 jobs, no alt vendor)`,
                   );
 
                   atsSearchLog.steps = searchSteps;
