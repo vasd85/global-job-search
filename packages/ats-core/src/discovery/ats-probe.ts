@@ -244,7 +244,7 @@ async function probeAshby(
     operationName: "ApiOrganizationFromHostedJobsPageName",
     variables: { organizationHostedJobsPageName: slug },
     query:
-      "query ApiOrganizationFromHostedJobsPageName($organizationHostedJobsPageName: String!) { organization: organizationFromHostedJobsPageName(input: {hostedJobsPageName: $organizationHostedJobsPageName}) { name } }",
+      "query ApiOrganizationFromHostedJobsPageName($organizationHostedJobsPageName: String!) { organization: organizationFromHostedJobsPageName(organizationHostedJobsPageName: $organizationHostedJobsPageName) { name } }",
   });
 
   const resp = await probeFetch(
