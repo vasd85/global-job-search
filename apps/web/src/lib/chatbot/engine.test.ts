@@ -1049,7 +1049,8 @@ describe("integration: location step as free_text", () => {
           },
           {
             rank: 2,
-            workFormats: ["relocation"],
+            workFormats: ["remote", "hybrid", "onsite"],
+            immigrationFlags: { wantsRelocationPackage: true },
             scope: { type: "cities", include: ["NYC"] },
           },
         ],
@@ -1083,7 +1084,8 @@ describe("integration: location step as free_text", () => {
         },
         {
           rank: 2,
-          workFormats: ["relocation"],
+          workFormats: ["remote", "hybrid", "onsite"],
+          immigrationFlags: { wantsRelocationPackage: true },
           scope: { type: "cities", include: ["NYC"] },
         },
       ],

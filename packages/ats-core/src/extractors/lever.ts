@@ -110,6 +110,7 @@ export async function extractFromLever(context: ExtractionContext): Promise<Extr
           workplaceType: posting.workplaceType ?? null,
           applyUrl: posting.applyUrl ?? posting.hostedUrl ?? null,
           sourceDetailUrl: posting.hostedUrl ?? posting.applyUrl ?? null,
+          sourceJobRaw: posting,
           detailFetchStatus:
             posting.descriptionBody ||
             posting.description ||

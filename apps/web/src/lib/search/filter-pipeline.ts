@@ -8,6 +8,7 @@ import {
   type RoleFamilyDef,
   type ResolvedTierGeo,
 } from "@gjs/ats-core";
+import type { JobImmigrationSignals } from "@gjs/ats-core/geo";
 import type { Database } from "@/lib/db";
 import { expandTerms } from "@/lib/search/synonym-cache";
 import {
@@ -236,15 +237,18 @@ interface CandidateRow {
   title: string;
   url: string;
   applyUrl: string | null;
-  locationRaw: string | null;
-  departmentRaw: string | null;
+  location: string | null;
+  department: string | null;
   workplaceType: string | null;
-  salaryRaw: string | null;
+  salary: string | null;
   firstSeenAt: Date;
   lastSeenAt: Date;
   companyName: string;
   companySlug: string;
   companyIndustry: string[] | null;
+  visaSponsorship: string;
+  relocationPackage: string;
+  workAuthRestriction: string;
 }
 
 /**
@@ -274,7 +278,7 @@ async function processInBatches(
     for (const row of batch) {
       const classified = classifyJobMulti(matchedFamilies, {
         title: row.title,
-        departmentRaw: row.departmentRaw,
+        departmentRaw: row.department,
       });
 
       if (classified.score < CLASSIFICATION_THRESHOLD) continue;
@@ -294,10 +298,17 @@ async function processInBatches(
       // Location filter (structured geo matching)
       let matchedTierRank: number | null = null;
       if (resolvedTiers.length > 0) {
+        // Safe casts: these columns are NOT NULL DEFAULT 'unknown' in the schema.
+        const jobSignals: JobImmigrationSignals = {
+          visaSponsorship: row.visaSponsorship as JobImmigrationSignals["visaSponsorship"],
+          relocationPackage: row.relocationPackage as JobImmigrationSignals["relocationPackage"],
+          workAuthRestriction: row.workAuthRestriction as JobImmigrationSignals["workAuthRestriction"],
+        };
         const locationResult = matchJobToTiers(
-          row.locationRaw,
+          row.location,
           row.workplaceType,
           resolvedTiers,
+          jobSignals,
         );
         if (!locationResult.passes) continue;
         matchedTierRank = locationResult.matchedTier;
@@ -308,10 +319,10 @@ async function processInBatches(
         title: row.title,
         url: row.url,
         applyUrl: row.applyUrl,
-        locationRaw: row.locationRaw,
-        departmentRaw: row.departmentRaw,
+        location: row.location,
+        department: row.department,
         workplaceType: row.workplaceType,
-        salaryRaw: row.salaryRaw,
+        salary: row.salary,
         firstSeenAt: row.firstSeenAt,
         lastSeenAt: row.lastSeenAt,
         companyName: row.companyName,
@@ -373,15 +384,18 @@ async function fetchBatch(
       title: jobs.title,
       url: jobs.url,
       applyUrl: jobs.applyUrl,
-      locationRaw: jobs.locationRaw,
-      departmentRaw: jobs.departmentRaw,
+      location: jobs.location,
+      department: jobs.department,
       workplaceType: jobs.workplaceType,
-      salaryRaw: jobs.salaryRaw,
+      salary: jobs.salary,
       firstSeenAt: jobs.firstSeenAt,
       lastSeenAt: jobs.lastSeenAt,
       companyName: companies.name,
       companySlug: companies.slug,
       companyIndustry: companies.industry,
+      visaSponsorship: jobs.visaSponsorship,
+      relocationPackage: jobs.relocationPackage,
+      workAuthRestriction: jobs.workAuthRestriction,
     })
     .from(jobs)
     .innerJoin(companies, eq(jobs.companyId, companies.id))

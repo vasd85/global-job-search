@@ -22,6 +22,27 @@ interface ScoringJobData {
 
 const MODEL_ID = "claude-haiku-4-5-20251001";
 
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+/**
+ * Merge a newly-extracted enum signal value with the existing DB value.
+ *
+ * Rule: never downgrade a concrete answer (any value other than
+ * `unknownValue`) to `unknownValue`. A concrete `incoming` value always
+ * wins. If `incoming` is `unknownValue`, we preserve `existing` so prompt
+ * drift or temporary LLM uncertainty cannot wipe a previously-recorded
+ * answer.
+ */
+export function mergeEnum<T extends string>(
+  existing: T,
+  incoming: T,
+  unknownValue: T,
+): T {
+  if (incoming !== unknownValue) return incoming;
+  if (existing !== unknownValue) return existing;
+  return unknownValue;
+}
+
 // ─── Handler ────────────────────────────────────────────────────────────────
 
 /**
@@ -37,15 +58,18 @@ export function createLlmScoringHandler(db: Database) {
 
       try {
         // 1. Load job row with company data
+        //    The signal columns are read so the post-score write-back
+        //    can call mergeEnum and avoid downgrading concrete answers
+        //    to "unknown" on prompt drift.
         const [jobRow] = await db
           .select({
             id: jobs.id,
             title: jobs.title,
             descriptionText: jobs.descriptionText,
             descriptionHash: jobs.descriptionHash,
-            locationRaw: jobs.locationRaw,
+            location: jobs.location,
             workplaceType: jobs.workplaceType,
-            salaryRaw: jobs.salaryRaw,
+            salary: jobs.salary,
             url: jobs.url,
             atsJobId: jobs.atsJobId,
             sourceRef: jobs.sourceRef,
@@ -53,6 +77,13 @@ export function createLlmScoringHandler(db: Database) {
             companyName: companies.name,
             companyIndustry: companies.industry,
             companyAtsSlug: companies.atsSlug,
+            visaSponsorship: jobs.visaSponsorship,
+            relocationPackage: jobs.relocationPackage,
+            workAuthRestriction: jobs.workAuthRestriction,
+            languageRequirements: jobs.languageRequirements,
+            travelPercent: jobs.travelPercent,
+            securityClearance: jobs.securityClearance,
+            shiftPattern: jobs.shiftPattern,
           })
           .from(jobs)
           .innerJoin(companies, eq(jobs.companyId, companies.id))
@@ -108,9 +139,9 @@ export function createLlmScoringHandler(db: Database) {
           job: {
             title: jobRow.title,
             descriptionText,
-            locationRaw: jobRow.locationRaw,
+            location: jobRow.location,
             workplaceType: jobRow.workplaceType,
-            salaryRaw: jobRow.salaryRaw,
+            salary: jobRow.salary,
             url: jobRow.url,
           },
           company: {
@@ -222,6 +253,76 @@ export function createLlmScoringHandler(db: Database) {
               updatedAt: now,
             },
           });
+
+        // 10. Persist extracted signals on the job row.
+        //
+        //     The same L3 LLM call extracted these signals from the
+        //     description text. Writing them back warms an L2 cache so
+        //     future users' filter pipelines can consume them without
+        //     re-invoking the LLM (plan §8 — L3 → L2 promotion).
+        //
+        //     Invariants:
+        //       - mergeEnum never downgrades a concrete answer to "unknown"
+        //         (preserves prior LLM confidence on prompt drift).
+        //       - Soft signals (language/travel/clearance/shift) never
+        //         overwrite a concrete prior value with null / empty array.
+        //       - signalsExtractedAt and signalsExtractedFromHash are
+        //         always stamped so a future content change can detect
+        //         staleness via descriptionHash rotation.
+        //
+        //     Wrapped in its own try/catch so a signal-write failure does
+        //     not lose the score that was just persisted.
+        try {
+          const signals = scoringOutput.extractedSignals;
+
+          // Clamp travelPercent: Anthropic structured output rejects
+          // min/max/int Zod constraints, so the schema accepts any number.
+          // Clamp here to the persisted column's expected 0-100 integer.
+          const travelPercentClamped =
+            signals.travelPercent == null
+              ? null
+              : Math.round(Math.max(0, Math.min(100, signals.travelPercent)));
+
+          await db
+            .update(jobs)
+            .set({
+              visaSponsorship: mergeEnum(
+                jobRow.visaSponsorship,
+                signals.visaSponsorship,
+                "unknown",
+              ),
+              relocationPackage: mergeEnum(
+                jobRow.relocationPackage,
+                signals.relocationPackage,
+                "unknown",
+              ),
+              workAuthRestriction: mergeEnum(
+                jobRow.workAuthRestriction,
+                signals.workAuthRestriction,
+                "unknown",
+              ),
+              languageRequirements:
+                signals.languageRequirements.length > 0
+                  ? signals.languageRequirements
+                  : jobRow.languageRequirements,
+              travelPercent: travelPercentClamped ?? jobRow.travelPercent,
+              securityClearance:
+                signals.securityClearance ?? jobRow.securityClearance,
+              shiftPattern: signals.shiftPattern ?? jobRow.shiftPattern,
+              signalsExtractedAt: now,
+              signalsExtractedFromHash: currentJobHash,
+              updatedAt: now,
+            })
+            .where(eq(jobs.id, jobRow.id));
+        } catch (signalError) {
+          // Score is already persisted; log the signal write failure but do
+          // not propagate so the per-job success path continues.
+          const message =
+            signalError instanceof Error ? signalError.message : String(signalError);
+          console.error(
+            `[score] Failed to write extracted signals for job ${jobId}: ${message}`,
+          );
+        }
 
         console.info(
           `[score] Scored job ${jobId} for profile ${userProfileId}: ${matchPercent}%` +

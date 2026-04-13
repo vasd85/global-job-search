@@ -38,11 +38,47 @@ export interface ParsedJobLocation {
   confidence: "full" | "partial" | "unresolved";
 }
 
+/**
+ * Resolved per-tier immigration requirements.
+ *
+ * All fields are optional — `undefined` means "no constraint in this tier".
+ * Populated by `resolveTierGeo` from the chatbot's `immigrationFlags` input.
+ */
+export interface ResolvedImmigration {
+  /** Tier requires the job to offer visa sponsorship. */
+  needsVisaSponsorship?: boolean;
+  /** Tier prefers jobs offering a relocation package. SCORE-ONLY, not a filter gate. */
+  wantsRelocationPackage?: boolean;
+  /** Tier requires the job to NOT restrict work authorization to locals/citizens. */
+  needsUnrestrictedWorkAuth?: boolean;
+}
+
+/**
+ * Per-job immigration signals, sourced from persisted `job.visa_sponsorship`,
+ * `job.relocation_package`, `job.work_auth_restriction` columns (added in Chunk A).
+ *
+ * Pass this to the matcher when you have access to the persisted signals.
+ * Omitting it (or passing `undefined`) is treated as all-unknown = lenient pass,
+ * consistent with the cache warm-up semantics (see plan §8 L3→L2 promotion).
+ */
+export interface JobImmigrationSignals {
+  visaSponsorship: "yes" | "no" | "unknown";
+  relocationPackage: "yes" | "no" | "unknown";
+  workAuthRestriction: "none" | "citizens_only" | "residents_only" | "region_only" | "unknown";
+}
+
+/** Factory for a fully-unknown signal object. Used as a safe default. */
+export const UNKNOWN_JOB_SIGNALS: JobImmigrationSignals = Object.freeze({
+  visaSponsorship: "unknown",
+  relocationPackage: "unknown",
+  workAuthRestriction: "unknown",
+});
+
 /** A resolved user location preference for a single tier. */
 export interface ResolvedTierGeo {
   /** Tier rank from the user's preference (1 = most preferred). */
   rank: number;
-  /** Work formats acceptable for this tier. */
+  /** Work formats acceptable for this tier. Strictly remote|hybrid|onsite. */
   workFormats: string[];
   /** Set of ISO country codes that this tier's scope resolves to. */
   resolvedCountryCodes: Set<string>;
@@ -54,6 +90,8 @@ export interface ResolvedTierGeo {
   excludedCountryCodes: Set<string>;
   /** Unresolved entries kept for substring fallback matching. */
   unresolvedEntries: string[];
+  /** Optional per-tier immigration flags. `undefined` = no immigration constraint. */
+  immigrationFlags?: ResolvedImmigration | undefined;
 }
 
 /** Result of matching a job against all resolved tiers. */

@@ -45,6 +45,7 @@ docs/
 
 # Claude Code local settings
 .claude/settings.local.json
+.mcp.json
 .claude/worktrees/
 .claude/scratchpads/
 

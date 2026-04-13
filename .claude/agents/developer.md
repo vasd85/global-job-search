@@ -4,8 +4,10 @@ description: >-
   Implements code based on architectural plans. Doer agent with full write
   access. Use when a plan exists and code needs to be written — features,
   bug fixes, refactoring. Does not write tests.
-tools: Read, Write, Edit, Bash, Grep, Glob, LSP
+tools: Read, Write, Edit, Bash, Grep, Glob, LSP, mcp__postgres__query
 model: opus
+mcpServers:
+  - postgres
 skills:
   - project-context
 hooks:

@@ -4,12 +4,15 @@ export type {
   ResolvedGeoEntity,
   ParsedJobLocation,
   ResolvedTierGeo,
+  ResolvedImmigration,
+  JobImmigrationSignals,
   LocationMatchResult,
   CityIndexEntry,
   CountryRecord,
   CompositeRegionRecord,
   TimezoneGroupRecord,
 } from "./types";
+export { UNKNOWN_JOB_SIGNALS } from "./types";
 
 // Reference data lookups
 export { lookupCountry, COUNTRIES, COUNTRY_REVERSE_INDEX } from "./country-data";
@@ -25,6 +28,8 @@ export type { LocationPreferenceTierInput } from "./resolve-user-location";
 export {
   matchJobToTiers,
   workFormatMatch,
+  immigrationMatch,
+  normalizeWorkplaceType,
   geoMatch,
   tierMatch,
   wordBoundaryMatch,

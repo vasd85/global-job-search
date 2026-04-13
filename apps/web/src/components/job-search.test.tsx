@@ -467,7 +467,7 @@ describe("JobCard", () => {
     const job = makeJob({
       title: "Staff Engineer",
       companyName: "TechCo",
-      departmentRaw: "Platform",
+      department: "Platform",
     });
     await renderAndSettle(makeJobsResponse([job]));
 
@@ -478,9 +478,9 @@ describe("JobCard", () => {
 
   test("renders location, workplace type badge, and salary when present", async () => {
     const job = makeJob({
-      locationRaw: "San Francisco, CA",
+      location: "San Francisco, CA",
       workplaceType: "hybrid",
-      salaryRaw: "$150k - $200k",
+      salary: "$150k - $200k",
     });
     await renderAndSettle(makeJobsResponse([job]));
 
@@ -491,10 +491,10 @@ describe("JobCard", () => {
 
   test("omits location, department, workplace type, and salary when null", async () => {
     const job = makeJob({
-      locationRaw: null,
-      departmentRaw: null,
+      location: null,
+      department: null,
       workplaceType: null,
-      salaryRaw: null,
+      salary: null,
     });
     await renderAndSettle(makeJobsResponse([job]));
 

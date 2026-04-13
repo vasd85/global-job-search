@@ -62,6 +62,7 @@ export function advanceStep(state: ConversationState): ConversationState {
       currentStepIndex: reviewIndex >= 0 ? reviewIndex : STEPS.length - 1,
       status: "review",
       editingFromReview: undefined,
+      stepClarificationCount: 0,
       updatedAt: new Date().toISOString(),
     };
   }
@@ -74,6 +75,7 @@ export function advanceStep(state: ConversationState): ConversationState {
       ...state,
       currentStepIndex: STEPS.length - 1,
       status: "review",
+      stepClarificationCount: 0,
       updatedAt: new Date().toISOString(),
     };
   }
@@ -85,6 +87,7 @@ export function advanceStep(state: ConversationState): ConversationState {
       ...state,
       currentStepIndex: nextIndex,
       status: "review",
+      stepClarificationCount: 0,
       updatedAt: new Date().toISOString(),
     };
   }
@@ -92,6 +95,7 @@ export function advanceStep(state: ConversationState): ConversationState {
   return {
     ...state,
     currentStepIndex: nextIndex,
+    stepClarificationCount: 0,
     updatedAt: new Date().toISOString(),
   };
 }

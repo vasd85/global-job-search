@@ -32,10 +32,10 @@ vi.mock("@/lib/db/schema", () => ({
     id: "jobs.id",
     title: "jobs.title",
     url: "jobs.url",
-    locationRaw: "jobs.locationRaw",
-    departmentRaw: "jobs.departmentRaw",
+    location: "jobs.location",
+    department: "jobs.department",
     workplaceType: "jobs.workplaceType",
-    salaryRaw: "jobs.salaryRaw",
+    salary: "jobs.salary",
     firstSeenAt: "jobs.firstSeenAt",
     lastSeenAt: "jobs.lastSeenAt",
     applyUrl: "jobs.applyUrl",
@@ -120,10 +120,10 @@ function makeFakeJobRow(overrides: Record<string, unknown> = {}) {
     id: "job-uuid-1",
     title: "Software Engineer",
     url: "https://example.com/jobs/1",
-    locationRaw: "Remote",
-    departmentRaw: "Engineering",
+    location: "Remote",
+    department: "Engineering",
     workplaceType: "remote",
-    salaryRaw: "$100k-$150k",
+    salary: "$100k-$150k",
     firstSeenAt: new Date("2025-06-01"),
     lastSeenAt: new Date("2025-06-15"),
     applyUrl: "https://example.com/apply/1",
@@ -264,11 +264,11 @@ describe("GET /api/jobs", () => {
       await getJsonResponse({ search: "engineer" });
 
       expect(ilike).toHaveBeenCalledWith("jobs.title", "%engineer%");
-      expect(ilike).toHaveBeenCalledWith("jobs.departmentRaw", "%engineer%");
+      expect(ilike).toHaveBeenCalledWith("jobs.department", "%engineer%");
       expect(or).toHaveBeenCalled();
       const whereArg = getPaginatedWhereArg() as unknown[];
       expect(whereArg).toContain(
-        "or(ilike(jobs.title,%engineer%),ilike(jobs.departmentRaw,%engineer%))"
+        "or(ilike(jobs.title,%engineer%),ilike(jobs.department,%engineer%))"
       );
     });
 

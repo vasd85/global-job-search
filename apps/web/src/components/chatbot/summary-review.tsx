@@ -289,14 +289,22 @@ function LocationTiersDisplay({
                   {label ? ` (${label})` : ""}:
                 </span>
                 <ul className="ml-3 list-disc">
-                  {tiers.map((tier, i) => (
-                    <li
-                      key={i}
-                      className="text-sm text-zinc-900 dark:text-zinc-100"
-                    >
-                      {formatTierLine(tier)}
-                    </li>
-                  ))}
+                  {tiers.map((tier, i) => {
+                    const immigrationLine = formatImmigrationFlags(tier);
+                    return (
+                      <li
+                        key={i}
+                        className="text-sm text-zinc-900 dark:text-zinc-100"
+                      >
+                        {formatTierLine(tier)}
+                        {immigrationLine && (
+                          <span className="ml-1 text-xs text-zinc-500 dark:text-zinc-400">
+                            ({immigrationLine})
+                          </span>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             );
@@ -340,6 +348,23 @@ function formatTierLine(tier: LocationPreferenceTier): string {
   }
 
   return parts.join(" ");
+}
+
+/**
+ * Format the optional immigrationFlags object as a short inline hint.
+ * Returns null when no flags are set so the caller can skip rendering.
+ */
+function formatImmigrationFlags(tier: LocationPreferenceTier): string | null {
+  const flags = tier.immigrationFlags;
+  if (!flags) return null;
+
+  const labels: string[] = [];
+  if (flags.needsVisaSponsorship) labels.push("needs visa sponsorship");
+  if (flags.wantsRelocationPackage) labels.push("relocation preferred");
+  if (flags.needsUnrestrictedWorkAuth) labels.push("open to international");
+
+  if (labels.length === 0) return null;
+  return labels.join(", ");
 }
 
 function WeightDisplay({

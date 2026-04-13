@@ -1,11 +1,19 @@
 import {
   workFormatMatch,
+  immigrationMatch,
+  normalizeWorkplaceType,
   geoMatch,
   matchJobToTiers,
   wordBoundaryMatch,
 } from "./match-location";
 import { locationCache } from "./location-cache";
-import type { ParsedJobLocation, ResolvedTierGeo } from "./types";
+import {
+  UNKNOWN_JOB_SIGNALS,
+  type JobImmigrationSignals,
+  type ParsedJobLocation,
+  type ResolvedImmigration,
+  type ResolvedTierGeo,
+} from "./types";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -44,6 +52,67 @@ function makeTier(
   };
 }
 
+/** Create a JobImmigrationSignals with explicit field values. */
+function makeSignals(
+  overrides: Partial<JobImmigrationSignals> = {},
+): JobImmigrationSignals {
+  return {
+    visaSponsorship: "unknown",
+    relocationPackage: "unknown",
+    workAuthRestriction: "unknown",
+    ...overrides,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// normalizeWorkplaceType()
+// ---------------------------------------------------------------------------
+
+describe("normalizeWorkplaceType", () => {
+  test("null input returns null", () => {
+    expect(normalizeWorkplaceType(null)).toBeNull();
+  });
+
+  test("canonical 'remote' passes through", () => {
+    expect(normalizeWorkplaceType("remote")).toBe("remote");
+  });
+
+  test("canonical 'hybrid' passes through", () => {
+    expect(normalizeWorkplaceType("hybrid")).toBe("hybrid");
+  });
+
+  test("canonical 'onsite' passes through", () => {
+    expect(normalizeWorkplaceType("onsite")).toBe("onsite");
+  });
+
+  test("Lever 'on-site' hyphenated form maps to 'onsite'", () => {
+    expect(normalizeWorkplaceType("on-site")).toBe("onsite");
+  });
+
+  test("'on_site' underscore form maps to 'onsite'", () => {
+    expect(normalizeWorkplaceType("on_site")).toBe("onsite");
+  });
+
+  test("is case-insensitive: 'Remote', 'ONSITE', 'On-Site' all normalize", () => {
+    expect(normalizeWorkplaceType("Remote")).toBe("remote");
+    expect(normalizeWorkplaceType("ONSITE")).toBe("onsite");
+    expect(normalizeWorkplaceType("On-Site")).toBe("onsite");
+    expect(normalizeWorkplaceType("HYBRID")).toBe("hybrid");
+  });
+
+  test("trims surrounding whitespace", () => {
+    expect(normalizeWorkplaceType("  remote  ")).toBe("remote");
+    expect(normalizeWorkplaceType("\thybrid\n")).toBe("hybrid");
+  });
+
+  test("unrecognized values return null", () => {
+    expect(normalizeWorkplaceType("flexible")).toBeNull();
+    expect(normalizeWorkplaceType("relocation")).toBeNull();
+    expect(normalizeWorkplaceType("")).toBeNull();
+    expect(normalizeWorkplaceType("partially-remote")).toBeNull();
+  });
+});
+
 // ---------------------------------------------------------------------------
 // workFormatMatch()
 // ---------------------------------------------------------------------------
@@ -55,6 +124,10 @@ describe("workFormatMatch", () => {
     expect(workFormatMatch(null, ["remote"])).toBe(true);
   });
 
+  test("null jobWorkplaceType passes even with full format triple", () => {
+    expect(workFormatMatch(null, ["remote", "hybrid", "onsite"])).toBe(true);
+  });
+
   test("empty tier formats passes any job type", () => {
     expect(workFormatMatch("onsite", [])).toBe(true);
   });
@@ -63,9 +136,10 @@ describe("workFormatMatch", () => {
     ["remote", ["remote"], true],
     ["hybrid", ["hybrid"], true],
     ["onsite", ["onsite"], true],
-    ["onsite", ["relocation"], true],
     ["remote", ["onsite"], false],
     ["onsite", ["remote"], false],
+    ["hybrid", ["remote"], false],
+    ["remote", ["hybrid"], false],
   ])(
     "workFormatMatch(%s, %j) returns %s",
     (jobType, tierFormats, expected) => {
@@ -73,9 +147,22 @@ describe("workFormatMatch", () => {
     },
   );
 
-  test("case insensitivity", () => {
-    expect(workFormatMatch("Remote", ["remote"])).toBe(true);
-    expect(workFormatMatch("ONSITE", ["onsite"])).toBe(true);
+  test("Barcelona regression: hybrid job in a full-triple tier passes", () => {
+    // This is the exact shape that failed pre-Chunk-B: a QA automation
+    // engineer in Barcelona with workplace_type='hybrid' was filtered
+    // out by the legacy `workFormats: ["relocation", "remote"]` tier.
+    // The new tier is {remote, hybrid, onsite} and hybrid must match.
+    expect(
+      workFormatMatch("hybrid", ["remote", "hybrid", "onsite"]),
+    ).toBe(true);
+  });
+
+  test("hybrid job in a [remote] tier fails (no hybrid allowed)", () => {
+    expect(workFormatMatch("hybrid", ["remote"])).toBe(false);
+  });
+
+  test("onsite job in [remote, hybrid] tier fails", () => {
+    expect(workFormatMatch("onsite", ["remote", "hybrid"])).toBe(false);
   });
 
   // -- Important scenarios --------------------------------------------------
@@ -89,7 +176,180 @@ describe("workFormatMatch", () => {
   });
 
   test("unknown job workplace type does not match known formats", () => {
+    // The matcher now trusts the contract that input is pre-normalized;
+    // unrecognized values like 'flexible' are treated as literal strings
+    // and do not match the canonical triple.
     expect(workFormatMatch("flexible", ["remote", "onsite"])).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// immigrationMatch()
+// ---------------------------------------------------------------------------
+
+describe("immigrationMatch", () => {
+  // -- No-constraint cases (pass through) ----------------------------------
+
+  test("tierFlags === undefined: always passes regardless of signals", () => {
+    expect(immigrationMatch(UNKNOWN_JOB_SIGNALS, undefined)).toBe(true);
+    expect(
+      immigrationMatch(
+        makeSignals({ visaSponsorship: "no", workAuthRestriction: "citizens_only" }),
+        undefined,
+      ),
+    ).toBe(true);
+  });
+
+  test("empty tierFlags object (all flags undefined): passes", () => {
+    const tierFlags: ResolvedImmigration = {};
+    expect(immigrationMatch(UNKNOWN_JOB_SIGNALS, tierFlags)).toBe(true);
+    expect(
+      immigrationMatch(
+        makeSignals({ visaSponsorship: "no" }),
+        tierFlags,
+      ),
+    ).toBe(true);
+  });
+
+  test("jobSignals === undefined: treated as all-unknown, lenient pass", () => {
+    // Cache warm-up path: L2 never has a chance to reject a job before
+    // L3 has extracted the persisted signal values.
+    const tierFlags: ResolvedImmigration = {
+      needsVisaSponsorship: true,
+      needsUnrestrictedWorkAuth: true,
+    };
+    expect(immigrationMatch(undefined, tierFlags)).toBe(true);
+  });
+
+  // -- needsVisaSponsorship --------------------------------------------------
+
+  test("needsVisaSponsorship + visaSponsorship='yes' passes", () => {
+    const tierFlags: ResolvedImmigration = { needsVisaSponsorship: true };
+    const signals = makeSignals({ visaSponsorship: "yes" });
+    expect(immigrationMatch(signals, tierFlags)).toBe(true);
+  });
+
+  test("needsVisaSponsorship + visaSponsorship='unknown' passes (lenient)", () => {
+    const tierFlags: ResolvedImmigration = { needsVisaSponsorship: true };
+    const signals = makeSignals({ visaSponsorship: "unknown" });
+    expect(immigrationMatch(signals, tierFlags)).toBe(true);
+  });
+
+  test("needsVisaSponsorship + visaSponsorship='no' FAILS (explicit reject)", () => {
+    const tierFlags: ResolvedImmigration = { needsVisaSponsorship: true };
+    const signals = makeSignals({ visaSponsorship: "no" });
+    expect(immigrationMatch(signals, tierFlags)).toBe(false);
+  });
+
+  test("needsVisaSponsorship:false ignores visaSponsorship entirely", () => {
+    const tierFlags: ResolvedImmigration = { needsVisaSponsorship: false };
+    expect(
+      immigrationMatch(makeSignals({ visaSponsorship: "no" }), tierFlags),
+    ).toBe(true);
+  });
+
+  // -- needsUnrestrictedWorkAuth ---------------------------------------------
+
+  test("needsUnrestrictedWorkAuth + workAuthRestriction='none' passes", () => {
+    const tierFlags: ResolvedImmigration = { needsUnrestrictedWorkAuth: true };
+    const signals = makeSignals({ workAuthRestriction: "none" });
+    expect(immigrationMatch(signals, tierFlags)).toBe(true);
+  });
+
+  test("needsUnrestrictedWorkAuth + workAuthRestriction='unknown' passes (lenient)", () => {
+    const tierFlags: ResolvedImmigration = { needsUnrestrictedWorkAuth: true };
+    const signals = makeSignals({ workAuthRestriction: "unknown" });
+    expect(immigrationMatch(signals, tierFlags)).toBe(true);
+  });
+
+  test("needsUnrestrictedWorkAuth + workAuthRestriction='citizens_only' FAILS", () => {
+    const tierFlags: ResolvedImmigration = { needsUnrestrictedWorkAuth: true };
+    const signals = makeSignals({ workAuthRestriction: "citizens_only" });
+    expect(immigrationMatch(signals, tierFlags)).toBe(false);
+  });
+
+  test("needsUnrestrictedWorkAuth + workAuthRestriction='residents_only' FAILS", () => {
+    const tierFlags: ResolvedImmigration = { needsUnrestrictedWorkAuth: true };
+    const signals = makeSignals({ workAuthRestriction: "residents_only" });
+    expect(immigrationMatch(signals, tierFlags)).toBe(false);
+  });
+
+  test("needsUnrestrictedWorkAuth + workAuthRestriction='region_only' FAILS", () => {
+    const tierFlags: ResolvedImmigration = { needsUnrestrictedWorkAuth: true };
+    const signals = makeSignals({ workAuthRestriction: "region_only" });
+    expect(immigrationMatch(signals, tierFlags)).toBe(false);
+  });
+
+  // -- wantsRelocationPackage (SCORE-ONLY, never gates) ----------------------
+
+  test("wantsRelocationPackage:true + relocationPackage='no' still PASSES (score-only)", () => {
+    const tierFlags: ResolvedImmigration = { wantsRelocationPackage: true };
+    expect(
+      immigrationMatch(makeSignals({ relocationPackage: "no" }), tierFlags),
+    ).toBe(true);
+  });
+
+  test("wantsRelocationPackage:true + relocationPackage='yes' passes", () => {
+    const tierFlags: ResolvedImmigration = { wantsRelocationPackage: true };
+    expect(
+      immigrationMatch(makeSignals({ relocationPackage: "yes" }), tierFlags),
+    ).toBe(true);
+  });
+
+  test("wantsRelocationPackage:true + relocationPackage='unknown' passes", () => {
+    const tierFlags: ResolvedImmigration = { wantsRelocationPackage: true };
+    expect(
+      immigrationMatch(makeSignals({ relocationPackage: "unknown" }), tierFlags),
+    ).toBe(true);
+  });
+
+  // -- Combined flags ---------------------------------------------------------
+
+  test("all three flags true + all-unknown signals: lenient pass", () => {
+    const tierFlags: ResolvedImmigration = {
+      needsVisaSponsorship: true,
+      wantsRelocationPackage: true,
+      needsUnrestrictedWorkAuth: true,
+    };
+    expect(immigrationMatch(UNKNOWN_JOB_SIGNALS, tierFlags)).toBe(true);
+  });
+
+  test("all three flags true + all explicit affirmative signals: passes", () => {
+    const tierFlags: ResolvedImmigration = {
+      needsVisaSponsorship: true,
+      wantsRelocationPackage: true,
+      needsUnrestrictedWorkAuth: true,
+    };
+    const signals = makeSignals({
+      visaSponsorship: "yes",
+      relocationPackage: "yes",
+      workAuthRestriction: "none",
+    });
+    expect(immigrationMatch(signals, tierFlags)).toBe(true);
+  });
+
+  test("needsVisa + needsAuth combined: visa='no' fails even with auth='none'", () => {
+    const tierFlags: ResolvedImmigration = {
+      needsVisaSponsorship: true,
+      needsUnrestrictedWorkAuth: true,
+    };
+    const signals = makeSignals({
+      visaSponsorship: "no",
+      workAuthRestriction: "none",
+    });
+    expect(immigrationMatch(signals, tierFlags)).toBe(false);
+  });
+
+  test("needsVisa + needsAuth combined: visa='yes' fails with auth='citizens_only'", () => {
+    const tierFlags: ResolvedImmigration = {
+      needsVisaSponsorship: true,
+      needsUnrestrictedWorkAuth: true,
+    };
+    const signals = makeSignals({
+      visaSponsorship: "yes",
+      workAuthRestriction: "citizens_only",
+    });
+    expect(immigrationMatch(signals, tierFlags)).toBe(false);
   });
 });
 
@@ -446,5 +706,145 @@ describe("matchJobToTiers", () => {
 
     // Cache size should not increase on the second call for the same location
     expect(sizeAfterSecond).toBe(sizeAfterFirst);
+  });
+
+  // -- Defensive normalization of workplaceType ------------------------------
+
+  test("defensively normalizes non-canonical 'On-Site' input", () => {
+    // matchJobToTiers wraps workplaceType in normalizeWorkplaceType() so
+    // raw DB values or stray legacy rows still compare correctly against
+    // the canonical tier triple.
+    const tier = makeTier({
+      rank: 1,
+      workFormats: ["remote", "hybrid", "onsite"],
+      resolvedCountryCodes: new Set(["DE"]),
+    });
+    const result = matchJobToTiers("Berlin, Germany", "On-Site", [tier]);
+    expect(result.passes).toBe(true);
+    expect(result.matchedTier).toBe(1);
+  });
+
+  // -- Integration: Barcelona regression with immigration flags --------------
+
+  test("Barcelona regression: hybrid job with unknown signals passes full-triple tier", () => {
+    // Exact fixture from the original bug report: Barcelona hybrid job,
+    // tier wants remote|hybrid|onsite and prefers (but does not require)
+    // a relocation package. Unknown immigration signals -> lenient pass.
+    const tier = makeTier({
+      rank: 1,
+      workFormats: ["remote", "hybrid", "onsite"],
+      resolvedCountryCodes: new Set(["ES"]),
+      immigrationFlags: { wantsRelocationPackage: true },
+    });
+    const result = matchJobToTiers(
+      "Barcelona, Spain",
+      "hybrid",
+      [tier],
+      UNKNOWN_JOB_SIGNALS,
+    );
+    expect(result.passes).toBe(true);
+    expect(result.matchedTier).toBe(1);
+  });
+
+  test("Barcelona regression: same tier fails when job explicitly refuses sponsorship and tier requires it", () => {
+    const tier = makeTier({
+      rank: 1,
+      workFormats: ["remote", "hybrid", "onsite"],
+      resolvedCountryCodes: new Set(["ES"]),
+      immigrationFlags: {
+        needsVisaSponsorship: true,
+        wantsRelocationPackage: true,
+      },
+    });
+    const signals = makeSignals({ visaSponsorship: "no" });
+    const result = matchJobToTiers(
+      "Barcelona, Spain",
+      "hybrid",
+      [tier],
+      signals,
+    );
+    expect(result.passes).toBe(false);
+    expect(result.matchedTier).toBeNull();
+  });
+
+  test("matchJobToTiers without jobSignals argument (backward compat): treats as all-unknown", () => {
+    // Existing callers that pass only 3 arguments must continue to work
+    // and get lenient-unknown semantics.
+    const tier = makeTier({
+      rank: 1,
+      workFormats: ["remote", "hybrid", "onsite"],
+      resolvedCountryCodes: new Set(["ES"]),
+      immigrationFlags: { needsVisaSponsorship: true },
+    });
+    const result = matchJobToTiers("Barcelona, Spain", "hybrid", [tier]);
+    expect(result.passes).toBe(true);
+    expect(result.matchedTier).toBe(1);
+  });
+
+  test("multi-tier immigration fallback: tier 1 fails on visa, tier 2 (no flags) catches", () => {
+    // Tier 1 requires visa sponsorship, but the job says "no".
+    // Tier 2 has no immigration flags and the same geo scope -- the job
+    // should pass via tier 2.
+    const tier1 = makeTier({
+      rank: 1,
+      workFormats: ["remote", "hybrid", "onsite"],
+      resolvedCountryCodes: new Set(["ES"]),
+      immigrationFlags: { needsVisaSponsorship: true },
+    });
+    const tier2 = makeTier({
+      rank: 2,
+      workFormats: ["remote", "hybrid", "onsite"],
+      resolvedCountryCodes: new Set(["ES"]),
+      // No immigrationFlags -- no immigration constraint
+    });
+    const signals = makeSignals({
+      visaSponsorship: "no",
+      relocationPackage: "unknown",
+      workAuthRestriction: "unknown",
+    });
+    const result = matchJobToTiers(
+      "Barcelona, Spain",
+      "hybrid",
+      [tier1, tier2],
+      signals,
+    );
+    expect(result.passes).toBe(true);
+    expect(result.matchedTier).toBe(2);
+  });
+
+  test("immigration work-auth restriction fails tier even when geo+format match", () => {
+    const tier = makeTier({
+      rank: 1,
+      workFormats: ["remote", "hybrid", "onsite"],
+      resolvedCountryCodes: new Set(["ES"]),
+      immigrationFlags: { needsUnrestrictedWorkAuth: true },
+    });
+    const signals = makeSignals({ workAuthRestriction: "citizens_only" });
+    const result = matchJobToTiers(
+      "Barcelona, Spain",
+      "hybrid",
+      [tier],
+      signals,
+    );
+    expect(result.passes).toBe(false);
+    expect(result.matchedTier).toBeNull();
+  });
+
+  test("immigration work-auth 'residents_only' also fails tier requiring unrestricted auth", () => {
+    const tier = makeTier({
+      rank: 1,
+      workFormats: ["remote", "hybrid", "onsite"],
+      resolvedCountryCodes: new Set(["ES"]),
+      immigrationFlags: { needsUnrestrictedWorkAuth: true },
+    });
+    const signals = makeSignals({ workAuthRestriction: "residents_only" });
+    const result = matchJobToTiers(
+      "Barcelona, Spain",
+      "hybrid",
+      [tier],
+      signals,
+    );
+    expect(result.passes).toBe(false);
+    expect(result.matchedTier).toBeNull();
   });
 });

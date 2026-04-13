@@ -15,6 +15,9 @@ import type { PreferenceCollectionLlm } from "@/lib/llm/preference-llm";
 /** Sentinel value sent by the Skip button in the UI. */
 const SKIP_SENTINEL = "__SKIP__";
 
+/** Max clarification follow-ups per step before force-accepting the extraction. */
+const MAX_CLARIFICATIONS = 2;
+
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export interface EngineMessage {
@@ -156,7 +159,10 @@ export async function processMessage(
   });
 
   // 4. If clarification needed, ask follow-up and don't advance
-  if (extraction.clarificationNeeded) {
+  //    Safety valve: after MAX_CLARIFICATIONS on the same step, force-accept
+  //    whatever was extracted to avoid frustrating the user.
+  const clarCount = newState.stepClarificationCount ?? 0;
+  if (extraction.clarificationNeeded && clarCount < MAX_CLARIFICATIONS) {
     const clarification =
       typeof extraction.clarificationQuestion === "string" &&
       extraction.clarificationQuestion.length > 0
@@ -170,7 +176,10 @@ export async function processMessage(
     messages.push({ role: "assistant", content: clarification });
 
     return {
-      updatedState: newState,
+      updatedState: {
+        ...newState,
+        stepClarificationCount: clarCount + 1,
+      },
       assistantMessage: clarification,
       structuredControls: getStructuredControls(currentStep),
       messages,

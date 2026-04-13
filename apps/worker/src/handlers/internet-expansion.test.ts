@@ -41,6 +41,9 @@ vi.mock("@gjs/db/schema", () => ({
     departmentRaw: Symbol("jobs.departmentRaw"),
     locationRaw: Symbol("jobs.locationRaw"),
     workplaceType: Symbol("jobs.workplaceType"),
+    visaSponsorship: Symbol("jobs.visaSponsorship"),
+    relocationPackage: Symbol("jobs.relocationPackage"),
+    workAuthRestriction: Symbol("jobs.workAuthRestriction"),
   },
   jobMatches: {
     jobId: Symbol("jobMatches.jobId"),
@@ -391,8 +394,8 @@ describe("createInternetExpansionHandler", () => {
 
     const companyRow = makeCompanyRow();
     const jobRows = [
-      { id: "job-1", descriptionHash: "hash-1", title: "Software Engineer", departmentRaw: "Engineering", locationRaw: "Remote", workplaceType: "remote" },
-      { id: "job-2", descriptionHash: "hash-2", title: "Backend Engineer", departmentRaw: "Engineering", locationRaw: "NYC", workplaceType: "onsite" },
+      { id: "job-1", descriptionHash: "hash-1", title: "Software Engineer", department: "Engineering", location: "Remote", workplaceType: "remote", visaSponsorship: "unknown", relocationPackage: "unknown", workAuthRestriction: "unknown" },
+      { id: "job-2", descriptionHash: "hash-2", title: "Backend Engineer", department: "Engineering", location: "NYC", workplaceType: "onsite", visaSponsorship: "unknown", relocationPackage: "unknown", workAuthRestriction: "unknown" },
     ];
     // select 1: preferences, select 2: existing companies (empty),
     // select 3: user profile, select 4: role families,
@@ -2034,7 +2037,7 @@ describe("createInternetExpansionHandler", () => {
 
       const companyRow = makeCompanyRow();
       const jobRows = [
-        { id: "job-1", descriptionHash: "hash-1", title: "Software Engineer", departmentRaw: "Engineering", locationRaw: "London, UK", workplaceType: "onsite" },
+        { id: "job-1", descriptionHash: "hash-1", title: "Software Engineer", department: "Engineering", location: "London, UK", workplaceType: "onsite", visaSponsorship: "unknown", relocationPackage: "unknown", workAuthRestriction: "unknown" },
       ];
 
       const { db } = createMockDb(
@@ -2049,6 +2052,73 @@ describe("createInternetExpansionHandler", () => {
       ]);
 
       expect(boss.send).not.toHaveBeenCalled();
+    });
+
+    test("visa-rejection: job with visaSponsorship='no' not enqueued when tier needs sponsorship", async () => {
+      // Scenario 9: immigration-based rejection path.
+      // A job with concrete immigration signals (visaSponsorship: "no") should
+      // not be enqueued for scoring when the profile's tiers require visa sponsorship.
+      setupHappyPath();
+      const profile = makeProfileRow({
+        locationPreferences: {
+          tiers: [{
+            rank: 1,
+            workFormats: ["remote", "hybrid", "onsite"],
+            immigrationFlags: { needsVisaSponsorship: true },
+            scope: { type: "countries", include: ["ES"] },
+          }],
+        },
+      });
+      mockResolveAllTiers.mockReturnValue([{
+        rank: 1,
+        resolvedCountryCodes: new Set(["ES"]),
+        workFormats: ["remote", "hybrid", "onsite"],
+        immigrationFlags: { needsVisaSponsorship: true },
+      }]);
+      // The matcher rejects because visa sponsorship is "no"
+      mockMatchJobToTiers.mockReturnValue({ passes: false, matchedTier: null });
+
+      const companyRow = makeCompanyRow();
+      const jobRows = [
+        {
+          id: "job-visa-no",
+          descriptionHash: "hash-visa",
+          title: "Senior Automation Engineer",
+          department: "Engineering",
+          location: "Barcelona, Spain",
+          workplaceType: "hybrid",
+          visaSponsorship: "no",
+          relocationPackage: "unknown",
+          workAuthRestriction: "unknown",
+        },
+      ];
+
+      const { db } = createMockDb(
+        [[makePrefsRow()], [], [profile], [makeRoleFamilyRow()], jobRows, []],
+        [[companyRow]],
+      );
+      const boss = createMockBoss();
+
+      const handler = createInternetExpansionHandler(db, boss);
+      await handler([
+        makeBatchJob({ userId: "user-1", userProfileId: "profile-1" }),
+      ]);
+
+      // Job was NOT enqueued for scoring
+      expect(boss.send).not.toHaveBeenCalled();
+
+      // Verify the immigration signal values from the job row were passed
+      // to matchJobToTiers as the fourth argument
+      expect(mockMatchJobToTiers).toHaveBeenCalledWith(
+        "Barcelona, Spain",
+        "hybrid",
+        expect.any(Array),
+        {
+          visaSponsorship: "no",
+          relocationPackage: "unknown",
+          workAuthRestriction: "unknown",
+        },
+      );
     });
 
     test("job with existing fresh score (same content hash) -- skipped, not re-scored", async () => {

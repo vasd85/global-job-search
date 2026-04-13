@@ -189,6 +189,27 @@ describe("buildExtractionPrompt: location guidance", () => {
     expect(prompt).not.toContain("decompose");
     expect(prompt).not.toContain("ranked tiers");
   });
+
+  test("regression: 'relocation' is explicitly banned from workFormats", () => {
+    // Barcelona bug root cause: the chatbot LLM generated
+    // workFormats: ["relocation", "remote"] which broke the matcher.
+    // The guidance must explicitly tell the LLM that "relocation" is
+    // NOT a valid work format so this never recurs.
+    const step = getStep("location");
+    const { prompt } = buildExtractionPrompt("relocate to NYC", step, {});
+
+    // (a) The prompt explicitly states "relocation" is NOT a valid work format.
+    // The text spans two lines in the template literal, so match the substring
+    // that appears on one line.
+    expect(prompt).toContain('"relocation" is NOT a valid');
+    expect(prompt).toContain("work format and must NEVER appear in workFormats");
+
+    // (b) The only valid workFormats values are remote, hybrid, onsite
+    expect(prompt).toContain('"remote", "hybrid", "onsite"');
+
+    // (c) Relocation intent is redirected to immigrationFlags.wantsRelocationPackage
+    expect(prompt).toContain("immigrationFlags.wantsRelocationPackage");
+  });
 });
 
 // ─── formatDraftContext: locationPreferences rendering ──────────────────────
@@ -219,7 +240,8 @@ describe("formatDraftContext: locationPreferences", () => {
         tiers: [
           {
             rank: 1,
-            workFormats: ["relocation"],
+            workFormats: ["onsite"],
+            immigrationFlags: { wantsRelocationPackage: true },
             scope: { type: "cities", include: ["NYC"] },
           },
           {
@@ -229,7 +251,8 @@ describe("formatDraftContext: locationPreferences", () => {
           },
           {
             rank: 2,
-            workFormats: ["relocation"],
+            workFormats: ["remote", "hybrid", "onsite"],
+            immigrationFlags: { wantsRelocationPackage: true },
             scope: { type: "any", include: [] },
           },
         ],
@@ -306,7 +329,8 @@ describe("formatLocationTier behavior (via formatDraftContext)", () => {
         tiers: [
           {
             rank: 1,
-            workFormats: ["relocation"],
+            workFormats: ["onsite"],
+            immigrationFlags: { wantsRelocationPackage: true },
             scope: { type: "countries", include: ["USA"] },
           },
         ],
@@ -338,7 +362,8 @@ describe("formatLocationTier behavior (via formatDraftContext)", () => {
         tiers: [
           {
             rank: 1,
-            workFormats: ["relocation"],
+            workFormats: ["remote", "hybrid", "onsite"],
+            immigrationFlags: { wantsRelocationPackage: true },
             scope: { type: "any", include: [] },
             qualitativeConstraint: "good tech scene",
           },

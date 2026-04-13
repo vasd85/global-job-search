@@ -3,9 +3,9 @@ const MAX_DESCRIPTION_CHARS = 4000;
 interface JobData {
   title: string;
   descriptionText: string | null;
-  locationRaw: string | null;
+  location: string | null;
   workplaceType: string | null;
-  salaryRaw: string | null;
+  salary: string | null;
   url: string;
 }
 
@@ -92,7 +92,45 @@ const SYSTEM_PROMPT = `You are a job matching evaluator. Score a job posting aga
 - If the job requires any of the candidate's growth skills, set hasGrowthSkillMatch to true.
 - Provide 1-2 sentence matchReason summarizing the overall fit.
 - Include up to 5 short evidenceQuotes from the job description that support your scoring.
-- If the description is missing or minimal, score based on available information (title, location, salary) and note the limitation in matchReason.`;
+- If the description is missing or minimal, score based on available information (title, location, salary) and note the limitation in matchReason.
+
+## Signal Extraction
+
+In addition to the dimension scores above, extract the following structured signals from the job description into the \`extractedSignals\` field. These signals are persisted per-job and reused for filtering future users without re-invoking the LLM, so accuracy matters even when the field does not affect the current candidate's score.
+
+CRITICAL RULES:
+- Silence is NOT a "no" answer. If the description does not clearly address a question, emit \`"unknown"\` (for enums) or \`null\` / \`[]\` (for optional fields). Do not guess from "vibes".
+- Only emit \`"yes"\` / \`"no"\` / a concrete value when the text contains explicit supporting language.
+- Extract from the job description and any "requirements" / "qualifications" / "perks" / "benefits" sections. Do not hallucinate from company-level knowledge.
+- Evidence for any non-default value should already appear in your \`evidenceQuotes\` for traceability.
+
+Fields and their rules:
+
+- \`visaSponsorship\`:
+  - \`"yes"\` if the description explicitly offers visa sponsorship, mentions H1B, blue card, skilled worker visa, or "we sponsor work visas".
+  - \`"no"\` if the description says "no sponsorship", "unable to sponsor", "must have existing work authorization", "cannot sponsor at this time".
+  - Otherwise \`"unknown"\`.
+
+- \`relocationPackage\`:
+  - \`"yes"\` if the description explicitly offers relocation assistance, relocation package, paid relocation, housing allowance, moving expenses, or temporary housing.
+  - \`"no"\` if the description explicitly says no relocation support.
+  - Otherwise \`"unknown"\`.
+
+- \`workAuthRestriction\`:
+  - \`"citizens_only"\` for "must be a US citizen", "UK nationals only", citizenship-specific requirements (often tied to clearance or regulation).
+  - \`"residents_only"\` for "must have existing US work authorization", "must be authorized to work for any US employer without sponsorship", "must hold a valid residence permit" — the candidate needs their own permit, the employer will not help.
+  - \`"region_only"\` for broader regional bundles: "EU citizens or residents", "EEA nationals", "NATO nationals", "North American candidates only", "UK and Ireland".
+  - \`"none"\` if the description does not restrict.
+  - \`"unknown"\` if there is no statement either way.
+  - Note: \`"residents_only"\` and \`"citizens_only"\` are mutually exclusive with \`"yes"\` on \`visaSponsorship\` (you cannot simultaneously sponsor a visa AND require existing authorization). If the description is ambiguous, lean to \`"unknown"\`.
+
+- \`languageRequirements\`: array of language tags from explicit requirements only. "Native English" → \`["en"]\`. "Fluent German" → \`["de"]\`. "English and German required" → \`["en","de"]\`. Silence → \`[]\`. BCP-47 tags preferred; you may include proficiency suffix when explicit (e.g. \`"en-native"\`, \`"de-b2"\`).
+
+- \`travelPercent\`: integer 0-100 if the description states "X% travel" or similar. \`null\` if silence. A vague statement like "some travel expected" without a percentage → \`null\`.
+
+- \`securityClearance\`: free-text string of the explicit clearance name, or \`null\`. Examples: \`"US Secret"\`, \`"UK SC"\`, \`"TS/SCI"\`, \`"NATO Cosmic"\`. Silence → \`null\`.
+
+- \`shiftPattern\`: free-text if the description mentions shifts, on-call, night work, or 24/7 operations. Examples: \`"rotating on-call"\`, \`"overnight shift"\`, \`"24/7 ops"\`. Silence → \`null\`.`;
 
 /**
  * Build the system and user prompts for RSLCD job scoring.
@@ -104,9 +142,9 @@ export function buildScoringPrompt(params: ScoringPromptParams): { system: strin
 Title: ${job.title}
 Company: ${company.name}
 Company Industries: ${joinOrDefault(company.industry)}
-Location: ${job.locationRaw ?? "Not specified"}
+Location: ${job.location ?? "Not specified"}
 Work Format: ${job.workplaceType ?? "Not specified"}
-Salary: ${job.salaryRaw ?? "Not specified"}
+Salary: ${job.salary ?? "Not specified"}
 URL: ${job.url}
 
 ### Description

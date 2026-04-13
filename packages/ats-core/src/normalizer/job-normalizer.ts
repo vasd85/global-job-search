@@ -3,6 +3,11 @@ import { sha1 } from "../utils/hash";
 import { htmlToText, normalizeText } from "../utils/job-text";
 import { normalizeUrl } from "../utils/url";
 import type { BuildJobArgs } from "../extractors/extractor-types";
+import { normalizeWorkplaceType } from "../geo/match-location";
+import {
+  normalizeEmploymentType,
+  normalizePostedDate,
+} from "./field-normalizers";
 
 const GENERIC_TITLE_REGEX =
   /^(details|view details|learn more|read more|apply now(?: for this position)?|click here|open roles?|view jobs?|job openings?|jobs?|careers?)$/i;
@@ -53,8 +58,15 @@ export function buildJob(args: BuildJobArgs): AllJob | null {
   const jobUid = sha1(canonicalUrl);
   const jobId = cleanText(args.raw.jobIdHint) ?? jobUid.slice(0, 12);
   const descriptionText = mergeDescriptionText(args.raw);
-  const salaryRaw = cleanText(args.raw.salaryRaw);
-  const workplaceType = cleanText(args.raw.workplaceType);
+  const salary = cleanText(args.raw.salaryRaw);
+  const workplaceType = normalizeWorkplaceType(cleanText(args.raw.workplaceType));
+  const employmentType = normalizeEmploymentType(
+    cleanText(args.raw.employmentTypeRaw),
+  );
+  const postedAt = normalizePostedDate(
+    cleanText(args.raw.postedDateRaw),
+    args.pollTimestamp ?? new Date(),
+  );
   const applyUrl = normalizeUrl(args.raw.applyUrl ?? "", args.baseUrl);
   const sourceDetailUrl = normalizeUrl(args.raw.sourceDetailUrl ?? "", args.baseUrl);
   const sourceJobRaw = args.raw.sourceJobRaw ?? null;
@@ -67,12 +79,12 @@ export function buildJob(args: BuildJobArgs): AllJob | null {
     title,
     url: normalizedUrl,
     canonical_url: canonicalUrl,
-    location_raw: cleanText(args.raw.locationRaw),
-    department_raw: cleanText(args.raw.departmentRaw),
-    posted_date_raw: cleanText(args.raw.postedDateRaw),
-    employment_type_raw: cleanText(args.raw.employmentTypeRaw),
+    location: cleanText(args.raw.locationRaw),
+    department: cleanText(args.raw.departmentRaw),
+    posted_at: postedAt,
+    employment_type: employmentType,
     ...(descriptionText !== null ? { description_text: descriptionText } : {}),
-    ...(salaryRaw !== null ? { salary_raw: salaryRaw } : {}),
+    ...(salary !== null ? { salary } : {}),
     ...(workplaceType !== null ? { workplace_type: workplaceType } : {}),
     ...(applyUrl !== null ? { apply_url: applyUrl } : {}),
     ...(sourceDetailUrl !== null ? { source_detail_url: sourceDetailUrl } : {}),

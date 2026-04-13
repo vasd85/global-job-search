@@ -1,19 +1,28 @@
 import type {
   LocationPreferenceTier,
-  LocationPreferences,
   RemotePreference,
 } from "@/lib/chatbot/schemas";
 
-/** Derive a flat RemotePreference enum from location preference tiers. */
+/**
+ * Derive a flat RemotePreference enum from location preference tiers.
+ *
+ * The flat enum is denormalized onto `user_profile.remote_preference` so the
+ * L1 SQL pre-filter and the LLM scoring prompt can read it without parsing
+ * the JSONB tier blob.
+ *
+ * Note: with `relocation` removed from `TierWorkFormat`, the only inputs are
+ * subsets of {remote, hybrid, onsite}.
+ */
 export function deriveRemotePreference(
   tiers: LocationPreferenceTier[],
 ): RemotePreference {
   const allFormats = new Set(tiers.flatMap((t) => t.workFormats));
+  if (allFormats.size === 0) return "any";
+  // Priority: remote_only (remote alone) > onsite_ok (onsite without remote)
+  // > hybrid_ok (hybrid without onsite) > any (everything else / mixed)
   if (allFormats.size === 1 && allFormats.has("remote")) return "remote_only";
-  if (allFormats.has("remote") && allFormats.has("onsite")) return "any";
-  if (allFormats.has("remote") && allFormats.has("hybrid")) return "hybrid_ok";
-  if (allFormats.has("onsite") || allFormats.has("relocation"))
-    return "onsite_ok";
+  if (allFormats.has("onsite") && !allFormats.has("remote")) return "onsite_ok";
+  if (allFormats.has("hybrid") && !allFormats.has("onsite")) return "hybrid_ok";
   return "any";
 }
 
@@ -28,34 +37,4 @@ export function derivePreferredLocations(
     }
   }
   return Array.from(locations);
-}
-
-/**
- * Convert legacy flat location data to the tier model.
- * Used for in-progress conversations that have old-shape drafts.
- */
-export function legacyToTiers(
-  locations: string[],
-  remotePref: string,
-): LocationPreferences {
-  const workFormats: LocationPreferenceTier["workFormats"] =
-    remotePref === "remote_only"
-      ? ["remote"]
-      : remotePref === "hybrid_ok"
-        ? ["remote", "hybrid"]
-        : remotePref === "onsite_ok"
-          ? ["onsite", "relocation"]
-          : ["remote", "hybrid", "onsite", "relocation"];
-  return {
-    tiers: [
-      {
-        rank: 1,
-        workFormats,
-        scope: {
-          type: locations.length > 0 ? "countries" : "any",
-          include: locations,
-        },
-      },
-    ],
-  };
 }

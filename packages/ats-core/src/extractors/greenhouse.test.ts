@@ -163,9 +163,9 @@ describe("extractFromGreenhouse", () => {
     expect(job.title).toBe("Senior Software Engineer");
     expect(job.url).toBe("https://boards.greenhouse.io/acmecorp/jobs/4012345");
     expect(job.job_id).toBe("4012345");
-    expect(job.location_raw).toBe("San Francisco, CA");
-    expect(job.department_raw).toBe("Engineering, Platform");
-    expect(job.posted_date_raw).toBe("2025-11-01T12:00:00Z");
+    expect(job.location).toBe("San Francisco, CA");
+    expect(job.department).toBe("Engineering, Platform");
+    expect(job.posted_at).toEqual(new Date("2025-11-01T12:00:00Z"));
     expect(job.source_type).toBe("ats_api");
     expect(job.source_ref).toBe("greenhouse");
     expect(job.detail_fetch_status).toBe("ok");
@@ -179,6 +179,13 @@ describe("extractFromGreenhouse", () => {
     expect(job.url).toBe("https://boards.greenhouse.io/acmecorp/jobs/4012345");
     expect(job.apply_url).toBe("https://boards.greenhouse.io/acmecorp/jobs/4012345");
     expect(job.source_detail_url).toBe("https://boards.greenhouse.io/acmecorp/jobs/4012345");
+  });
+
+  test("source_job_raw is the full Greenhouse job payload", async () => {
+    const ghJob = makeGreenhouseJob({ id: 4012345 });
+    mockSuccessResponse([ghJob]);
+    const result = await extractFromGreenhouse(makeContext());
+    expect(result.jobs[0].source_job_raw).toEqual(ghJob);
   });
 
   test("extracts multiple jobs from a single API response", async () => {
@@ -198,13 +205,13 @@ describe("extractFromGreenhouse", () => {
 
   describe("field fallback chains", () => {
     test.each([
-      ["first_published present", {}, "2025-11-01T12:00:00Z"],
-      ["first_published absent, falls back to updated_at", { first_published: undefined }, "2025-12-15T12:30:00Z"],
+      ["first_published present", {}, new Date("2025-11-01T12:00:00Z")],
+      ["first_published absent, falls back to updated_at", { first_published: undefined }, new Date("2025-12-15T12:30:00Z")],
       ["both absent", { first_published: undefined, updated_at: undefined }, null],
-    ])("posted_date_raw: %s", async (_label, overrides, expected) => {
+    ] as Array<[string, Record<string, unknown>, Date | null]>)("posted_at: %s", async (_label, overrides, expected) => {
       mockSuccessResponse([makeGreenhouseJob(overrides)]);
       const result = await extractFromGreenhouse(makeContext());
-      expect(result.jobs[0].posted_date_raw).toBe(expected);
+      expect(result.jobs[0].posted_at).toEqual(expected);
     });
 
     test.each([
@@ -212,20 +219,20 @@ describe("extractFromGreenhouse", () => {
       ["null location name", { location: { name: undefined } }, null],
       ["missing location object", { location: undefined }, null],
       ["empty location name", { location: { name: "" } }, null],
-    ])("location_raw: %s", async (_label, overrides, expected) => {
+    ])("location: %s", async (_label, overrides, expected) => {
       mockSuccessResponse([makeGreenhouseJob(overrides)]);
       const result = await extractFromGreenhouse(makeContext());
-      expect(result.jobs[0].location_raw).toBe(expected);
+      expect(result.jobs[0].location).toBe(expected);
     });
 
     test.each([
       ["multiple departments joined", { departments: [{ name: "Engineering" }, { name: "Infrastructure" }, { name: "SRE" }] }, "Engineering, Infrastructure, SRE"],
       ["filters out falsy department names", { departments: [{ name: "Engineering" }, { name: undefined }, { name: "" }, { name: "DevOps" }] }, "Engineering, DevOps"],
       ["both departments and offices missing", { departments: undefined, offices: undefined }, null],
-    ])("department_raw: %s", async (_label, overrides, expected) => {
+    ])("department: %s", async (_label, overrides, expected) => {
       mockSuccessResponse([makeGreenhouseJob(overrides)]);
       const result = await extractFromGreenhouse(makeContext());
-      expect(result.jobs[0].department_raw).toBe(expected);
+      expect(result.jobs[0].department).toBe(expected);
     });
 
     // TODO: The current implementation uses `??` (nullish coalescing) between
@@ -240,7 +247,7 @@ describe("extractFromGreenhouse", () => {
         offices: [{ name: "Berlin" }, { name: "London" }],
       })]);
       const result = await extractFromGreenhouse(makeContext());
-      expect(result.jobs[0].department_raw).toBeNull();
+      expect(result.jobs[0].department).toBeNull();
     });
 
     test.each([
@@ -291,8 +298,8 @@ describe("extractFromGreenhouse", () => {
     expect(result.errors).toEqual([]);
     expect(result.jobs).toHaveLength(1);
     expect(result.jobs[0].title).toBe("QA Analyst");
-    expect(result.jobs[0].location_raw).toBeNull();
-    expect(result.jobs[0].department_raw).toBeNull();
-    expect(result.jobs[0].posted_date_raw).toBeNull();
+    expect(result.jobs[0].location).toBeNull();
+    expect(result.jobs[0].department).toBeNull();
+    expect(result.jobs[0].posted_at).toBeNull();
   });
 });

@@ -29,6 +29,7 @@ import {
   type RoleFamilyDef,
   type ResolvedTierGeo,
 } from "@gjs/ats-core";
+import type { JobImmigrationSignals } from "@gjs/ats-core/geo";
 
 import { decryptUserKey } from "../lib/decrypt-user-key";
 import { getAppConfigValue } from "../lib/app-config";
@@ -632,11 +633,11 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
                       `[expand] Re-poll failed for ${disc.name}: ${msg}`,
                     );
                   }
-                } else if (detectedVendor === "smartrecruiters") {
-                  // SmartRecruiters with 0 jobs + no other vendor found:
-                  // almost certainly an abandoned page. Downgrade to unknown.
+                } else {
+                  // URL-detected vendor with 0 jobs + no other vendor found:
+                  // abandoned page or wrong slug. Downgrade to unknown.
                   console.info(
-                    `[expand] Downgrading ${disc.name} from smartrecruiters to unknown (0 jobs, no alt vendor)`,
+                    `[expand] Downgrading ${disc.name} from ${detectedVendor} to unknown (0 jobs, no alt vendor)`,
                   );
 
                   atsSearchLog.steps = searchSteps;
@@ -682,9 +683,12 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
                     id: jobs.id,
                     descriptionHash: jobs.descriptionHash,
                     title: jobs.title,
-                    departmentRaw: jobs.departmentRaw,
-                    locationRaw: jobs.locationRaw,
+                    department: jobs.department,
+                    location: jobs.location,
                     workplaceType: jobs.workplaceType,
+                    visaSponsorship: jobs.visaSponsorship,
+                    relocationPackage: jobs.relocationPackage,
+                    workAuthRestriction: jobs.workAuthRestriction,
                   })
                   .from(jobs)
                   .where(eq(jobs.companyId, companyId));
@@ -722,8 +726,8 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
                     debug("expand:l2", "Evaluating job", {
                       jobId: job.id,
                       title: job.title,
-                      departmentRaw: job.departmentRaw,
-                      locationRaw: job.locationRaw,
+                      department: job.department,
+                      location: job.location,
                       workplaceType: job.workplaceType,
                     });
 
@@ -731,7 +735,7 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
                     if (matchedFamilies.length > 0) {
                       const classified = classifyJobMulti(matchedFamilies, {
                         title: job.title,
-                        departmentRaw: job.departmentRaw,
+                        departmentRaw: job.department,
                       });
                       debug("expand:l2", "Classification result", {
                         jobId: job.id,
@@ -774,10 +778,17 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
 
                     // Level 2 filter: location matching
                     if (resolvedTiers.length > 0) {
+                      // Safe casts: these columns are NOT NULL DEFAULT 'unknown' in the schema.
+                      const jobSignals: JobImmigrationSignals = {
+                        visaSponsorship: job.visaSponsorship as JobImmigrationSignals["visaSponsorship"],
+                        relocationPackage: job.relocationPackage as JobImmigrationSignals["relocationPackage"],
+                        workAuthRestriction: job.workAuthRestriction as JobImmigrationSignals["workAuthRestriction"],
+                      };
                       const locationResult = matchJobToTiers(
-                        job.locationRaw,
+                        job.location,
                         job.workplaceType,
                         resolvedTiers,
+                        jobSignals,
                       );
                       if (!locationResult.passes) {
                         debug(
@@ -786,7 +797,7 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
                           {
                             jobId: job.id,
                             title: job.title,
-                            locationRaw: job.locationRaw,
+                            location: job.location,
                             workplaceType: job.workplaceType,
                           },
                         );

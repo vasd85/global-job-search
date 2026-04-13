@@ -9,6 +9,9 @@ Your ONLY job is to parse the user's free-text input into structured fields for 
 Rules:
 - Extract ONLY what the user explicitly stated. NEVER invent, assume, or hallucinate values.
 - If the user's input is ambiguous or unclear, set clarificationNeeded to true and provide a clarificationQuestion.
+- If the user signals they have said enough ("that's all", "enough", "I already answered",
+  "I've given enough", or equivalent in any language), set clarificationNeeded to false
+  and extract whatever was provided. Do NOT ask follow-ups when the user pushes back.
 - If the user provides partial information, extract what you can and set confidence accordingly.
 - Normalize values to clean, consistent formats (e.g., capitalize city names, standardize skill names).
 - For arrays, split comma-separated or listed items into individual array elements.
@@ -129,29 +132,96 @@ function getStepDescription(step: ConversationStep): string {
 }
 
 const LOCATION_EXTRACTION_GUIDANCE = `
-For the "location" step, decompose the user's preferences into ranked tiers:
-- Each tier has a rank (1 = most preferred), work formats, and a geographic scope.
+For the "location" step, decompose the user's preferences into ranked tiers.
+
+GENERAL TIER STRUCTURE
+- Each tier has a rank (1 = most preferred), an array of work formats, an
+  optional immigrationFlags object, and a geographic scope.
 - Scope types: "countries" (specific countries), "regions" (broad like EU, Asia),
-  "timezones" (timezone-range based), "cities" (specific cities), "any" (anywhere
-  with optional qualitative constraints).
+  "timezones" (timezone-range based), "cities" (specific cities), "any"
+  (anywhere with optional qualitative constraints).
 - If the user mentions exclusions ("EU except Cyprus"), put them in scope.exclude.
-- If the user mentions qualitative criteria ("countries with good living standards"),
-  put them in qualitativeConstraint.
+- If the user mentions qualitative criteria ("countries with good living
+  standards"), put them in qualitativeConstraint.
 - Preserve the user's prioritization order as rank values.
-- If the user doesn't specify explicit priority, assign rank 1 to all (equal preference).
+- If the user doesn't specify explicit priority, assign rank 1 to all (equal
+  preference).
 - Split different scope types at the same priority into separate tiers
   (e.g., "USA, Canada, EU except Cyprus" -> two tiers at rank 1: one for
   countries [USA, Canada], one for regions [EU] with exclude [Cyprus]).
+- Do NOT split a single preference into separate tiers by work format.
+  If the user says "relocation or remote in X", that is ONE tier per
+  scope type with workFormats: ["remote","hybrid","onsite"] and
+  immigrationFlags: { wantsRelocationPackage: true }. The "relocation"
+  intent and the "remote" intent combine into one tier, not two.
 
-Example: "I'd love to relocate to NYC or London, would also consider remote anywhere in the EU, and as a last resort I'd relocate anywhere with good tech scene."
-Result tiers:
-  Tier rank 1: workFormats=["relocation"], scope type="cities", include=["NYC", "London"]
-  Tier rank 2: workFormats=["remote"], scope type="regions", include=["EU"]
-  Tier rank 3: workFormats=["relocation"], scope type="any", include=[], qualitativeConstraint="good tech scene"
+WORK FORMATS (workFormats)
+- workFormats may ONLY contain values from this set:
+  "remote", "hybrid", "onsite". The string "relocation" is NOT a valid
+  work format and must NEVER appear in workFormats.
+- "remote", "remotely" -> workFormats: ["remote"]
+- "hybrid" -> workFormats: ["hybrid"]
+- "on-site", "onsite", "in office" -> workFormats: ["onsite"]
+- If the user mentions willingness to relocate, the relocation intent goes
+  in immigrationFlags.wantsRelocationPackage (see below). The workFormats
+  array still describes which physical formats they accept — usually all
+  three when they say "I'd relocate", unless they restrict it themselves
+  ("I'd relocate but only for a hybrid role" -> workFormats: ["hybrid"]).
 
-Example: "Remote, anywhere"
+IMMIGRATION FLAGS (immigrationFlags)
+- An optional object with three optional boolean fields. Set a flag ONLY
+  when the user explicitly mentions the underlying concept. Silence is NOT
+  a preference.
+  - needsVisaSponsorship: true when the user says they need the employer to
+    sponsor a visa or work permit ("visa sponsorship", "H1B", "sponsored visa",
+    "need visa", "work permit needed").
+  - wantsRelocationPackage: true when the user mentions willingness to
+    relocate, moving for the role, or wanting a relocation/housing package
+    ("relocate", "willing to move", "I'll move", "relocation package",
+    "relocation support"). This is SCORE-ONLY and never filters jobs out.
+  - needsUnrestrictedWorkAuth: true when the user is not a local citizen of
+    the target region and the job must NOT restrict to "locals only" /
+    "citizens only" / "must have right to work in [country]" ("I'm not an
+    EU citizen", "I don't have the right to work in the US").
+
+DO NOT INTERPRET SILENCE
+- Do NOT set needsVisaSponsorship: true unless the user explicitly mentioned
+  visa, sponsorship, or work permit.
+- Do NOT set wantsRelocationPackage: true unless they mentioned relocation
+  or willingness to move.
+- Do NOT set needsUnrestrictedWorkAuth: true unless they explicitly stated
+  they are not local to the target region or that they need the employer to
+  not require local citizenship.
+
+WORKED EXAMPLES
+
+Example 1: "I'd love to relocate to NYC or London, would also consider remote
+anywhere in the EU, and as a last resort I'd relocate anywhere with a good
+tech scene."
 Result tiers:
-  Tier rank 1: workFormats=["remote"], scope type="any", include=[]
+  Tier rank 1: workFormats=["remote","hybrid","onsite"],
+               immigrationFlags={ wantsRelocationPackage: true },
+               scope type="cities", include=["NYC", "London"]
+  Tier rank 2: workFormats=["remote"],
+               scope type="regions", include=["EU"]
+  Tier rank 3: workFormats=["remote","hybrid","onsite"],
+               immigrationFlags={ wantsRelocationPackage: true },
+               scope type="any", include=[],
+               qualitativeConstraint="good tech scene"
+
+Example 2: "Remote only, anywhere with English-speaking team."
+Result tiers:
+  Tier rank 1: workFormats=["remote"],
+               scope type="any", include=[],
+               qualitativeConstraint="English-speaking team"
+
+Example 3: "Berlin or Amsterdam, hybrid preferred. I need visa sponsorship
+since I'm not an EU citizen."
+Result tiers:
+  Tier rank 1: workFormats=["hybrid"],
+               immigrationFlags={ needsVisaSponsorship: true,
+                                  needsUnrestrictedWorkAuth: true },
+               scope type="cities", include=["Berlin", "Amsterdam"]
 `;
 
 /** Build the prompt for extracting structured data from user free-text input. */

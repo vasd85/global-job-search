@@ -16,7 +16,6 @@ import {
 import {
   deriveRemotePreference,
   derivePreferredLocations,
-  legacyToTiers,
 } from "@/lib/chatbot/location-utils";
 import type { LocationPreferences } from "@/lib/chatbot/schemas";
 
@@ -61,23 +60,21 @@ export async function POST(request: Request) {
     const draft = state.draft;
     const now = new Date();
 
-    // Resolve location preferences: use new tiers or convert legacy flat data
+    // Resolve location preferences from the chatbot tier extractor.
+    // Legacy flat fields (`preferredLocations`, `remotePreference`) are no
+    // longer accepted as input; the chatbot always emits tier data.
     const locationPrefs: LocationPreferences | null =
-      draft.locationPreferences ??
-      (draft.preferredLocations
-        ? legacyToTiers(
-            draft.preferredLocations,
-            draft.remotePreference ?? "any",
-          )
-        : null);
+      draft.locationPreferences ?? null;
 
-    // Derive flat columns from tiers for backward compatibility
+    // Derive flat columns from tiers. These denormalized fields are still
+    // read by the L1 SQL pre-filter and the LLM scoring prompt, so we keep
+    // populating them — but only from the canonical tier source of truth.
     const derivedLocations = locationPrefs
       ? derivePreferredLocations(locationPrefs.tiers)
-      : (draft.preferredLocations ?? []);
+      : [];
     const derivedRemotePref = locationPrefs
       ? deriveRemotePreference(locationPrefs.tiers)
-      : (draft.remotePreference ?? "any");
+      : "any";
 
     // Use a transaction to atomically upsert both tables and mark conversation complete
     await db.transaction(async (tx) => {

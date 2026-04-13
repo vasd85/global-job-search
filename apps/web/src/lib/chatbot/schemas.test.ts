@@ -8,6 +8,7 @@ import {
   LocationPreferenceTierSchema,
   LocationPreferencesSchema,
   LocationScopeSchema,
+  TierImmigrationFlagsSchema,
   TargetRolesExtractionSchema,
   CoreSkillsExtractionSchema,
   GrowthSkillsExtractionSchema,
@@ -232,7 +233,15 @@ describe("LocationPreferenceTierSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  test.each<[string]>([["remote"], ["relocation"], ["hybrid"], ["onsite"]])(
+  test('rejects legacy "relocation" workFormat (moved to immigrationFlags)', () => {
+    const result = LocationPreferenceTierSchema.safeParse({
+      ...validTier,
+      workFormats: ["relocation"],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  test.each<[string]>([["remote"], ["hybrid"], ["onsite"]])(
     "accepts valid TierWorkFormat value %s",
     (format) => {
       const result = LocationPreferenceTierSchema.safeParse({
@@ -260,6 +269,82 @@ describe("LocationPreferenceTierSchema", () => {
     const result = LocationPreferenceTierSchema.safeParse(validTier);
     expect(result.success).toBe(true);
   });
+
+  test("accepts tier with immigrationFlags present", () => {
+    const result = LocationPreferenceTierSchema.safeParse({
+      ...validTier,
+      immigrationFlags: {
+        needsVisaSponsorship: true,
+        wantsRelocationPackage: true,
+      },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.immigrationFlags?.needsVisaSponsorship).toBe(true);
+      expect(result.data.immigrationFlags?.wantsRelocationPackage).toBe(true);
+    }
+  });
+
+  test("accepts tier with immigrationFlags absent (default)", () => {
+    const result = LocationPreferenceTierSchema.safeParse(validTier);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.immigrationFlags).toBeUndefined();
+    }
+  });
+});
+
+// ─── TierImmigrationFlagsSchema ─────────────────────────────────────────────
+
+describe("TierImmigrationFlagsSchema", () => {
+  test("accepts an empty object (all flags absent)", () => {
+    const result = TierImmigrationFlagsSchema.safeParse({});
+    expect(result.success).toBe(true);
+  });
+
+  test("accepts all three flags set to true", () => {
+    const result = TierImmigrationFlagsSchema.safeParse({
+      needsVisaSponsorship: true,
+      wantsRelocationPackage: true,
+      needsUnrestrictedWorkAuth: true,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  test("accepts a partial flag combo", () => {
+    const result = TierImmigrationFlagsSchema.safeParse({
+      wantsRelocationPackage: true,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.wantsRelocationPackage).toBe(true);
+      expect(result.data.needsVisaSponsorship).toBeUndefined();
+    }
+  });
+
+  test("accepts explicit false values alongside true values", () => {
+    const result = TierImmigrationFlagsSchema.safeParse({
+      needsVisaSponsorship: false,
+      wantsRelocationPackage: true,
+      needsUnrestrictedWorkAuth: false,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  test("rejects unknown keys via .strict()", () => {
+    const result = TierImmigrationFlagsSchema.safeParse({
+      needsVisaSponsorship: true,
+      bogusFlag: true,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  test("rejects non-boolean flag value", () => {
+    const result = TierImmigrationFlagsSchema.safeParse({
+      needsVisaSponsorship: "yes",
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 // ─── LocationPreferencesSchema ──────────────────────────────────────────────
@@ -278,7 +363,14 @@ describe("LocationPreferencesSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  test("rejects more than 5 tiers", () => {
+  test("rejects more than 10 tiers", () => {
+    const result = LocationPreferencesSchema.safeParse({
+      tiers: Array.from({ length: 11 }, (_, i) => makeTier(i + 1)),
+    });
+    expect(result.success).toBe(false);
+  });
+
+  test("accepts exactly 10 tiers (max boundary)", () => {
     const result = LocationPreferencesSchema.safeParse({
       tiers: [
         makeTier(1),
@@ -287,19 +379,10 @@ describe("LocationPreferencesSchema", () => {
         makeTier(4),
         makeTier(5),
         makeTier(6),
-      ],
-    });
-    expect(result.success).toBe(false);
-  });
-
-  test("accepts exactly 5 tiers (max boundary)", () => {
-    const result = LocationPreferencesSchema.safeParse({
-      tiers: [
-        makeTier(1),
-        makeTier(2),
-        makeTier(3),
-        makeTier(4),
-        makeTier(5),
+        makeTier(7),
+        makeTier(8),
+        makeTier(9),
+        makeTier(10),
       ],
     });
     expect(result.success).toBe(true);

@@ -1,5 +1,5 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { generateText, NoObjectGeneratedError, Output, stepCountIs } from "ai";
+import { generateText, stepCountIs } from "ai";
 
 import {
   DiscoveryOutputSchema,
@@ -70,22 +70,23 @@ export async function discoverCompanies(
       tools: {
         web_search: anthropic.tools.webSearch_20250305(),
       },
-      output: Output.object({ schema: DiscoveryOutputSchema }),
       stopWhen: stepCountIs(MAX_STEPS),
       system: promptParts.system,
       prompt: promptParts.user,
     });
 
-    const discoveryOutput = result.output;
+    const rawText = result.text ?? "";
     debug("discover", "generateText returned", {
-      hasOutput: discoveryOutput != null,
       stepCount: result.steps?.length,
+      textLength: rawText.length,
     });
-    if (!discoveryOutput) {
-      debug("discover", "Parse failure: no structured output", {
-        rawText: result.text?.slice(0, 500),
+
+    const discoveryOutput = tryExtractJson(rawText);
+    if (!discoveryOutput || discoveryOutput.companies.length === 0) {
+      debug("discover", "No companies parsed from model text", {
+        rawTextPreview: rawText.slice(0, 500),
       });
-      console.warn("[discover] AI returned no structured output");
+      console.warn("[discover] AI returned no parseable companies");
       return [];
     }
 
@@ -94,33 +95,12 @@ export async function discoverCompanies(
     );
     return discoveryOutput.companies;
   } catch (error) {
-    // NoObjectGeneratedError means the model responded but not with valid JSON.
-    // Common cause: model wraps JSON in markdown fences or mixes with text.
-    // Try to extract JSON manually before giving up.
-    if (NoObjectGeneratedError.isInstance(error)) {
-      const rawText = (error as { text?: string }).text ?? "";
-      debug("discover", "NoObjectGeneratedError — attempting manual parse", {
-        rawTextPreview: rawText.slice(0, 500),
-        cause: String((error as { cause?: unknown }).cause),
-      });
-
-      const fallback = tryExtractJson(rawText);
-      if (fallback) {
-        console.info(
-          `[discover] Fallback parse recovered ${fallback.companies.length} companies`,
-        );
-        return fallback.companies;
-      }
-
-      console.error(
-        `[discover] AI web search failed: model returned unparseable text`,
-      );
-      debug("discover", "Full raw text from model", { rawText });
-      return [];
-    }
-
     const message = error instanceof Error ? error.message : String(error);
+    const stack = error instanceof Error ? error.stack : undefined;
     console.error(`[discover] AI web search failed: ${message}`);
+    if (stack) {
+      debug("discover", "Error stack trace", { stack });
+    }
     return [];
   }
 }

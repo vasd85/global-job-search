@@ -40,4 +40,9 @@ export interface BuildJobArgs {
   sourceType: JobSourceType;
   sourceRef: JobSourceRef;
   baseUrl: string;
+  /**
+   * Reference timestamp for resolving relative dates (e.g. "2 days ago")
+   * in `posted_date_raw`. Defaults to "now" inside `buildJob` when omitted.
+   */
+  pollTimestamp?: Date;
 }
