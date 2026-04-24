@@ -7,10 +7,12 @@ type Db = ReturnType<typeof drizzle<typeof schema>>;
 
 let _db: Db | undefined;
 
-// Redact params for queries touching auth tables — `session.token`,
-// `verification.value`, and `account` OAuth-token columns arrive as WHERE
-// or SET binds and must never be logged.
-const SENSITIVE_TABLE_RE = /"(session|verification|account)"/i;
+// Redact params for queries touching auth or secret tables. Each table
+// below stores credential material that must never reach logs:
+// `session.token`, `verification.value`, `account` OAuth-token columns,
+// and `user_api_key` ciphertext/IV/authTag/fingerprint_hmac. Add any new
+// table that stores secrets to this alternation.
+const SENSITIVE_TABLE_RE = /"(session|verification|account|user_api_key)"/i;
 
 function formatSql(query: string): string {
   try {
