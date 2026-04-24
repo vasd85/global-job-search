@@ -11,7 +11,11 @@ description: >-
   deterministic hooks. Also use when the user says "configure agents",
   "set up Claude Code", "create a skill/hook/rule", "review my rules",
   "audit this hook", "check my CLAUDE.md", "architect the agent system",
-  or asks "where should I put this instruction".
+  or asks "where should I put this instruction". Also use for runtime-based
+  tuning after a captured run — phrasings like "tune the skill based on
+  logs", "improve the skill after a run", "optimize skill from runtime
+  behavior", "why is my skill under-performing", "the agent keeps spawning
+  too many subagents, fix it".
 ---
 
 # Agent Architect — Orchestrator
@@ -28,8 +32,12 @@ ultrathink
 Before starting, determine the task type:
 
 - **Create**: user wants a new artifact → use Creation workflow (Phases 1-4)
-- **Review/Audit**: user wants to evaluate an existing artifact → use Review workflow
+- **Review/Audit**: user wants to evaluate an existing artifact against its
+  authoring guide (static analysis) → use Review workflow
 - **Modify**: user wants to change an existing artifact → use Modify workflow
+- **Tune**: user wants to improve an artifact based on captured run logs
+  (dynamic analysis of actual runtime behavior, not guide conformance)
+  → use Tune workflow
 - **Escalate**: user reports that Claude keeps ignoring an advisory instruction →
   diagnose the root cause before choosing a fix:
   1. **Poorly worded?** Vague or ambiguous instructions get low adherence.
@@ -132,6 +140,95 @@ Cross-check for duplication or conflicts with existing artifacts.
 Present combined findings to the user with actionable fixes ranked by severity.
 
 If changes are needed AND the user approves, proceed to Modify workflow.
+
+---
+
+## Tune workflow (for runtime-based improvement)
+
+Use when the user wants to change an artifact based on how it *actually
+behaved* in captured runs, not based on authoring-guide conformance.
+Review and Tune can be combined — run Review first for static conformance,
+then Tune for runtime behavior.
+
+### Step 1: Identify target and runs (YOU do this)
+
+Determine:
+- Which artifact to tune (skill / subagent / hook / other)
+- Which run(s) to analyze — user-specified, "latest", or a set listed by
+  `ls -td .claude/logs/<skill>/*/ | head -5`
+- What seems off — ask if vague ("agent spawns too many subagents", "user
+  had to correct the agent repeatedly", "output quality was poor")
+
+If `.claude/logs/` doesn't exist or is empty for the target skill: stop and
+tell the user. Tuning requires runtime evidence — there's nothing to tune
+against without logs.
+
+### Step 2: Delegate log analysis to /analyze-skill-logs (SUBAGENT does this)
+
+Invoke `/analyze-skill-logs` via the Skill tool. It has `context: fork`, so
+it runs in an isolated subagent — only its summary lands in your main
+context, no grep/jq noise. You MAY invoke it multiple times for different
+runs or different focuses; each invocation forks fresh with its own context
+budget.
+
+Prompt format:
+```
+Run: <path | skill name | "latest">
+Focus: <specific concern, or "general">
+Output: findings with cited events, plus improvement suggestions for the artifact.
+```
+
+Always request improvement suggestions explicitly — the skill treats them
+as optional by default.
+
+When to invoke multiple times:
+- Analyzing several runs of the same skill (spot patterns vs one-offs)
+- Different focuses on the same run ("subagent spawn decisions", "tool
+  argument shapes", "user corrections") — cleaner than one huge query
+- Comparing a "good" run against a "bad" run
+
+### Step 3: Synthesize (YOU do this)
+
+Combine findings across invocations. The log analyzer sees individual runs;
+YOU see the full artifact ecosystem and can decide what's worth changing.
+Translate log observations into concrete artifact edits:
+
+- "Agent spawned 4 subagents when 1 would suffice" → tighten complexity
+  assessment guidance in the skill body
+- "User corrected the agent at 14:23 because it missed X" → add X to the
+  artifact's checklist
+- "Tool called with wrong argument shape repeatedly" → add argument-hint
+  or concrete example to the skill
+- "Subagent description was never matched; user had to invoke manually" →
+  rework subagent description keywords
+
+Discard observations that don't map to an artifact change ("run took 5
+minutes" is telemetry, not a fix). One-off anomalies in a single run
+aren't worth changing the artifact over — look for repeats across runs
+or a clear structural cause.
+
+### Step 4: Confirm with user (YOU do this)
+
+Present:
+- **Diagnosis** — what the logs revealed (cite specific event timestamps
+  from the analyzer's report)
+- **Proposed changes** — concrete edits to the artifact
+- **Expected effect** — how this should improve future runs
+
+Get confirmation before modifying. Each proposed change must trace back to
+a cited log event — no vibes-based tuning. If the user rejects a proposed
+change or adds constraints, fold them in before proceeding.
+
+### Step 5: Fall through to Modify workflow (SUBAGENT does this)
+
+Construct a Modify spec with proposed changes as REQUIREMENT and log
+findings as CONTEXT. Delegate to `artifact-writer`. Verify per Phase 4.
+
+### Step 6: Suggest verification (YOU do this)
+
+Tell the user: re-run the skill, then invoke `/agent-architect` tune again
+to check whether the change helped. That closes the feedback loop — the
+next run's logs are the ground truth for whether the edit worked.
 
 ---
 
@@ -310,3 +407,7 @@ If the user says "Claude keeps ignoring this" → diagnose before escalating
 - "NEVER do X" in CLAUDE.md expecting 100% (use hook)
 - MCP without Skill (tool without domain knowledge)
 - Subagent for trivial tasks (20k token overhead)
+- Tuning without log evidence (vibes-based changes in the name of
+  "improvement") — require cited event references from /analyze-skill-logs
+- Tuning based on a single run's one-off anomaly rather than repeated
+  patterns across multiple runs
