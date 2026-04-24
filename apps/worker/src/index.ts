@@ -29,17 +29,11 @@ async function exitWithFlush(code: number): Promise<never> {
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) {
   log.error("DATABASE_URL environment variable is required");
-  // Schedule flush callback and a belt-and-braces timeout; whichever fires
-  // first will call process.exit. We avoid a synchronous process.exit here
-  // so the pino-pretty worker thread (LOG_PRETTY=1) has a chance to drain
-  // the final log line before the process terminates. A synchronous
-  // `throw` is the only way to block further top-level execution while
-  // the scheduled callbacks run on the next tick; Node's uncaught
-  // exception handler will still exit with a non-zero code if for some
-  // reason the callbacks never fire.
-  log.flush(() => process.exit(1));
-  setTimeout(() => process.exit(1), 500);
-  throw new Error("DATABASE_URL environment variable is required");
+  await exitWithFlush(1);
+  // Unreachable: exitWithFlush awaits the flush and then calls process.exit.
+  // TypeScript does not propagate `never` through `await Promise<never>`,
+  // so this throw exists purely to narrow DATABASE_URL below.
+  throw new Error("unreachable");
 }
 
 // ─── pg-boss instance ───────────────────────────────────────────────────────

@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { createLogger } from "@gjs/logger";
 import type {
   ConversationState,
@@ -206,7 +207,7 @@ export function deserializeState(raw: unknown): ConversationState {
 
   // Fallback: trust the JSONB structure, which was valid when it was written
   log.warn(
-    { zodError: result.error.flatten() },
+    { zodError: z.flattenError(result.error) },
     "Conversation state schema mismatch, using raw state",
   );
   return raw as ConversationState;
