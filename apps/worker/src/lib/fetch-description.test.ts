@@ -85,8 +85,6 @@ function mockFetchFailure(status: number) {
 describe("fetchJobDescription", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    vi.spyOn(console, "info").mockImplementation(() => {});
   });
 
   afterEach(() => {

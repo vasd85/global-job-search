@@ -2,6 +2,9 @@ import { eq } from "drizzle-orm";
 import type { Database } from "@gjs/db";
 import { jobs } from "@gjs/db/schema";
 import { htmlToText, sha256 } from "@gjs/ats-core";
+import { createLogger } from "@gjs/logger";
+
+const log = createLogger("fetch-description");
 
 interface JobRow {
   id: string;
@@ -46,8 +49,9 @@ export async function fetchJobDescription(
     });
 
     if (!response.ok) {
-      console.warn(
-        `[fetch-description] SmartRecruiters detail returned ${response.status} for job ${jobRow.id}`,
+      log.warn(
+        { jobId: jobRow.id, status: response.status },
+        "SmartRecruiters detail non-OK",
       );
       return null;
     }
@@ -55,7 +59,10 @@ export async function fetchJobDescription(
     const data: unknown = await response.json();
     const descriptionHtml = extractSmartRecruitersDescription(data);
     if (!descriptionHtml) {
-      console.warn(`[fetch-description] No description found in SmartRecruiters detail for job ${jobRow.id}`);
+      log.warn(
+        { jobId: jobRow.id },
+        "No description found in SmartRecruiters detail",
+      );
       return null;
     }
 
@@ -74,12 +81,15 @@ export async function fetchJobDescription(
       })
       .where(eq(jobs.id, jobRow.id));
 
-    console.info(`[fetch-description] Fetched description for job ${jobRow.id} (${descriptionText.length} chars)`);
+    log.debug(
+      { jobId: jobRow.id, chars: descriptionText.length },
+      "Fetched SmartRecruiters description",
+    );
     return descriptionText;
   } catch (error) {
-    console.warn(
-      `[fetch-description] Failed to fetch description for job ${jobRow.id}:`,
-      error instanceof Error ? error.message : error,
+    log.warn(
+      { jobId: jobRow.id, err: error },
+      "Failed to fetch description",
     );
     return null;
   }

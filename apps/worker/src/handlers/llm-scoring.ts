@@ -4,6 +4,7 @@ import { generateText, Output } from "ai";
 import type { Job } from "pg-boss";
 import type { Database } from "@gjs/db";
 import { jobs, companies, userProfiles, jobMatches } from "@gjs/db/schema";
+import { createLogger } from "@gjs/logger";
 
 import { decryptUserKey } from "../lib/decrypt-user-key";
 import { getAppConfigValue } from "../lib/app-config";
@@ -11,6 +12,8 @@ import { ScoringOutputSchema, type ScoringOutput } from "../lib/scoring-schema";
 import { buildScoringPrompt } from "../lib/scoring-prompt";
 import { computeMatchPercent } from "../lib/compute-match-percent";
 import { fetchJobDescription } from "../lib/fetch-description";
+
+const log = createLogger("score");
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -91,7 +94,7 @@ export function createLlmScoringHandler(db: Database) {
           .limit(1);
 
         if (!jobRow) {
-          console.warn(`[score] Job not found: ${jobId}, skipping`);
+          log.warn({ jobId }, "Job not found, skipping");
           continue;
         }
 
@@ -116,14 +119,20 @@ export function createLlmScoringHandler(db: Database) {
           .limit(1);
 
         if (!profile) {
-          console.warn(`[score] User profile not found: ${userProfileId}, skipping`);
+          log.warn(
+            { userProfileId, jobId },
+            "User profile not found, skipping",
+          );
           continue;
         }
 
         // 4. Decrypt user API key
         const apiKey = await decryptUserKey(db, userId);
         if (!apiKey) {
-          console.error(`[score] No active API key for user ${userId}, skipping job ${jobId}`);
+          log.error(
+            { userId, jobId },
+            "No active API key, skipping",
+          );
           continue;
         }
 
@@ -178,8 +187,9 @@ export function createLlmScoringHandler(db: Database) {
 
         const scoringOutput = result.output as ScoringOutput | null;
         if (!scoringOutput) {
-          console.warn(
-            `[score] LLM returned no structured output for job ${data.jobId}, skipping`,
+          log.warn(
+            { jobId: data.jobId, userProfileId, userId },
+            "LLM returned no structured output, skipping",
           );
           continue;
         }
@@ -317,24 +327,31 @@ export function createLlmScoringHandler(db: Database) {
         } catch (signalError) {
           // Score is already persisted; log the signal write failure but do
           // not propagate so the per-job success path continues.
-          const message =
-            signalError instanceof Error ? signalError.message : String(signalError);
-          console.error(
-            `[score] Failed to write extracted signals for job ${jobId}: ${message}`,
+          log.error(
+            { jobId, userProfileId, userId, err: signalError },
+            "Failed to write extracted signals",
           );
         }
 
-        console.info(
-          `[score] Scored job ${jobId} for profile ${userProfileId}: ${matchPercent}%` +
-            (appliedGrowthBonus ? " (growth bonus applied)" : "") +
-            (scoringOutput.dealBreakerTriggered ? " (deal-breaker triggered)" : ""),
+        log.info(
+          {
+            jobId,
+            userProfileId,
+            userId,
+            matchPercent,
+            appliedGrowthBonus,
+            dealBreakerTriggered: scoringOutput.dealBreakerTriggered,
+          },
+          "Scored job",
         );
       } catch (error) {
         // Per-job error isolation: log and continue with remaining jobs.
         // Failed jobs will be re-enqueued on the next scoring trigger
         // (they won't have a fresh cache entry).
-        const message = error instanceof Error ? error.message : String(error);
-        console.error(`[score] Error scoring job ${jobId} for profile ${userProfileId}: ${message}`);
+        log.error(
+          { jobId, userProfileId, userId, err: error },
+          "Error scoring job",
+        );
       }
     }
   };

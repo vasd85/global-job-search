@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
+import { createLogger } from "@gjs/logger";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import {
@@ -18,6 +19,8 @@ import {
   derivePreferredLocations,
 } from "@/lib/chatbot/location-utils";
 import type { LocationPreferences } from "@/lib/chatbot/schemas";
+
+const log = createLogger("chatbot:save");
 
 export async function POST(request: Request) {
   const session = await auth.api.getSession({ headers: request.headers });
@@ -169,7 +172,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Chatbot save error:", error);
+    log.error({ err: error }, "Chatbot save error");
     return NextResponse.json(
       { error: "Failed to save preferences" },
       { status: 500 },

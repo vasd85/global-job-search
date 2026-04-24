@@ -1,3 +1,7 @@
+import { createLogger } from "@gjs/logger";
+
+const log = createLogger("probe");
+
 export type ProbeConfidence = "high" | "medium" | "low";
 
 export interface ProbeResult {
@@ -93,7 +97,7 @@ async function probeFetch(
     return { status: response.status, body };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    console.error(`[probe] fetch failed: ${url} — ${reason}`);
+    log.warn({ url, reason }, "probe fetch failed");
     return null;
   } finally {
     clearTimeout(timer);
@@ -172,7 +176,7 @@ async function probeGreenhouse(
         result: { found: true, httpStatus: 200, matchedName: data.name ?? null, confidence: "high" },
       };
     } catch (error) {
-      console.error(`[probe:greenhouse] JSON parse failed for slug "${slug}": ${error instanceof Error ? error.message : String(error)}`);
+      log.warn({ vendor: "greenhouse", slug, err: error }, "probe JSON parse failed");
       return {
         endpoint,
         result: { found: false, httpStatus: 200, matchedName: null, confidence: "high", error: "invalid_json" },
@@ -220,7 +224,7 @@ async function probeSmartRecruiters(
         };
       }
     } catch (error) {
-      console.error(`[probe:smartrecruiters] JSON parse failed for slug "${slug}": ${error instanceof Error ? error.message : String(error)}`);
+      log.warn({ vendor: "smartrecruiters", slug, err: error }, "probe JSON parse failed");
       return {
         endpoint,
         result: { found: false, httpStatus: 200, matchedName: null, confidence: "high", error: "invalid_json" },
@@ -284,7 +288,7 @@ async function probeAshby(
     // GraphQL errors — log them so broken queries don't hide silently
     if (data.errors && data.errors.length > 0) {
       const messages = data.errors.map((e) => e.message ?? "unknown").join("; ");
-      console.error(`[probe:ashby] GraphQL errors for slug "${slug}": ${messages}`);
+      log.warn({ vendor: "ashby", slug, graphqlErrors: messages }, "probe returned GraphQL errors");
       return {
         endpoint,
         result: { found: false, httpStatus: 200, matchedName: null, confidence: "high", error: `graphql_error: ${messages}` },
@@ -303,7 +307,7 @@ async function probeAshby(
       result: { found: true, httpStatus: 200, matchedName: org.name ?? null, confidence: "high" },
     };
   } catch (error) {
-    console.error(`[probe:ashby] JSON parse failed for slug "${slug}": ${error instanceof Error ? error.message : String(error)}`);
+    log.warn({ vendor: "ashby", slug, err: error }, "probe JSON parse failed");
     return {
       endpoint,
       result: { found: false, httpStatus: 200, matchedName: null, confidence: "high", error: "invalid_json" },
@@ -345,7 +349,7 @@ async function probeLever(
       result: { found: true, httpStatus: 200, matchedName: null, confidence: "low" },
     };
   } catch (error) {
-    console.error(`[probe:lever] JSON parse failed for slug "${slug}": ${error instanceof Error ? error.message : String(error)}`);
+    log.warn({ vendor: "lever", slug, err: error }, "probe JSON parse failed");
     return {
       endpoint,
       result: { found: false, httpStatus: 200, matchedName: null, confidence: "low", error: "invalid_json" },

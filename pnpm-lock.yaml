@@ -169,6 +169,9 @@ importers:
 
   packages/ats-core:
     dependencies:
+      '@gjs/logger':
+        specifier: workspace:*
+        version: link:../logger
       cheerio:
         specifier: ^1.0.0
         version: 1.2.0

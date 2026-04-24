@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
+import { createLogger } from "@gjs/logger";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { conversationStates, conversationMessages } from "@/lib/db/schema";
 import { STEPS } from "@/lib/chatbot/steps";
 import { deserializeState } from "@/lib/chatbot/state";
 import { initializeConversation } from "@/lib/chatbot/engine";
+
+const log = createLogger("chatbot:state");
 
 export async function GET(request: Request) {
   const session = await auth.api.getSession({ headers: request.headers });
@@ -81,7 +84,7 @@ export async function GET(request: Request) {
       isNew: false,
     });
   } catch (error) {
-    console.error("Chatbot state error:", error);
+    log.error({ err: error }, "Chatbot state error");
     return NextResponse.json(
       { error: "Failed to load conversation state" },
       { status: 500 },

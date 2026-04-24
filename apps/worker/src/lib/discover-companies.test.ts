@@ -75,9 +75,6 @@ function mockTextResult(text: string, steps = 1) {
 describe("discoverCompanies", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.spyOn(console, "info").mockImplementation(() => {});
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    vi.spyOn(console, "error").mockImplementation(() => {});
 
     // Re-set mock return values after clearAllMocks
     mockCreateAnthropic.mockReturnValue(
@@ -85,10 +82,6 @@ describe("discoverCompanies", () => {
         tools: { webSearch_20250305: mockWebSearchTool },
       }),
     );
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
   });
 
   // ── Critical ──────────────────────────────────────────────────────────

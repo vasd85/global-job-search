@@ -171,8 +171,6 @@ describe("POST /api/search/expand -- profile lookup", () => {
   });
 
   test("profile DB query throws returns 500 without internal details", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-
     // Override the default profile mock with a rejecting chain
     mockDbSelect.mockReset();
     mockDbSelect.mockReturnValueOnce({
@@ -188,8 +186,6 @@ describe("POST /api/search/expand -- profile lookup", () => {
     expect(status).toBe(500);
     expect(body).toEqual({ error: "Internal server error" });
     expect(JSON.stringify(body)).not.toContain("connection refused");
-
-    errorSpy.mockRestore();
   });
 });
 
@@ -210,7 +206,6 @@ describe("POST /api/search/expand -- API key check", () => {
   });
 
   test("getActiveKeyMeta throws returns 500 without internal details", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     getActiveKeyMetaMock.mockRejectedValueOnce(new Error("decrypt failure"));
 
     const { status, body } = await postJson();
@@ -218,8 +213,6 @@ describe("POST /api/search/expand -- API key check", () => {
     expect(status).toBe(500);
     expect(body).toEqual({ error: "Internal server error" });
     expect(JSON.stringify(body)).not.toContain("decrypt failure");
-
-    errorSpy.mockRestore();
   });
 
   test("getActiveKeyMeta is called with correct arguments", async () => {
@@ -276,39 +269,30 @@ describe("POST /api/search/expand -- pg-boss enqueue", () => {
   });
 
   test("getQueue fails returns 500", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     mockGetQueue.mockRejectedValueOnce(new Error("DATABASE_URL is required"));
 
     const { status, body } = await postJson();
 
     expect(status).toBe(500);
     expect(body).toEqual({ error: "Internal server error" });
-
-    errorSpy.mockRestore();
   });
 
   test("boss.createQueue fails returns 500", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     mockCreateQueue.mockRejectedValueOnce(new Error("permission denied"));
 
     const { status, body } = await postJson();
 
     expect(status).toBe(500);
     expect(body).toEqual({ error: "Internal server error" });
-
-    errorSpy.mockRestore();
   });
 
   test("boss.send throws (as opposed to returning null) returns 500", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     mockSend.mockRejectedValueOnce(new Error("serialization error"));
 
     const { status, body } = await postJson();
 
     expect(status).toBe(500);
     expect(body).toEqual({ error: "Internal server error" });
-
-    errorSpy.mockRestore();
   });
 });
 
@@ -317,20 +301,7 @@ describe("POST /api/search/expand -- pg-boss enqueue", () => {
 // ---------------------------------------------------------------------------
 
 describe("POST /api/search/expand -- error isolation", () => {
-  test("catch-all logs the error via console.error with correct prefix", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const testError = new Error("something broke");
-    mockGetQueue.mockRejectedValueOnce(testError);
-
-    await postJson();
-
-    expect(errorSpy).toHaveBeenCalledWith("[search/expand] Error:", testError);
-
-    errorSpy.mockRestore();
-  });
-
   test("error response body never contains stack traces or internal paths", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     mockGetQueue.mockRejectedValueOnce(
       new Error("pg: connection to server at /tmp/.s.PGSQL.5432 refused"),
     );
@@ -342,8 +313,6 @@ describe("POST /api/search/expand -- error isolation", () => {
     expect(bodyStr).not.toContain("pg:");
     expect(bodyStr).not.toContain("connection");
     expect(bodyStr).not.toContain("/tmp/");
-
-    errorSpy.mockRestore();
   });
 });
 
