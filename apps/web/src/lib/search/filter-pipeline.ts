@@ -347,7 +347,6 @@ async function processInBatches(
     let failedSeniority = 0;
     let failedLocation = 0;
     let passed = 0;
-    let earlyExit = false;
 
     for (const row of batch) {
       const classified = classifyJobMulti(matchedFamilies, {
@@ -420,7 +419,6 @@ async function processInBatches(
       // Once we have one more than needed, we know there are more results
       if (allPassing.length > needed) {
         hasMore = true;
-        earlyExit = true;
         log.debug(
           {
             batchNum,
@@ -444,19 +442,19 @@ async function processInBatches(
       }
     }
 
-    if (!earlyExit) {
-      log.debug(
-        {
-          batchNum,
-          passed,
-          failedClassification,
-          failedSeniority,
-          failedLocation,
-          cumulativePassing: allPassing.length,
-        },
-        "Batch counters",
-      );
-    }
+    // Reached only on natural for-of completion — the early-exit path
+    // returns from inside the loop.
+    log.debug(
+      {
+        batchNum,
+        passed,
+        failedClassification,
+        failedSeniority,
+        failedLocation,
+        cumulativePassing: allPassing.length,
+      },
+      "Batch counters",
+    );
 
     // If the batch was smaller than BATCH_SIZE, we've exhausted the dataset
     if (batch.length < BATCH_SIZE) {

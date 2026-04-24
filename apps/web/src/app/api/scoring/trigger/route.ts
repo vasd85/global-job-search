@@ -32,6 +32,7 @@ export async function POST(request: Request) {
   }
   log.debug({ userId: session.user.id }, "Authenticated");
 
+  let profile: { id: string } | undefined;
   try {
     // 1. Load the user's profile
     const profileRows = await db
@@ -40,7 +41,7 @@ export async function POST(request: Request) {
       .where(eq(userProfiles.userId, session.user.id))
       .limit(1);
 
-    const profile = profileRows[0];
+    profile = profileRows[0];
     if (!profile) {
       log.debug(
         { userId: session.user.id, status: 404 },
@@ -198,7 +199,12 @@ export async function POST(request: Request) {
         } catch (err) {
           sendFailed++;
           log.warn(
-            { jobId, err },
+            {
+              userId: session.user.id,
+              profileId: profile.id,
+              jobId,
+              err,
+            },
             "Failed to enqueue job",
           );
         }
@@ -221,7 +227,10 @@ export async function POST(request: Request) {
       message: `Scoring ${enqueued} jobs. ${cached} already scored.${sendFailed > 0 ? ` ${sendFailed} failed to enqueue.` : ""}`,
     });
   } catch (error) {
-    log.error({ err: error }, "Scoring trigger failed");
+    log.error(
+      { userId: session.user.id, profileId: profile?.id, err: error },
+      "Scoring trigger failed",
+    );
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 },
