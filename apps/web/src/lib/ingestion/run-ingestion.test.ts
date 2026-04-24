@@ -1,10 +1,32 @@
-import type { MockInstance } from "vitest";
 import type { Database } from "../db";
 
 // ─── Mocks ──────────────────────────────────────────────────────────────────
 
 vi.mock("./poll-company", () => ({
   pollCompany: vi.fn(),
+}));
+
+// Mock @gjs/logger. Hoist the shared mockLog so tests keep a stable
+// reference even across `vi.clearAllMocks()` in beforeEach.
+const { mockLog } = vi.hoisted(() => ({
+  mockLog: {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    fatal: vi.fn(),
+    trace: vi.fn(),
+    silent: vi.fn(),
+    child: vi.fn(function (this: unknown) {
+      return this;
+    }),
+    flush: vi.fn((cb?: () => void) => cb?.()),
+    level: "info",
+  },
+}));
+
+vi.mock("@gjs/logger", () => ({
+  createLogger: vi.fn(() => mockLog),
 }));
 
 // Re-import after mock registration so the module binds to the mock.
@@ -80,15 +102,8 @@ function fakeDb(rows: ReturnType<typeof fakeCompany>[]): Database {
 
 // ─── Setup / teardown ───────────────────────────────────────────────────────
 
-let consoleSpy: MockInstance;
-
 beforeEach(() => {
   vi.clearAllMocks();
-  consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-});
-
-afterEach(() => {
-  consoleSpy.mockRestore();
 });
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
@@ -285,7 +300,7 @@ describe("runIngestion", () => {
     expect(result.durationMs).toBeGreaterThanOrEqual(0);
   });
 
-  // --- Console logging ---
+  // --- Structured logging ---
 
   test("logs summary after ingestion completes", async () => {
     const db = fakeDb([fakeCompany()]);
@@ -293,8 +308,15 @@ describe("runIngestion", () => {
 
     await runIngestion(db);
 
-    expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining("[Ingestion] Done:")
+    expect(mockLog.info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        successful: 1,
+        totalCompanies: 1,
+        jobsNew: 2,
+        jobsClosed: 0,
+        jobsUpdated: 1,
+      }),
+      "Ingestion done",
     );
   });
 
@@ -305,9 +327,14 @@ describe("runIngestion", () => {
 
     await runIngestion(db);
 
-    expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining("[Ingestion] Errors"),
-      expect.stringContaining("fail-co")
+    expect(mockLog.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        count: 1,
+        sample: expect.arrayContaining([
+          expect.objectContaining({ companySlug: "fail-co" }),
+        ]) as unknown,
+      }),
+      "Ingestion errors",
     );
   });
 

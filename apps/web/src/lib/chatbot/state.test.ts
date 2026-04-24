@@ -1,4 +1,29 @@
 import type { ConversationState, PreferencesDraft } from "./schemas";
+
+// Mock @gjs/logger before importing the module under test so the module
+// binds to the mock logger. Hoist the shared mockLog so tests keep a stable
+// reference even across mock resets between tests.
+const { mockLog } = vi.hoisted(() => ({
+  mockLog: {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    fatal: vi.fn(),
+    trace: vi.fn(),
+    silent: vi.fn(),
+    child: vi.fn(function (this: unknown) {
+      return this;
+    }),
+    flush: vi.fn((cb?: () => void) => cb?.()),
+    level: "info",
+  },
+}));
+
+vi.mock("@gjs/logger", () => ({
+  createLogger: vi.fn(() => mockLog),
+}));
+
 import { STEPS, getStepIndex } from "./steps";
 import {
   createInitialState,
@@ -342,11 +367,10 @@ describe("deserializeState", () => {
       currentStepIndex: "not a number",
       draft: {},
     };
-    const consoleSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    mockLog.warn.mockClear();
     const result = deserializeState(corrupt);
     expect(result).toBe(corrupt);
-    expect(consoleSpy).toHaveBeenCalled();
-    consoleSpy.mockRestore();
+    expect(mockLog.warn).toHaveBeenCalled();
   });
 });
 
@@ -644,25 +668,18 @@ describe("deserializeState: lenient fallback", () => {
       currentStepIndex: "not a number",
       draft: {},
     };
-    const consoleSpy = vi
-      .spyOn(console, "warn")
-      .mockImplementation(() => {});
     const result = deserializeState(corrupt);
     expect(result).toBe(corrupt);
-    consoleSpy.mockRestore();
   });
 
   test("logs warning message containing 'schema mismatch'", () => {
     const corrupt = { currentStepIndex: "bad" };
-    const consoleSpy = vi
-      .spyOn(console, "warn")
-      .mockImplementation(() => {});
+    mockLog.warn.mockClear();
     deserializeState(corrupt);
-    expect(consoleSpy).toHaveBeenCalledWith(
+    expect(mockLog.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ zodError: expect.any(Object) as unknown }),
       expect.stringContaining("schema mismatch"),
-      expect.any(String),
     );
-    consoleSpy.mockRestore();
   });
 
   test("falls back for future enum values not in current schema", () => {
@@ -674,27 +691,21 @@ describe("deserializeState: lenient fallback", () => {
       createdAt: "2026-01-15T12:00:00.000Z",
       updatedAt: "2026-01-15T12:00:00.000Z",
     };
-    const consoleSpy = vi
-      .spyOn(console, "warn")
-      .mockImplementation(() => {});
+    mockLog.warn.mockClear();
     const result = deserializeState(futureState);
     // safeParse fails, returns raw cast
     expect(result).toBe(futureState);
-    expect(consoleSpy).toHaveBeenCalled();
-    consoleSpy.mockRestore();
+    expect(mockLog.warn).toHaveBeenCalled();
   });
 
   test.each([null, "hello", 42])(
     "falls back for completely non-object input: %s",
     (input) => {
-      const consoleSpy = vi
-        .spyOn(console, "warn")
-        .mockImplementation(() => {});
+      mockLog.warn.mockClear();
       const result = deserializeState(input);
       // Returns raw as ConversationState regardless
       expect(result).toBe(input);
-      expect(consoleSpy).toHaveBeenCalled();
-      consoleSpy.mockRestore();
+      expect(mockLog.warn).toHaveBeenCalled();
     },
   );
 
@@ -718,15 +729,11 @@ describe("deserializeState: lenient fallback", () => {
       currentStepIndex: -5,
       completedSteps: "not an array",
     };
-    const consoleSpy = vi
-      .spyOn(console, "warn")
-      .mockImplementation(() => {});
     const result = deserializeState(corrupt);
     // Does not throw at deserialization time
     expect(result).toBe(corrupt);
     // But downstream usage would crash:
     // e.g., result.draft.targetTitles -> TypeError: Cannot read properties of null
     expect(result.draft).toBeNull();
-    consoleSpy.mockRestore();
   });
 });

@@ -1,4 +1,29 @@
 import type { Job } from "pg-boss";
+
+// Mock @gjs/logger before importing the module under test so the module
+// binds to the mock logger. Hoist the shared mockLog so tests keep a stable
+// reference even across `vi.clearAllMocks()` or `vi.restoreAllMocks()`.
+const { mockLog } = vi.hoisted(() => ({
+  mockLog: {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    fatal: vi.fn(),
+    trace: vi.fn(),
+    silent: vi.fn(),
+    child: vi.fn(function (this: unknown) {
+      return this;
+    }),
+    flush: vi.fn((cb?: () => void) => cb?.()),
+    level: "info",
+  },
+}));
+
+vi.mock("@gjs/logger", () => ({
+  createLogger: vi.fn(() => mockLog),
+}));
+
 import {
   handleDescriptionFetch,
   handleRoleTaxonomy,
@@ -10,10 +35,9 @@ function makeJob(id: string): Job {
 }
 
 describe("stub handlers", () => {
-  let infoSpy: ReturnType<typeof vi.spyOn>;
-
   beforeEach(() => {
-    infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+    mockLog.info.mockClear();
+    mockLog.warn.mockClear();
   });
 
   afterEach(() => {
@@ -25,25 +49,26 @@ describe("stub handlers", () => {
   test.each<{
     name: string;
     handler: (jobs: Job[]) => Promise<void>;
-    prefix: string;
+    handlerTag: string;
   }>([
-    { name: "handleDescriptionFetch", handler: handleDescriptionFetch, prefix: "Description fetch" },
-    { name: "handleRoleTaxonomy", handler: handleRoleTaxonomy, prefix: "Role taxonomy" },
-  ])("$name logs each job ID and resolves without throwing", async ({ handler, prefix }) => {
+    { name: "handleDescriptionFetch", handler: handleDescriptionFetch, handlerTag: "descriptionFetch" },
+    { name: "handleRoleTaxonomy", handler: handleRoleTaxonomy, handlerTag: "roleTaxonomy" },
+  ])("$name logs each job ID and resolves without throwing", async ({ handler, handlerTag }) => {
     const jobs = [makeJob("job-1"), makeJob("job-2")];
 
     await expect(handler(jobs)).resolves.toBeUndefined();
 
-    expect(infoSpy).toHaveBeenCalledTimes(2);
-    expect(infoSpy).toHaveBeenCalledWith(
-      expect.stringContaining("job-1")
+    // Deliberate level change per plan: stub invocations are logged at `warn`
+    // (not `info`) so an unimplemented queue firing in prod produces an
+    // operator alert instead of background noise.
+    expect(mockLog.warn).toHaveBeenCalledTimes(2);
+    expect(mockLog.warn).toHaveBeenCalledWith(
+      { jobId: "job-1", handler: handlerTag },
+      "Stub handler invoked",
     );
-    expect(infoSpy).toHaveBeenCalledWith(
-      expect.stringContaining("job-2")
-    );
-    // Verify the prefix identifies which stub is logging
-    expect(infoSpy).toHaveBeenCalledWith(
-      expect.stringContaining(prefix)
+    expect(mockLog.warn).toHaveBeenCalledWith(
+      { jobId: "job-2", handler: handlerTag },
+      "Stub handler invoked",
     );
   });
 
@@ -58,6 +83,7 @@ describe("stub handlers", () => {
   ])("$name handles empty jobs array without error", async ({ handler }) => {
     await expect(handler([])).resolves.toBeUndefined();
 
-    expect(infoSpy).not.toHaveBeenCalled();
+    expect(mockLog.warn).not.toHaveBeenCalled();
+    expect(mockLog.info).not.toHaveBeenCalled();
   });
 });

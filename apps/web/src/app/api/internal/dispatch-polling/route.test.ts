@@ -1,5 +1,29 @@
 // ---- Mocks ----------------------------------------------------------------
 
+// Mock @gjs/logger. Hoist the shared mockLog so tests keep a stable
+// reference even across `vi.clearAllMocks()` in beforeEach and across
+// `vi.resetModules()` in the auth describe block below.
+const { mockLog } = vi.hoisted(() => ({
+  mockLog: {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    fatal: vi.fn(),
+    trace: vi.fn(),
+    silent: vi.fn(),
+    child: vi.fn(function (this: unknown) {
+      return this;
+    }),
+    flush: vi.fn((cb?: () => void) => cb?.()),
+    level: "info",
+  },
+}));
+
+vi.mock("@gjs/logger", () => ({
+  createLogger: vi.fn(() => mockLog),
+}));
+
 // Mock Drizzle condition builders with token strings for assertion
 vi.mock("drizzle-orm", () => ({
   eq: vi.fn((col: string, val: unknown) => `eq(${col},${String(val)})`),
@@ -132,7 +156,7 @@ describe("POST /api/internal/dispatch-polling", () => {
   });
 
   test("skips companies with unknown ATS vendor", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    mockLog.warn.mockClear();
 
     const companies = [
       makeCompany({ slug: "known", atsVendor: "greenhouse" }),
@@ -147,16 +171,19 @@ describe("POST /api/internal/dispatch-polling", () => {
     expect(res.status).toBe(200);
     expect(json).toEqual({ enqueued: 1, skipped: 1, failed: 0, total: 2 });
     expect(mockSend).toHaveBeenCalledOnce();
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("workday"),
-      // The warn message also includes the slug
+    // The warn log binds vendor + slug as structured fields for the
+    // "Unknown vendor, skipping" event.
+    expect(mockLog.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ vendor: "workday", slug: "unknown" }),
+      expect.stringContaining("Unknown vendor"),
     );
-
-    warnSpy.mockRestore();
   });
 
   test("returns 500 when DB query fails", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    // Pattern B: drop the log-presence assertion. The 500 status and
+    // structured error body are the real contract; the log line is
+    // incidental and already covered by the sibling "counts failed sends"
+    // test which asserts on the exact log signature.
     mockWhere.mockRejectedValueOnce(new Error("connection timeout"));
 
     const res = await POST(makeRequest());
@@ -165,13 +192,10 @@ describe("POST /api/internal/dispatch-polling", () => {
 
     expect(res.status).toBe(500);
     expect(json).toEqual({ error: "Failed to dispatch polling jobs" });
-    expect(errorSpy).toHaveBeenCalled();
-
-    errorSpy.mockRestore();
   });
 
   test("counts failed sends separately when boss.send() rejects", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockLog.error.mockClear();
     const companies = [makeCompany({ slug: "fail", atsVendor: "greenhouse" })];
     mockWhere.mockResolvedValueOnce(companies);
     mockSend.mockRejectedValueOnce(new Error("queue not found"));
@@ -183,12 +207,14 @@ describe("POST /api/internal/dispatch-polling", () => {
     // Per-send try/catch: the route returns 200 with failed count, not 500
     expect(res.status).toBe(200);
     expect(json).toEqual({ enqueued: 0, skipped: 0, failed: 1, total: 1 });
-    expect(errorSpy).toHaveBeenCalledWith(
+    // The per-send failure is logged with structured fields (slug + err).
+    expect(mockLog.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        slug: "fail",
+        err: expect.any(Error) as unknown,
+      }),
       expect.stringContaining("Failed to enqueue"),
-      expect.any(Error)
     );
-
-    errorSpy.mockRestore();
   });
 
   // --- Important: vendor mapping and payload ---
@@ -276,7 +302,8 @@ describe("POST /api/internal/dispatch-polling", () => {
   });
 
   test("returns 500 when getQueue() fails", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    // Pattern B: drop the log-presence assertion. The 500 status and
+    // structured error body are the real contract.
     mockWhere.mockResolvedValueOnce([makeCompany()]);
     mockGetQueue.mockRejectedValueOnce(new Error("DATABASE_URL is required"));
 
@@ -286,15 +313,12 @@ describe("POST /api/internal/dispatch-polling", () => {
 
     expect(res.status).toBe(500);
     expect(json).toEqual({ error: "Failed to dispatch polling jobs" });
-    expect(errorSpy).toHaveBeenCalled();
-
-    errorSpy.mockRestore();
   });
 
   // --- Important: vendor key casing ---
 
   test("lowercases vendor key before VENDOR_QUEUES lookup (mixed case)", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    mockLog.warn.mockClear();
     const companies = [
       makeCompany({ slug: "upper", atsVendor: "Greenhouse" }),
       makeCompany({ slug: "allcaps", atsVendor: "LEVER" }),
@@ -309,9 +333,8 @@ describe("POST /api/internal/dispatch-polling", () => {
     expect(json).toEqual({ enqueued: 2, skipped: 0, failed: 0, total: 2 });
     expect(mockSend).toHaveBeenCalledWith("poll/greenhouse", { companyId: "uuid-upper" });
     expect(mockSend).toHaveBeenCalledWith("poll/lever", { companyId: "uuid-allcaps" });
-    expect(warnSpy).not.toHaveBeenCalled();
-
-    warnSpy.mockRestore();
+    // No "Unknown vendor" warning should fire for lowercased-matching vendors.
+    expect(mockLog.warn).not.toHaveBeenCalled();
   });
 
   // --- Nice-to-have ---

@@ -1,7 +1,32 @@
 import type { Job } from "pg-boss";
-import { createPollCompanyHandler } from "./poll-company";
 
 // ─── Module mocks ──────────────────────────────────────────────────────────
+
+// Mock @gjs/logger at the top so the module under test binds to the mock.
+// Hoist the shared mockLog so tests keep a stable reference even across
+// `vi.clearAllMocks()` calls in beforeEach (which clears `mock.results`).
+const { mockLog } = vi.hoisted(() => ({
+  mockLog: {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    fatal: vi.fn(),
+    trace: vi.fn(),
+    silent: vi.fn(),
+    child: vi.fn(function (this: unknown) {
+      return this;
+    }),
+    flush: vi.fn((cb?: () => void) => cb?.()),
+    level: "info",
+  },
+}));
+
+vi.mock("@gjs/logger", () => ({
+  createLogger: vi.fn(() => mockLog),
+}));
+
+import { createPollCompanyHandler } from "./poll-company";
 
 vi.mock("@gjs/ingestion", () => ({
   pollCompany: vi.fn(),
@@ -477,7 +502,6 @@ describe("createPollCompanyHandler(db)", () => {
     mockPollCompany.mockResolvedValue(pollResult);
     mockComputeNextPoll.mockReturnValue(adaptiveOutput);
 
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const handler = createPollCompanyHandler(db);
 
     // Should resolve (not reject) -- the error is caught and logged
@@ -485,10 +509,16 @@ describe("createPollCompanyHandler(db)", () => {
 
     // pollCompany was still called (the poll itself succeeded)
     expect(mockPollCompany).toHaveBeenCalledOnce();
-    // The error was logged
-    expect(errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Failed to update adaptive fields"),
-      expect.any(Error)
+    // The error was logged with structured fields and the adaptive-update
+    // failure message. Preserving this assertion confirms the update error
+    // was swallowed (caught + logged, not re-thrown).
+    expect(mockLog.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        slug: company.slug,
+        companyId: "company-1",
+        err: expect.any(Error) as unknown,
+      }),
+      expect.stringContaining("Failed to update adaptive poll fields"),
     );
   });
 
