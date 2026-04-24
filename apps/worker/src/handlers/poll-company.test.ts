@@ -173,14 +173,11 @@ describe("createPollCompanyHandler(db)", () => {
     vi.clearAllMocks();
     vi.useFakeTimers();
     vi.setSystemTime(FIXED_NOW);
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    vi.spyOn(console, "info").mockImplementation(() => {});
     // Re-set the default mock after clearAllMocks resets it
     mockJitter.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
-    vi.restoreAllMocks();
     vi.useRealTimers();
   });
 

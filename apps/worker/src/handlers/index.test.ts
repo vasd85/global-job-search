@@ -57,15 +57,10 @@ function createMockDb() {
 describe("registerHandlers(boss, db)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.spyOn(console, "info").mockImplementation(() => {});
     // Re-set mock return values after clearAllMocks
     (createPollCompanyHandler as ReturnType<typeof vi.fn>).mockReturnValue(mockPollHandler);
     (createLlmScoringHandler as ReturnType<typeof vi.fn>).mockReturnValue(mockScoringHandler);
     (createInternetExpansionHandler as ReturnType<typeof vi.fn>).mockReturnValue(mockExpansionHandler);
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
   });
 
   // ── Critical ──────────────────────────────────────────────────────────

@@ -271,7 +271,6 @@ describe("POST /api/internal/dispatch-polling", () => {
   });
 
   test("partial send failure -- first succeeds, second fails", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const companies = [
       makeCompany({ slug: "ok", atsVendor: "greenhouse" }),
       makeCompany({ slug: "fail", atsVendor: "lever" }),
@@ -288,8 +287,6 @@ describe("POST /api/internal/dispatch-polling", () => {
     // Per-send try/catch: first job succeeds, second fails, both counted
     expect(res.status).toBe(200);
     expect(json).toEqual({ enqueued: 1, skipped: 0, failed: 1, total: 2 });
-
-    errorSpy.mockRestore();
   });
 
   test("companyId in job payload is the UUID, not the slug", async () => {
@@ -340,7 +337,6 @@ describe("POST /api/internal/dispatch-polling", () => {
   // --- Nice-to-have ---
 
   test("company with empty string atsVendor is skipped", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     mockWhere.mockResolvedValueOnce([makeCompany({ slug: "empty", atsVendor: "" })]);
 
     const res = await POST(makeRequest());
@@ -349,8 +345,6 @@ describe("POST /api/internal/dispatch-polling", () => {
 
     expect(json).toEqual({ enqueued: 0, skipped: 1, failed: 0, total: 1 });
     expect(mockSend).not.toHaveBeenCalled();
-
-    warnSpy.mockRestore();
   });
 
   test("large batch of 100 companies enqueues all sequentially", async () => {
@@ -388,7 +382,6 @@ describe("POST /api/internal/dispatch-polling", () => {
   });
 
   test("internal server error returns 500 with safe error message, no stack trace", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     mockWhere.mockRejectedValueOnce(
       new Error("FATAL: password authentication failed for user 'admin'")
     );
@@ -401,8 +394,6 @@ describe("POST /api/internal/dispatch-polling", () => {
     expect(text).not.toContain("password");
     expect(text).not.toContain("admin");
     expect(text).toContain("Failed to dispatch polling jobs");
-
-    errorSpy.mockRestore();
   });
 });
 

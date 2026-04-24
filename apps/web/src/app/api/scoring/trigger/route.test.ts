@@ -283,7 +283,6 @@ describe("POST /api/scoring/trigger -- profile lookup", () => {
   });
 
   test("profile DB query throws returns 500 without internal details", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     dbSelectResults.length = 0;
     // Profile query rejects (returned from .limit() in the chain)
     dbSelectResults.push(Promise.reject(new Error("connection refused")));
@@ -293,8 +292,6 @@ describe("POST /api/scoring/trigger -- profile lookup", () => {
     expect(status).toBe(500);
     expect(body.error).toBe("Internal server error");
     expect(JSON.stringify(body)).not.toContain("connection refused");
-
-    errorSpy.mockRestore();
   });
 });
 
@@ -313,7 +310,6 @@ describe("POST /api/scoring/trigger -- API key check", () => {
   });
 
   test("getActiveKeyMeta throws returns 500", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     getActiveKeyMetaMock.mockRejectedValueOnce(new Error("decrypt failure"));
 
     const { status, body } = await postJson();
@@ -321,8 +317,6 @@ describe("POST /api/scoring/trigger -- API key check", () => {
     expect(status).toBe(500);
     expect(body.error).toBe("Internal server error");
     expect(JSON.stringify(body)).not.toContain("decrypt failure");
-
-    errorSpy.mockRestore();
   });
 });
 
@@ -640,7 +634,6 @@ describe("POST /api/scoring/trigger -- pg-boss enqueue", () => {
   });
 
   test("boss.send fails mid-loop -- partial success with sendFailed count", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const jobs = [makeJob("job-ok"), makeJob("job-fail"), makeJob("job-skip")];
     searchJobsMock.mockResolvedValueOnce(
       makeSearchResponse({ jobs, total: 3 }),
@@ -667,12 +660,9 @@ describe("POST /api/scoring/trigger -- pg-boss enqueue", () => {
     expect(body.sendFailed).toBe(1);
     expect(body.total).toBe(3);
     expect(body.message).toContain("1 failed to enqueue");
-
-    warnSpy.mockRestore();
   });
 
   test("getQueue fails returns 500", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const jobs = [makeJob("job-x")];
     searchJobsMock.mockResolvedValueOnce(
       makeSearchResponse({ jobs, total: 1 }),
@@ -687,8 +677,6 @@ describe("POST /api/scoring/trigger -- pg-boss enqueue", () => {
 
     expect(status).toBe(500);
     expect(body.error).toBe("Internal server error");
-
-    errorSpy.mockRestore();
   });
 });
 
@@ -747,7 +735,6 @@ describe("POST /api/scoring/trigger -- response shape", () => {
 
 describe("POST /api/scoring/trigger -- failure scenarios", () => {
   test("cache check queries fail (Promise.all rejects) returns 500", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const jobs = [makeJob("job-1")];
     searchJobsMock.mockResolvedValueOnce(
       makeSearchResponse({ jobs, total: 1 }),
@@ -764,12 +751,9 @@ describe("POST /api/scoring/trigger -- failure scenarios", () => {
     expect(status).toBe(500);
     expect(body.error).toBe("Internal server error");
     expect(JSON.stringify(body)).not.toContain("connection reset");
-
-    errorSpy.mockRestore();
   });
 
   test("searchJobs throws returns 500 without internal details", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     searchJobsMock.mockRejectedValueOnce(new Error("query syntax error"));
 
     const { status, body } = await postJson();
@@ -777,12 +761,9 @@ describe("POST /api/scoring/trigger -- failure scenarios", () => {
     expect(status).toBe(500);
     expect(body.error).toBe("Internal server error");
     expect(JSON.stringify(body)).not.toContain("query syntax error");
-
-    errorSpy.mockRestore();
   });
 
   test("boss.createQueue fails returns 500", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const jobs = [makeJob("job-1")];
     searchJobsMock.mockResolvedValueOnce(
       makeSearchResponse({ jobs, total: 1 }),
@@ -795,12 +776,9 @@ describe("POST /api/scoring/trigger -- failure scenarios", () => {
 
     expect(status).toBe(500);
     expect(body.error).toBe("Internal server error");
-
-    errorSpy.mockRestore();
   });
 
   test("boss.send rejects on first call -- returns 200 with all failed", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const jobs = [makeJob("job-1")];
     searchJobsMock.mockResolvedValueOnce(
       makeSearchResponse({ jobs, total: 1 }),
@@ -815,8 +793,6 @@ describe("POST /api/scoring/trigger -- failure scenarios", () => {
     expect(body.enqueued).toBe(0);
     expect(body.sendFailed).toBe(1);
     expect(body.total).toBe(1);
-
-    warnSpy.mockRestore();
   });
 });
 

@@ -378,13 +378,6 @@ function setupHappyPath(opts: {
 describe("createInternetExpansionHandler", () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    vi.spyOn(console, "info").mockImplementation(() => {});
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    vi.spyOn(console, "error").mockImplementation(() => {});
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
   });
 
   // ── Critical ──────────────────────────────────────────────────────────
@@ -1087,9 +1080,6 @@ describe("createInternetExpansionHandler", () => {
       "vendor %s calls its parser and extracts slug",
       async (vendor, parser, returnVal) => {
         vi.clearAllMocks();
-        vi.spyOn(console, "info").mockImplementation(() => {});
-        vi.spyOn(console, "warn").mockImplementation(() => {});
-        vi.spyOn(console, "error").mockImplementation(() => {});
 
         setupHappyPath();
         mockDetectAtsVendor.mockReturnValue(vendor);
