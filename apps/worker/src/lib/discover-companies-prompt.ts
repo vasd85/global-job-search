@@ -1,4 +1,6 @@
-import { debug } from "./logger";
+import { createLogger } from "@gjs/logger";
+
+const log = createLogger("prompt");
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -83,11 +85,14 @@ Return up to ${budget} companies. Prioritize the best matches first.
 
 Search the web to find companies matching the criteria above. For each company, find their careers/jobs page URL (especially on Greenhouse, Lever, Ashby, or SmartRecruiters). Return structured results.`;
 
-  debug("prompt", "Built discovery prompt", {
-    systemPromptLength: SYSTEM_PROMPT.length,
-    userPromptLength: user.length,
-    excludedCompanyCount: existingCompanyNames.length,
-  });
+  log.debug(
+    {
+      systemPromptLength: SYSTEM_PROMPT.length,
+      userPromptLength: user.length,
+      excludedCompanyCount: existingCompanyNames.length,
+    },
+    "Built discovery prompt",
+  );
 
   return { system: SYSTEM_PROMPT, user };
 }

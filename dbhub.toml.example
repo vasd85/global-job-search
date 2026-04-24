@@ -1,0 +1,8 @@
+[[sources]]
+id = "default"
+dsn = "postgres://<user>:<password>@localhost:5432/<database>"
+
+[[tools]]
+name = "execute_sql"
+source = "default"
+readonly = true

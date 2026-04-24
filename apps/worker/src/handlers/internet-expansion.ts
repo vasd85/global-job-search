@@ -31,11 +31,16 @@ import {
 } from "@gjs/ats-core";
 import type { JobImmigrationSignals } from "@gjs/ats-core/geo";
 
+import { createLogger } from "@gjs/logger";
 import { decryptUserKey } from "../lib/decrypt-user-key";
 import { getAppConfigValue } from "../lib/app-config";
 import { normalizeDomain } from "../lib/normalize-domain";
 import { discoverCompanies } from "../lib/discover-companies";
-import { debug } from "../lib/logger";
+
+const log = createLogger("expand");
+// L2-phase logs share the "expand" tag but bind phase: "l2" so
+// aggregators can filter orthogonally (tag=expand + phase=l2).
+const logL2 = log.child({ phase: "l2" });
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -176,9 +181,7 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
         // 1. Decrypt user API key
         const apiKey = await decryptUserKey(db, userId);
         if (!apiKey) {
-          console.error(
-            `[expand] No active API key for user ${userId}, skipping`,
-          );
+          log.error({ userId }, "No active API key, skipping user");
           continue;
         }
 
@@ -190,20 +193,21 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
           .limit(1);
 
         if (!prefs) {
-          console.warn(
-            `[expand] No company preferences for user ${userId}, skipping`,
-          );
+          log.warn({ userId }, "No company preferences, skipping user");
           continue;
         }
 
-        debug("expand", "Loaded user preferences", {
-          industries: prefs.industries,
-          companySizes: prefs.companySizes,
-          companyStages: prefs.companyStages,
-          productTypes: prefs.productTypes,
-          exclusions: prefs.exclusions,
-          hqGeographies: prefs.hqGeographies,
-        });
+        log.debug(
+          {
+            industries: prefs.industries,
+            companySizes: prefs.companySizes,
+            companyStages: prefs.companyStages,
+            productTypes: prefs.productTypes,
+            exclusions: prefs.exclusions,
+            hqGeographies: prefs.hqGeographies,
+          },
+          "Loaded user preferences",
+        );
 
         // 3. Load budget from config
         const rawBudget = Number(
@@ -217,10 +221,7 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
           ? 20
           : Math.max(1, Math.floor(rawBudget));
 
-        debug("expand", "Loaded budget config", {
-          rawBudget,
-          clampedBudget: budget,
-        });
+        log.debug({ rawBudget, clampedBudget: budget }, "Loaded budget config");
 
         // 4. Load existing companies for dedup
         // NOTE: Loads all companies (active and inactive) into memory for domain/ATS dedup.
@@ -249,22 +250,26 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
           }
         }
 
-        debug("expand", "Loaded existing companies for dedup", {
-          totalCompanies: existingCompanies.length,
-          domainCount: existingDomains.size,
-          atsKeyCount: existingAtsKeys.size,
-          sampleNames: [...existingNames].slice(0, 10),
-        });
+        log.debug(
+          {
+            totalCompanies: existingCompanies.length,
+            domainCount: existingDomains.size,
+            atsKeyCount: existingAtsKeys.size,
+            sampleNames: [...existingNames].slice(0, 10),
+          },
+          "Loaded existing companies for dedup",
+        );
 
         // 5. Discover companies via AI web search
-        console.info(
-          `[expand] Discovering companies for user ${userId} (budget: ${budget})`,
+        log.info({ userId, budget }, "Discovering companies");
+        log.debug(
+          {
+            industriesCount: (prefs.industries ?? []).length,
+            existingNamesCount: existingNames.size,
+            budget,
+          },
+          "Calling discoverCompanies",
         );
-        debug("expand", "Calling discoverCompanies", {
-          industriesCount: (prefs.industries ?? []).length,
-          existingNamesCount: existingNames.size,
-          budget,
-        });
         const discovered = await discoverCompanies({
           apiKey,
           preferences: {
@@ -280,7 +285,7 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
         });
 
         if (discovered.length === 0) {
-          console.info(`[expand] No companies discovered for user ${userId}`);
+          log.info({ userId }, "No companies discovered");
           continue;
         }
 
@@ -299,11 +304,14 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
           targetTitles,
         );
 
-        debug("expand:l2", "Role family resolution", {
-          targetTitles,
-          matchedFamilySlugs: matchedFamilies.map((f) => f.slug),
-          totalRoleFamilies: allFamilies.length,
-        });
+        logL2.debug(
+          {
+            targetTitles,
+            matchedFamilySlugs: matchedFamilies.map((f) => f.slug),
+            totalRoleFamilies: allFamilies.length,
+          },
+          "Role family resolution",
+        );
 
         const locationPreferences = profile?.locationPreferences as {
           tiers?: unknown;
@@ -315,10 +323,13 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
 
         const targetSeniority = profile?.targetSeniority ?? [];
 
-        debug("expand:l2", "Location tier resolution", {
-          rawLocationPreferences: locationPreferences,
-          resolvedTierCount: resolvedTiers.length,
-        });
+        logL2.debug(
+          {
+            rawLocationPreferences: locationPreferences,
+            resolvedTierCount: resolvedTiers.length,
+          },
+          "Location tier resolution",
+        );
 
         // 6. Process each discovered company
         let inserted = 0;
@@ -333,19 +344,23 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
 
         for (const disc of discovered.slice(0, budget)) {
           try {
-            debug("expand", "Processing discovered company", {
-              name: disc.name,
-              website: disc.website,
-              careersUrl: disc.careersUrl,
-              industry: disc.industry,
-              reasoning: disc.reasoning,
-            });
+            log.debug(
+              {
+                name: disc.name,
+                website: disc.website,
+                careersUrl: disc.careersUrl,
+                industry: disc.industry,
+                reasoning: disc.reasoning,
+              },
+              "Processing discovered company",
+            );
 
             // 6a. Domain dedup
             const domain = normalizeDomain(disc.website);
             if (domain && existingDomains.has(domain)) {
-              console.info(
-                `[expand] Skipping ${disc.name}: domain ${domain} already in DB`,
+              log.info(
+                { name: disc.name, domain },
+                "Skipping: domain already in DB",
               );
               skippedDomain++;
               continue;
@@ -366,11 +381,14 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
               const urlVendor = detectAtsVendor(disc.careersUrl);
               const urlDuration = Date.now() - urlStart;
 
-              debug("expand", "URL detection result", {
-                company: disc.name,
-                vendor: urlVendor,
-                careersUrl: disc.careersUrl,
-              });
+              log.debug(
+                {
+                  company: disc.name,
+                  vendor: urlVendor,
+                  careersUrl: disc.careersUrl,
+                },
+                "URL detection result",
+              );
 
               if (SUPPORTED_VENDORS.has(urlVendor)) {
                 const urlSlug = extractAtsSlug(urlVendor, disc.careersUrl);
@@ -390,11 +408,14 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
                   detectionMethod = "url_detection";
                   detectionConfidence = "high";
 
-                  debug("expand", "URL fast-path succeeded", {
-                    company: disc.name,
-                    vendor: urlVendor,
-                    slug: urlSlug,
-                  });
+                  log.debug(
+                    {
+                      company: disc.name,
+                      vendor: urlVendor,
+                      slug: urlSlug,
+                    },
+                    "URL fast-path succeeded",
+                  );
                 }
               } else {
                 searchSteps.push({
@@ -411,11 +432,14 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
 
             // Primary: API probing (only if URL detection did not succeed)
             if (detectionMethod === "none" && slugCandidates.length > 0) {
-              debug("expand", "Starting API probe", {
-                company: disc.name,
-                slugCandidateCount: slugCandidates.length,
-                slugCandidates: slugCandidates.slice(0, 6),
-              });
+              log.debug(
+                {
+                  company: disc.name,
+                  slugCandidateCount: slugCandidates.length,
+                  slugCandidates: slugCandidates.slice(0, 6),
+                },
+                "Starting API probe",
+              );
 
               const probeOutcome = await probeAtsApis(
                 disc.name,
@@ -434,18 +458,24 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
                 detectionConfidence = probeOutcome.result.confidence;
                 probeHits++;
 
-                debug("expand", "API probe matched", {
-                  company: disc.name,
-                  vendor: probeOutcome.result.vendor,
-                  slug: probeOutcome.result.slug,
-                  confidence: probeOutcome.result.confidence,
-                  matchedName: probeOutcome.result.matchedName,
-                });
+                log.debug(
+                  {
+                    company: disc.name,
+                    vendor: probeOutcome.result.vendor,
+                    slug: probeOutcome.result.slug,
+                    confidence: probeOutcome.result.confidence,
+                    matchedName: probeOutcome.result.matchedName,
+                  },
+                  "API probe matched",
+                );
               } else {
-                debug("expand", "API probe found no match", {
-                  company: disc.name,
-                  probeAttempts: probeOutcome.log.length,
-                });
+                log.debug(
+                  {
+                    company: disc.name,
+                    probeAttempts: probeOutcome.log.length,
+                  },
+                  "API probe found no match",
+                );
               }
             }
 
@@ -466,8 +496,9 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
             if (detectedSlug) {
               const atsKey = `${detectedVendor}:${detectedSlug}`;
               if (existingAtsKeys.has(atsKey)) {
-                console.info(
-                  `[expand] Skipping ${disc.name}: ATS pair ${atsKey} already in DB`,
+                log.info(
+                  { name: disc.name, atsKey },
+                  "Skipping: ATS pair already in DB",
                 );
                 skippedDup++;
                 continue;
@@ -499,22 +530,26 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
 
             if (!companyRow) {
               // Conflict means it was already in DB (race or missed by our check)
-              console.info(
-                `[expand] Skipping ${disc.name}: insert conflict (already exists)`,
+              log.info(
+                { name: disc.name },
+                "Skipping: insert conflict (already exists)",
               );
               skippedDup++;
               continue;
             }
 
-            debug("expand", "Company inserted", {
-              id: companyRow.id as string,
-              slug: companySlug,
-              name: companyRow.name,
-              website: companyRow.website,
-              atsVendor: companyRow.atsVendor,
-              atsSlug: companyRow.atsSlug,
-              isActive: companyRow.isActive,
-            });
+            log.debug(
+              {
+                id: companyRow.id as string,
+                slug: companySlug,
+                name: companyRow.name,
+                website: companyRow.website,
+                atsVendor: companyRow.atsVendor,
+                atsSlug: companyRow.atsSlug,
+                isActive: companyRow.isActive,
+              },
+              "Company inserted",
+            );
 
             inserted++;
             if (domain) existingDomains.add(domain);
@@ -524,8 +559,9 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
 
             // Unknown ATS companies: saved for audit but not polled
             if (!isKnownAts) {
-              console.info(
-                `[expand] Saved ${disc.name} with unknown ATS (method: ${detectionMethod})`,
+              log.info(
+                { name: disc.name, method: detectionMethod },
+                "Saved with unknown ATS",
               );
               insertedUnknown++;
               continue;
@@ -536,12 +572,17 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
             let pollSucceeded = false;
             try {
               const pollResult = await pollCompany(db, companyRow);
-              debug("expand", "Poll result", {
-                company: disc.name,
-                ...pollResult,
-              });
-              console.info(
-                `[expand] Polled ${disc.name}: found=${pollResult.jobsFound} new=${pollResult.jobsNew}`,
+              log.debug(
+                { company: disc.name, ...pollResult },
+                "Poll result",
+              );
+              log.info(
+                {
+                  name: disc.name,
+                  jobsFound: pollResult.jobsFound,
+                  jobsNew: pollResult.jobsNew,
+                },
+                "Polled",
               );
               polled++;
               pollSucceeded = pollResult.jobsFound > 0;
@@ -553,11 +594,14 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
                 detectionMethod === "url_detection" &&
                 slugCandidates.length > 0
               ) {
-                debug("expand", "URL-detected company has 0 jobs, re-probing", {
-                  company: disc.name,
-                  originalVendor: detectedVendor,
-                  originalSlug: detectedSlug,
-                });
+                log.debug(
+                  {
+                    company: disc.name,
+                    originalVendor: detectedVendor,
+                    originalSlug: detectedSlug,
+                  },
+                  "URL-detected company has 0 jobs, re-probing",
+                );
 
                 const reprobeOutcome = await probeAtsApis(
                   disc.name,
@@ -574,8 +618,13 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
                   const newVendor = reprobeOutcome.result.vendor;
                   const newSlug = reprobeOutcome.result.slug;
 
-                  console.info(
-                    `[expand] Re-probe found ${disc.name} on ${newVendor} (was ${detectedVendor}), updating`,
+                  log.info(
+                    {
+                      name: disc.name,
+                      newVendor,
+                      wasVendor: detectedVendor,
+                    },
+                    "Re-probe matched different vendor, updating",
                   );
 
                   detectedVendor = newVendor;
@@ -616,28 +665,32 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
                   };
                   try {
                     const repollResult = await pollCompany(db, updatedCompany);
-                    debug("expand", "Re-poll result", {
-                      company: disc.name,
-                      ...repollResult,
-                    });
-                    console.info(
-                      `[expand] Re-polled ${disc.name} on ${newVendor}: found=${repollResult.jobsFound} new=${repollResult.jobsNew}`,
+                    log.debug(
+                      { company: disc.name, ...repollResult },
+                      "Re-poll result",
+                    );
+                    log.info(
+                      {
+                        name: disc.name,
+                        newVendor,
+                        jobsFound: repollResult.jobsFound,
+                        jobsNew: repollResult.jobsNew,
+                      },
+                      "Re-polled on new vendor",
                     );
                     pollSucceeded = repollResult.jobsFound > 0;
                   } catch (repollError) {
-                    const msg =
-                      repollError instanceof Error
-                        ? repollError.message
-                        : String(repollError);
-                    console.error(
-                      `[expand] Re-poll failed for ${disc.name}: ${msg}`,
+                    log.error(
+                      { name: disc.name, err: repollError },
+                      "Re-poll failed",
                     );
                   }
                 } else {
                   // URL-detected vendor with 0 jobs + no other vendor found:
                   // abandoned page or wrong slug. Downgrade to unknown.
-                  console.info(
-                    `[expand] Downgrading ${disc.name} from ${detectedVendor} to unknown (0 jobs, no alt vendor)`,
+                  log.info(
+                    { name: disc.name, wasVendor: detectedVendor },
+                    "Downgrading to unknown ATS (0 jobs, no alt vendor)",
                   );
 
                   atsSearchLog.steps = searchSteps;
@@ -665,13 +718,7 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
                 }
               }
             } catch (pollError) {
-              const msg =
-                pollError instanceof Error
-                  ? pollError.message
-                  : String(pollError);
-              console.error(
-                `[expand] Poll failed for ${disc.name}: ${msg}`,
-              );
+              log.error({ name: disc.name, err: pollError }, "Poll failed");
               pollErrors++;
             }
 
@@ -723,13 +770,16 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
                       continue;
                     }
 
-                    debug("expand:l2", "Evaluating job", {
-                      jobId: job.id,
-                      title: job.title,
-                      department: job.department,
-                      location: job.location,
-                      workplaceType: job.workplaceType,
-                    });
+                    logL2.debug(
+                      {
+                        jobId: job.id,
+                        title: job.title,
+                        department: job.department,
+                        location: job.location,
+                        workplaceType: job.workplaceType,
+                      },
+                      "Evaluating job",
+                    );
 
                     // Level 2 filter: role family classification
                     if (matchedFamilies.length > 0) {
@@ -737,17 +787,24 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
                         title: job.title,
                         departmentRaw: job.department,
                       });
-                      debug("expand:l2", "Classification result", {
-                        jobId: job.id,
-                        familySlug: classified.familySlug,
-                        score: classified.score,
-                        matchType: classified.matchType,
-                      });
+                      logL2.debug(
+                        {
+                          jobId: job.id,
+                          familySlug: classified.familySlug,
+                          score: classified.score,
+                          matchType: classified.matchType,
+                        },
+                        "Classification result",
+                      );
                       if (classified.score < CLASSIFICATION_THRESHOLD) {
-                        debug(
-                          "expand:l2",
-                          `Filtered: role family score ${classified.score} < ${CLASSIFICATION_THRESHOLD}`,
-                          { jobId: job.id, title: job.title },
+                        logL2.debug(
+                          {
+                            jobId: job.id,
+                            title: job.title,
+                            score: classified.score,
+                            threshold: CLASSIFICATION_THRESHOLD,
+                          },
+                          "Filtered: role family score below threshold",
                         );
                         scoredFiltered++;
                         continue;
@@ -761,15 +818,14 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
                         seniority !== null &&
                         !targetSeniority.includes(seniority)
                       ) {
-                        debug(
-                          "expand:l2",
-                          `Filtered: seniority "${seniority}" not in target`,
+                        logL2.debug(
                           {
                             jobId: job.id,
                             title: job.title,
                             detectedSeniority: seniority,
                             targetSeniority,
                           },
+                          "Filtered: seniority not in target",
                         );
                         scoredFiltered++;
                         continue;
@@ -791,25 +847,24 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
                         jobSignals,
                       );
                       if (!locationResult.passes) {
-                        debug(
-                          "expand:l2",
-                          `Filtered: location did not match tiers`,
+                        logL2.debug(
                           {
                             jobId: job.id,
                             title: job.title,
                             location: job.location,
                             workplaceType: job.workplaceType,
                           },
+                          "Filtered: location did not match tiers",
                         );
                         scoredFiltered++;
                         continue;
                       }
                     }
 
-                    debug("expand:l2", "Passed L2 filter, enqueuing scoring", {
-                      jobId: job.id,
-                      title: job.title,
-                    });
+                    logL2.debug(
+                      { jobId: job.id, title: job.title },
+                      "Passed L2 filter, enqueuing scoring",
+                    );
 
                     try {
                       await boss.send(
@@ -822,51 +877,47 @@ export function createInternetExpansionHandler(db: Database, boss: PgBoss) {
                       );
                       scoredEnqueued++;
                     } catch (sendError) {
-                      const msg =
-                        sendError instanceof Error
-                          ? sendError.message
-                          : String(sendError);
-                      console.warn(
-                        `[expand] Failed to enqueue scoring for job ${job.id}: ${msg}`,
+                      log.warn(
+                        { jobId: job.id, err: sendError },
+                        "Failed to enqueue scoring for job",
                       );
                     }
                   }
                 }
               } catch (scoreError) {
                 // Non-fatal: scoring can be triggered manually later
-                const msg =
-                  scoreError instanceof Error
-                    ? scoreError.message
-                    : String(scoreError);
-                console.warn(
-                  `[expand] Failed to enqueue scoring for ${disc.name}: ${msg}`,
+                log.warn(
+                  { name: disc.name, err: scoreError },
+                  "Failed to enqueue scoring for company",
                 );
               }
             }
           } catch (companyError) {
-            const msg =
-              companyError instanceof Error
-                ? companyError.message
-                : String(companyError);
-            console.error(
-              `[expand] Error processing ${disc.name}: ${msg}`,
+            log.error(
+              { name: disc.name, err: companyError },
+              "Error processing company",
             );
           }
         }
 
-        console.info(
-          `[expand] Summary for user ${userId}: ` +
-            `discovered=${discovered.length} inserted=${inserted} inserted_unknown=${insertedUnknown} ` +
-            `polled=${polled} probe_hits=${probeHits} ` +
-            `skipped_domain=${skippedDomain} skipped_dup=${skippedDup} ` +
-            `poll_errors=${pollErrors} scored_enqueued=${scoredEnqueued} scored_filtered=${scoredFiltered}`,
+        log.info(
+          {
+            userId,
+            discovered: discovered.length,
+            inserted,
+            insertedUnknown,
+            polled,
+            probeHits,
+            skippedDomain,
+            skippedDup,
+            pollErrors,
+            scoredEnqueued,
+            scoredFiltered,
+          },
+          "Expansion summary",
         );
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : String(error);
-        console.error(
-          `[expand] Error in expansion job for user ${userId}: ${message}`,
-        );
+        log.error({ userId, err: error }, "Expansion job failed");
       }
     }
   };

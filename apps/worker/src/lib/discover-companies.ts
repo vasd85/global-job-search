@@ -1,5 +1,6 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { generateText, stepCountIs } from "ai";
+import { createLogger } from "@gjs/logger";
 
 import {
   DiscoveryOutputSchema,
@@ -7,7 +8,8 @@ import {
   type DiscoveryOutput,
 } from "./discover-companies-schema";
 import { buildDiscoveryPrompt } from "./discover-companies-prompt";
-import { debug } from "./logger";
+
+const log = createLogger("discover");
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -59,11 +61,14 @@ export async function discoverCompanies(
     const anthropic = createAnthropic({ apiKey });
     const model = anthropic(MODEL_ID);
 
-    debug("discover", "Calling generateText", {
-      modelId: MODEL_ID,
-      maxSteps: MAX_STEPS,
-      promptSummary: promptParts.user.slice(0, 200),
-    });
+    log.debug(
+      {
+        modelId: MODEL_ID,
+        maxSteps: MAX_STEPS,
+        promptSummary: promptParts.user.slice(0, 200),
+      },
+      "Calling generateText",
+    );
 
     const result = await generateText({
       model,
@@ -76,31 +81,28 @@ export async function discoverCompanies(
     });
 
     const rawText = result.text ?? "";
-    debug("discover", "generateText returned", {
-      stepCount: result.steps?.length,
-      textLength: rawText.length,
-    });
+    log.debug(
+      { stepCount: result.steps?.length, textLength: rawText.length },
+      "generateText returned",
+    );
 
     const discoveryOutput = tryExtractJson(rawText);
     if (!discoveryOutput || discoveryOutput.companies.length === 0) {
-      debug("discover", "No companies parsed from model text", {
-        rawTextPreview: rawText.slice(0, 500),
-      });
-      console.warn("[discover] AI returned no parseable companies");
+      log.debug(
+        { rawTextPreview: rawText.slice(0, 500) },
+        "No companies parsed from model text",
+      );
+      log.warn("AI returned no parseable companies");
       return [];
     }
 
-    console.info(
-      `[discover] AI returned ${discoveryOutput.companies.length} companies`,
+    log.info(
+      { count: discoveryOutput.companies.length },
+      "AI returned companies",
     );
     return discoveryOutput.companies;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const stack = error instanceof Error ? error.stack : undefined;
-    console.error(`[discover] AI web search failed: ${message}`);
-    if (stack) {
-      debug("discover", "Error stack trace", { stack });
-    }
+    log.error({ err: error }, "AI web search failed");
     return [];
   }
 }

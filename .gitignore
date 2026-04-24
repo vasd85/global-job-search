@@ -46,8 +46,10 @@ docs/
 # Claude Code local settings
 .claude/settings.local.json
 .mcp.json
+dbhub.toml
 .claude/worktrees/
 .claude/scratchpads/
+.claude/logs/
 
 # User specific files
 qa-jobs-scrapper/
