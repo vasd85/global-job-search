@@ -16,6 +16,7 @@
     "@gjs/crypto": "workspace:*",
     "@gjs/db": "workspace:*",
     "@gjs/ingestion": "workspace:*",
+    "@gjs/logger": "workspace:*",
     "ai": "^6.0.138",
     "drizzle-orm": "^0.45.1",
     "pg-boss": "^12.15.0",
