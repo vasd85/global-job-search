@@ -49,6 +49,7 @@ docs/
 dbhub.toml
 .claude/worktrees/
 .claude/scratchpads/
+.claude/logs/
 
 # User specific files
 qa-jobs-scrapper/
