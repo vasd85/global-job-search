@@ -38,7 +38,9 @@ import { normalizeDomain } from "../lib/normalize-domain";
 import { discoverCompanies } from "../lib/discover-companies";
 
 const log = createLogger("expand");
-const logL2 = createLogger("expand:l2");
+// L2-phase logs share the "expand" tag but bind phase: "l2" so
+// aggregators can filter orthogonally (tag=expand + phase=l2).
+const logL2 = log.child({ phase: "l2" });
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
