@@ -1,7 +1,10 @@
 import { eq } from "drizzle-orm";
+import { createLogger } from "@gjs/logger";
 import type { Database } from "../db";
 import { companies } from "../db/schema";
 import { pollCompany } from "./poll-company";
+
+const log = createLogger("ingestion");
 
 interface IngestionResult {
   totalCompanies: number;
@@ -95,16 +98,25 @@ export async function runIngestion(
 
   result.durationMs = Date.now() - startTime;
 
-  console.log(
-    `[Ingestion] Done: ${result.successful}/${result.totalCompanies} companies polled, ` +
-      `+${result.totalJobsNew} new, ~${result.totalJobsUpdated} updated, -${result.totalJobsClosed} closed ` +
-      `(${result.durationMs}ms)`
+  log.info(
+    {
+      successful: result.successful,
+      totalCompanies: result.totalCompanies,
+      jobsNew: result.totalJobsNew,
+      jobsUpdated: result.totalJobsUpdated,
+      jobsClosed: result.totalJobsClosed,
+      durationMs: result.durationMs,
+    },
+    "Ingestion done",
   );
 
   if (result.errors.length > 0) {
-    console.log(
-      `[Ingestion] Errors (${result.errors.length}):`,
-      result.errors.slice(0, 10).map((e) => `${e.companySlug}: ${e.error}`).join("; ")
+    log.warn(
+      {
+        count: result.errors.length,
+        sample: result.errors.slice(0, 10),
+      },
+      "Ingestion errors",
     );
   }
 

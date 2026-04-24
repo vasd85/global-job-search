@@ -1,4 +1,7 @@
 import { PgBoss } from "pg-boss";
+import { createLogger } from "@gjs/logger";
+
+const log = createLogger("queue");
 
 let _bossPromise: Promise<PgBoss> | undefined;
 
@@ -24,7 +27,7 @@ export function getQueue(): Promise<PgBoss> {
     // via the shared promise; this handler ensures it is logged even in
     // fire-and-forget patterns.
     _bossPromise.catch((err) => {
-      console.error("pg-boss start failed, will retry on next getQueue() call:", err);
+      log.error({ err }, "pg-boss start failed, will retry on next getQueue() call");
       _bossPromise = undefined;
     });
   }

@@ -1,10 +1,13 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { and, eq, lte, or, isNull } from "drizzle-orm";
+import { createLogger } from "@gjs/logger";
 import { db } from "@/lib/db";
 import { companies } from "@/lib/db/schema";
 import { VENDOR_QUEUES } from "@gjs/ingestion";
 import { getQueue } from "@/lib/queue";
+
+const log = createLogger("dispatch-polling");
 
 // ─── Auth ───────────────────────────────────────────────────────────────────
 
@@ -81,14 +84,19 @@ export async function POST(request: Request): Promise<NextResponse> {
           enqueued++;
         } catch (sendError) {
           failed++;
-          console.error(
-            `[dispatch-polling] Failed to enqueue ${company.slug}:`,
-            sendError
+          log.error(
+            {
+              companyId: company.id,
+              slug: company.slug,
+              err: sendError,
+            },
+            "Failed to enqueue",
           );
         }
       } else {
-        console.warn(
-          `[dispatch-polling] Unknown vendor "${company.atsVendor}" for ${company.slug}, skipping`
+        log.warn(
+          { vendor: company.atsVendor, slug: company.slug },
+          "Unknown vendor, skipping",
         );
         skipped++;
       }
@@ -101,7 +109,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       total: dueCompanies.length,
     });
   } catch (error) {
-    console.error("[dispatch-polling] Error:", error);
+    log.error({ err: error }, "Dispatch polling failed");
     return NextResponse.json(
       { error: "Failed to dispatch polling jobs" },
       { status: 500 }

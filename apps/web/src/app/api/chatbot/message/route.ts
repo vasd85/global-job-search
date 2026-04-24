@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { APICallError } from "ai";
+import { createLogger } from "@gjs/logger";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { conversationStates, conversationMessages } from "@/lib/db/schema";
@@ -19,6 +20,8 @@ import {
 import type { EngineMessage } from "@/lib/chatbot/engine";
 import { getUserAnthropicKey } from "@/lib/api-keys/get-user-key";
 import { createPreferenceLlm } from "@/lib/llm/preference-llm";
+
+const log = createLogger("chatbot:message");
 
 export async function POST(request: Request) {
   const session = await auth.api.getSession({ headers: request.headers });
@@ -250,7 +253,7 @@ export async function POST(request: Request) {
         { status: status >= 400 && status < 500 ? 422 : 502 },
       );
     }
-    console.error("Chatbot message error:", error);
+    log.error({ err: error }, "Chatbot message error");
     return NextResponse.json(
       { error: "Failed to process message" },
       { status: 500 },

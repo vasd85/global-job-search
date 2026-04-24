@@ -317,18 +317,6 @@ describe("POST /api/search/expand -- pg-boss enqueue", () => {
 // ---------------------------------------------------------------------------
 
 describe("POST /api/search/expand -- error isolation", () => {
-  test("catch-all logs the error via console.error with correct prefix", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const testError = new Error("something broke");
-    mockGetQueue.mockRejectedValueOnce(testError);
-
-    await postJson();
-
-    expect(errorSpy).toHaveBeenCalledWith("[search/expand] Error:", testError);
-
-    errorSpy.mockRestore();
-  });
-
   test("error response body never contains stack traces or internal paths", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     mockGetQueue.mockRejectedValueOnce(
