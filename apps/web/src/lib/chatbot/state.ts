@@ -1,3 +1,4 @@
+import { createLogger } from "@gjs/logger";
 import type {
   ConversationState,
   PreferencesDraft,
@@ -5,6 +6,8 @@ import type {
 } from "./schemas";
 import { ConversationStateSchema } from "./schemas";
 import { STEPS, getStepIndex } from "./steps";
+
+const log = createLogger("chatbot:state");
 
 // ─── State Creation ────────────────────────────────────────────────────────
 
@@ -202,7 +205,10 @@ export function deserializeState(raw: unknown): ConversationState {
   if (result.success) return result.data;
 
   // Fallback: trust the JSONB structure, which was valid when it was written
-  console.warn("Conversation state schema mismatch, using raw state:", result.error.message);
+  log.warn(
+    { zodError: result.error.flatten() },
+    "Conversation state schema mismatch, using raw state",
+  );
   return raw as ConversationState;
 }
 

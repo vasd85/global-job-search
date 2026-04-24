@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
+import { createLogger } from "@gjs/logger";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { userProfiles } from "@/lib/db/schema";
 import { getActiveKeyMeta } from "@/lib/api-keys/api-key-service";
 import { getQueue } from "@/lib/queue";
 import { FUTURE_QUEUES } from "@gjs/ingestion";
+
+const log = createLogger("search/expand");
 
 /**
  * POST /api/search/expand
@@ -74,7 +77,7 @@ export async function POST(request: Request) {
       message: "Expanding search...",
     });
   } catch (error) {
-    console.error("[search/expand] Error:", error);
+    log.error({ err: error }, "search/expand failed");
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 },
