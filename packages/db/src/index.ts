@@ -1,6 +1,7 @@
+import { createRequire } from "node:module";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { format as formatSqlLib } from "sql-formatter";
+import { createLogger } from "@gjs/logger";
 import * as schema from "./schema";
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
@@ -14,30 +15,41 @@ let _db: Db | undefined;
 // table that stores secrets to this alternation.
 const SENSITIVE_TABLE_RE = /"(session|verification|account|user_api_key)"/i;
 
-function formatSql(query: string): string {
-  try {
-    return formatSqlLib(query, {
-      language: "postgresql",
-      keywordCase: "upper",
-      tabWidth: 2,
-    });
-  } catch {
-    // sql-formatter can throw on unusual syntax; fall back to raw query.
-    return query;
-  }
-}
+const sqlLog = createLogger("sql");
 
 function buildLogger() {
   if (process.env.LOG_SQL !== "1") return undefined;
+
+  // Synchronous require via createRequire keeps sql-formatter off the
+  // import graph of every @gjs/db consumer when LOG_SQL is unset.
+  const require = createRequire(import.meta.url);
+  const { format: formatSqlLib } = require("sql-formatter") as typeof import("sql-formatter");
+
+  const formatSql = (query: string): string => {
+    try {
+      return formatSqlLib(query, {
+        language: "postgresql",
+        keywordCase: "upper",
+        tabWidth: 2,
+      });
+    } catch {
+      // sql-formatter can throw on unusual syntax; fall back to raw query.
+      return query;
+    }
+  };
+
   return {
     logQuery(query: string, params: unknown[]): void {
       const pretty = formatSql(query);
       if (SENSITIVE_TABLE_RE.test(query)) {
-        console.log(`[sql]\n${pretty}\n-- params redacted (auth table)`);
+        sqlLog.info(
+          { query: pretty, params: "<redacted: auth or secret table>" },
+          "query",
+        );
       } else if (params.length > 0) {
-        console.log(`[sql]\n${pretty}\n-- params:`, params);
+        sqlLog.info({ query: pretty, params }, "query");
       } else {
-        console.log(`[sql]\n${pretty}`);
+        sqlLog.info({ query: pretty }, "query");
       }
     },
   };

@@ -206,6 +206,9 @@ importers:
 
   packages/db:
     dependencies:
+      '@gjs/logger':
+        specifier: workspace:*
+        version: link:../logger
       drizzle-orm:
         specifier: ^0.45.1
         version: 0.45.1(@opentelemetry/api@1.9.0)(kysely@0.28.13)(pg@8.20.0)(postgres@3.4.8)
