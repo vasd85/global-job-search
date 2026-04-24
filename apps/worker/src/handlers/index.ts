@@ -1,6 +1,7 @@
 import type { PgBoss } from "pg-boss";
 import type { Database } from "@gjs/db";
 import { VENDOR_QUEUES, FUTURE_QUEUES } from "@gjs/ingestion";
+import { createLogger } from "@gjs/logger";
 import { createPollCompanyHandler } from "./poll-company";
 import { createLlmScoringHandler } from "./llm-scoring";
 import { createInternetExpansionHandler } from "./internet-expansion";
@@ -9,6 +10,8 @@ import {
   handleRoleTaxonomy,
 } from "./stubs";
 import { getAppConfigValue } from "../lib/app-config";
+
+const log = createLogger("handlers");
 
 /** Fallback if config row is missing or invalid. */
 const DEFAULT_VENDOR_CONCURRENCY = 5;
@@ -60,7 +63,7 @@ export async function registerHandlers(
 
   for (const queue of Object.values(VENDOR_QUEUES)) {
     await boss.work(queue, { localConcurrency: vendorConcurrency }, pollHandler);
-    console.info(`[handlers] Registered ${queue} (concurrency: ${vendorConcurrency})`);
+    log.info({ queue, concurrency: vendorConcurrency }, "Handler registered");
   }
 
   // Register LLM scoring handler
@@ -69,7 +72,10 @@ export async function registerHandlers(
     { localConcurrency: SCORING_CONCURRENCY },
     createLlmScoringHandler(db),
   );
-  console.info(`[handlers] Registered ${FUTURE_QUEUES.llmScoring} (concurrency: ${SCORING_CONCURRENCY})`);
+  log.info(
+    { queue: FUTURE_QUEUES.llmScoring, concurrency: SCORING_CONCURRENCY },
+    "Handler registered",
+  );
 
   // Register internet expansion handler
   await boss.work(
@@ -77,12 +83,21 @@ export async function registerHandlers(
     { localConcurrency: EXPANSION_CONCURRENCY },
     createInternetExpansionHandler(db, boss),
   );
-  console.info(`[handlers] Registered ${FUTURE_QUEUES.internetExpansion} (concurrency: ${EXPANSION_CONCURRENCY})`);
+  log.info(
+    { queue: FUTURE_QUEUES.internetExpansion, concurrency: EXPANSION_CONCURRENCY },
+    "Handler registered",
+  );
 
   // Register stub handlers for remaining future queues
   await boss.work(FUTURE_QUEUES.descriptionFetch, handleDescriptionFetch);
-  console.info(`[handlers] Registered ${FUTURE_QUEUES.descriptionFetch} (stub)`);
+  log.info(
+    { queue: FUTURE_QUEUES.descriptionFetch, stub: true },
+    "Handler registered",
+  );
 
   await boss.work(FUTURE_QUEUES.roleTaxonomy, handleRoleTaxonomy);
-  console.info(`[handlers] Registered ${FUTURE_QUEUES.roleTaxonomy} (stub)`);
+  log.info(
+    { queue: FUTURE_QUEUES.roleTaxonomy, stub: true },
+    "Handler registered",
+  );
 }

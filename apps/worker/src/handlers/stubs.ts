@@ -1,11 +1,17 @@
 import type { Job } from "pg-boss";
+import { createLogger } from "@gjs/logger";
+
+const log = createLogger("stubs");
 
 /**
  * Stub handler for description fetch jobs.
  */
 export async function handleDescriptionFetch(jobs: Job[]): Promise<void> {
   for (const job of jobs) {
-    console.info(`[stub] Description fetch job received: ${job.id}`);
+    log.warn(
+      { jobId: job.id, handler: "descriptionFetch" },
+      "Stub handler invoked",
+    );
   }
 }
 
@@ -14,6 +20,9 @@ export async function handleDescriptionFetch(jobs: Job[]): Promise<void> {
  */
 export async function handleRoleTaxonomy(jobs: Job[]): Promise<void> {
   for (const job of jobs) {
-    console.info(`[stub] Role taxonomy job received: ${job.id}`);
+    log.warn(
+      { jobId: job.id, handler: "roleTaxonomy" },
+      "Stub handler invoked",
+    );
   }
 }

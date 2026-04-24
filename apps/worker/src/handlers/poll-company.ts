@@ -3,8 +3,11 @@ import type { Job } from "pg-boss";
 import type { Database } from "@gjs/db";
 import { companies } from "@gjs/db/schema";
 import { pollCompany, computeNextPoll } from "@gjs/ingestion";
+import { createLogger } from "@gjs/logger";
 import { jitter } from "../lib/jitter";
 import { getAppConfigValue } from "../lib/app-config";
+
+const log = createLogger("poll-company");
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -52,15 +55,14 @@ export function createPollCompanyHandler(db: Database) {
         .limit(1);
 
       if (!company) {
-        console.warn(
-          `[poll-company] Company not found: ${companyId}, skipping job ${job.id}`
-        );
+        log.warn({ companyId, jobId: job.id }, "Company not found, skipping");
         continue;
       }
 
       if (!company.isActive) {
-        console.info(
-          `[poll-company] Company ${company.slug} is inactive, skipping`
+        log.info(
+          { slug: company.slug, companyId: company.id },
+          "Company inactive, skipping",
         );
         continue;
       }
@@ -69,17 +71,26 @@ export function createPollCompanyHandler(db: Database) {
       await jitter(jitterMaxMs);
 
       // 3. Execute the poll
-      console.info(`[poll-company] Polling ${company.slug} (${company.atsVendor})`);
+      log.info(
+        { slug: company.slug, vendor: company.atsVendor },
+        "Polling company",
+      );
       const result = await pollCompany(db, company, {
         staleThresholdDays,
         closedThresholdDays,
       });
 
-      console.info(
-        `[poll-company] ${company.slug}: status=${result.status} ` +
-          `found=${result.jobsFound} new=${result.jobsNew} ` +
-          `closed=${result.jobsClosed} updated=${result.jobsUpdated} ` +
-          `duration=${result.durationMs}ms`
+      log.info(
+        {
+          slug: company.slug,
+          status: result.status,
+          jobsFound: result.jobsFound,
+          jobsNew: result.jobsNew,
+          jobsClosed: result.jobsClosed,
+          jobsUpdated: result.jobsUpdated,
+          durationMs: result.durationMs,
+        },
+        "Poll complete",
       );
 
       // 4. Compute adaptive polling schedule
@@ -110,10 +121,9 @@ export function createPollCompanyHandler(db: Database) {
           })
           .where(eq(companies.id, companyId));
       } catch (updateError) {
-        console.error(
-          `[poll-company] Failed to update adaptive fields for ${company.slug}, ` +
-            `poll succeeded but scheduling may be stale:`,
-          updateError
+        log.error(
+          { slug: company.slug, companyId, err: updateError },
+          "Failed to update adaptive poll fields (poll succeeded; scheduling may be stale)",
         );
       }
     }
