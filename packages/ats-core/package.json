@@ -20,6 +20,7 @@
     "build:city-index": "npx tsx scripts/build-city-index.ts"
   },
   "dependencies": {
+    "@gjs/logger": "workspace:*",
     "cheerio": "^1.0.0"
   },
   "devDependencies": {
