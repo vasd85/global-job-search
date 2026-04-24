@@ -13,7 +13,8 @@
   },
   "dependencies": {
     "drizzle-orm": "^0.45.1",
-    "postgres": "^3.4.8"
+    "postgres": "^3.4.8",
+    "sql-formatter": "^15.7.3"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
