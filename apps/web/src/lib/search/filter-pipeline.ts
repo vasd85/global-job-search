@@ -9,6 +9,7 @@ import {
   type ResolvedTierGeo,
 } from "@gjs/ats-core";
 import type { JobImmigrationSignals } from "@gjs/ats-core/geo";
+import { createLogger } from "@gjs/logger";
 import type { Database } from "@/lib/db";
 import { expandTerms } from "@/lib/search/synonym-cache";
 import {
@@ -19,6 +20,8 @@ import {
   roleFamilies,
 } from "@/lib/db/schema";
 import type { SearchResponse, SearchResultJob } from "./types";
+
+const log = createLogger("search:pipeline");
 
 /** Batch size for streaming job classification. */
 const BATCH_SIZE = 5000;
@@ -42,6 +45,15 @@ export async function searchJobs(
   userProfileId: string,
   pagination: { limit: number; offset: number },
 ): Promise<SearchResponse> {
+  log.debug(
+    {
+      profileId: userProfileId,
+      limit: pagination.limit,
+      offset: pagination.offset,
+    },
+    "searchJobs start",
+  );
+
   // 1. Load user profile
   const profileRows = await db
     .select()
@@ -51,8 +63,10 @@ export async function searchJobs(
 
   const profile = profileRows[0];
   if (!profile) {
+    log.debug("Profile not found → empty response");
     return emptyResponse(pagination);
   }
+  log.debug({ userId: profile.userId }, "Profile loaded");
 
   // 2. Load user company preferences
   const companyPrefRows = await db
@@ -63,19 +77,31 @@ export async function searchJobs(
 
   const companyPrefs = companyPrefRows[0];
   const industries = companyPrefs?.industries ?? [];
+  log.debug(
+    { industries, prefsRowFound: companyPrefs != null },
+    "Company prefs",
+  );
 
   // 3. Load all role families from DB
   const allFamilies = await db.select().from(roleFamilies);
+  log.debug({ count: allFamilies.length }, "Role families loaded");
 
   if (allFamilies.length === 0) {
+    log.debug("Zero role families in DB → empty response");
     return emptyResponse(pagination);
   }
 
   // 4. Resolve user's target titles to matching role families
   const targetTitles = profile.targetTitles ?? [];
+  log.debug({ targetTitles }, "Target titles");
   const matchedFamilies = resolveRoleFamilies(allFamilies, targetTitles);
+  log.debug(
+    { matched: matchedFamilies.map((f) => f.slug) },
+    "Matched role families",
+  );
 
   if (matchedFamilies.length === 0) {
+    log.debug("No role families matched target titles → empty response");
     return buildResponse([], 0, false, pagination, {
       roleFamilies: [],
       seniority: profile.targetSeniority ?? null,
@@ -99,12 +125,31 @@ export async function searchJobs(
     tiers?: unknown;
   } | null;
   const rawTiers = locationPreferences?.tiers;
-  const resolvedTiers = Array.isArray(rawTiers)
-    ? resolveAllTiers(rawTiers)
-    : [];
+  const tiersIsArray = Array.isArray(rawTiers);
+  const resolvedTiers = tiersIsArray ? resolveAllTiers(rawTiers) : [];
+  log.debug(
+    {
+      seniority: targetSeniority,
+      remotePreference,
+      locationPrefs:
+        locationPreferences == null
+          ? "null"
+          : tiersIsArray
+            ? {
+                tiers: (rawTiers as unknown[]).length,
+                resolved: resolvedTiers.length,
+              }
+            : "invalid (non-array tiers, skipped)",
+    },
+    "Filter profile",
+  );
 
   // 5. Build SQL pre-filter conditions (async: loads synonym cache on first call)
   const conditions = await buildSqlConditions(industries, remotePreference);
+  log.debug(
+    { count: conditions.length },
+    "SQL conditions built (status=open always; +industry overlap if industries present; +workplaceType=remote if remote_only)",
+  );
 
   // 6. Batched processing: stream jobs through the classifier
   const { results, total, hasMore } = await processInBatches(
@@ -115,6 +160,10 @@ export async function searchJobs(
     remotePreference,
     resolvedTiers,
     pagination,
+  );
+  log.debug(
+    { returned: results.length, total, hasMore },
+    "searchJobs end",
   );
 
   return buildResponse(results, total, hasMore, pagination, {
@@ -269,11 +318,36 @@ async function processInBatches(
   const allPassing: SearchResultJob[] = [];
   let batchOffset = 0;
   let hasMore = false;
+  let batchNum = 0;
+
+  log.debug(
+    {
+      needed,
+      offset: pagination.offset,
+      limit: pagination.limit,
+      batchSize: BATCH_SIZE,
+    },
+    "processInBatches start",
+  );
 
   while (true) {
+    batchNum++;
     const batch = await fetchBatch(db, conditions, batchOffset, BATCH_SIZE);
+    log.debug(
+      { batchNum, fetched: batch.length, sqlOffset: batchOffset },
+      "Batch fetched",
+    );
 
-    if (batch.length === 0) break;
+    if (batch.length === 0) {
+      log.debug({ batchNum }, "Empty batch → exiting loop");
+      break;
+    }
+
+    let failedClassification = 0;
+    let failedSeniority = 0;
+    let failedLocation = 0;
+    let passed = 0;
+    let earlyExit = false;
 
     for (const row of batch) {
       const classified = classifyJobMulti(matchedFamilies, {
@@ -281,7 +355,10 @@ async function processInBatches(
         departmentRaw: row.department,
       });
 
-      if (classified.score < CLASSIFICATION_THRESHOLD) continue;
+      if (classified.score < CLASSIFICATION_THRESHOLD) {
+        failedClassification++;
+        continue;
+      }
 
       // Seniority extraction (reused for both filter and result metadata)
       const seniority = extractSeniority(row.title);
@@ -291,6 +368,7 @@ async function processInBatches(
         // Pass jobs with no seniority marker (could be any level) or
         // where detected seniority overlaps with user's target
         if (seniority !== null && !targetSeniority.includes(seniority)) {
+          failedSeniority++;
           continue;
         }
       }
@@ -310,10 +388,14 @@ async function processInBatches(
           resolvedTiers,
           jobSignals,
         );
-        if (!locationResult.passes) continue;
+        if (!locationResult.passes) {
+          failedLocation++;
+          continue;
+        }
         matchedTierRank = locationResult.matchedTier;
       }
 
+      passed++;
       allPassing.push({
         id: row.id,
         title: row.title,
@@ -338,6 +420,21 @@ async function processInBatches(
       // Once we have one more than needed, we know there are more results
       if (allPassing.length > needed) {
         hasMore = true;
+        earlyExit = true;
+        log.debug(
+          {
+            batchNum,
+            passed,
+            failedClassification,
+            failedSeniority,
+            failedLocation,
+          },
+          "Batch counters",
+        );
+        log.debug(
+          { accumulated: allPassing.length, needed, hasMore: true },
+          "Early exit: accumulated > needed",
+        );
         // Stop accumulating -- we have enough for the page plus proof of more
         return {
           results: allPassing.slice(pagination.offset, needed),
@@ -347,8 +444,28 @@ async function processInBatches(
       }
     }
 
+    if (!earlyExit) {
+      log.debug(
+        {
+          batchNum,
+          passed,
+          failedClassification,
+          failedSeniority,
+          failedLocation,
+          cumulativePassing: allPassing.length,
+        },
+        "Batch counters",
+      );
+    }
+
     // If the batch was smaller than BATCH_SIZE, we've exhausted the dataset
-    if (batch.length < BATCH_SIZE) break;
+    if (batch.length < BATCH_SIZE) {
+      log.debug(
+        { batchLength: batch.length, batchSize: BATCH_SIZE },
+        "Dataset exhausted (partial batch) → exiting loop",
+      );
+      break;
+    }
 
     batchOffset += BATCH_SIZE;
   }
@@ -358,6 +475,16 @@ async function processInBatches(
     pagination.offset + pagination.limit,
   );
   hasMore = pagination.offset + pagination.limit < allPassing.length;
+
+  log.debug(
+    {
+      totalPassing: allPassing.length,
+      pageResults: pageResults.length,
+      hasMore,
+      batches: batchNum,
+    },
+    "processInBatches end",
+  );
 
   return {
     results: pageResults,
