@@ -40,9 +40,6 @@ apps/web/next-env.d.ts
 .idea/
 .vscode/
 
-# Project documentation (local drafts)
-docs/
-
 # Claude Code local settings
 .claude/settings.local.json
 .mcp.json
@@ -54,4 +51,3 @@ dbhub.toml
 # User specific files
 qa-jobs-scrapper/
 sql-scripts/
-docs/
