@@ -229,22 +229,28 @@ plan with explicit DAG of chunks.
 - Reuses existing `/plane-integration` skill as reference
 
 **Acceptance criteria:**
+- Reads `docs/agents/plane/universal.md` and
+  `docs/agents/plane/tasks.md` at startup; validates project bootstrap
+  per `universal.md § 3` and aborts on failure
 - Reads `docs/plans/<slug>.md` from `main` (after planning PR merge)
-- Creates one Plane Epic with `@`-mention back-link to plan in `main`
-- Creates one Plane Work Item per chunk, with description containing:
-  link to plan, parent Epic, brief acceptance criteria
-- Encodes DAG via `mcp__plane__create_work_item_relation` with type
-  `blocked_by`
-- Idempotent: running twice on the same plan does not duplicate Epic
-  or Work Items (looks up by slug or feature_slug tag first)
+- Creates one Plane Epic per `tasks.md § 4.1` (idempotent via
+  `external_id`)
+- Creates one Plane Work Item per chunk per `tasks.md § 4.2`
+- Encodes plan DAG via `mcp__plane__create_work_item_relation` with
+  type `blocked_by` per `tasks.md § 5`
+- Applies labels per `tasks.md § 6`
+- Idempotent: re-run reconciles via `external_id` lookup; chunks
+  removed from plan transition WIs to `Cancelled` per `tasks.md § 4.2`
+- Failure recovery follows `tasks.md § 8`
 
 **Effort:** 3-4 h.
 
 **Risks:**
 - Plane MCP rate limit (60 req/min). Mitigation: batch where API
-  allows; back off on 429.
-- Plane state names not standard (`Backlog` vs `Todo`). Mitigation:
-  call `list_states` at start, map to closest existing.
+  allows; back off on 429 per `universal.md § 8`.
+- Skill SKILL.md should not duplicate content from `plane/tasks.md`
+  — it consumes the conventions, does not redefine them. Mitigation:
+  per § 6 skill bloat guard.
 
 ### Step 7 — `/implement-task` skill
 
@@ -257,13 +263,20 @@ defined in architecture §6.1.
   `test-writer`, `code-reviewer` subagents unchanged
 
 **Acceptance criteria:**
-- Takes a Plane Work Item id, verifies not blocked
-- Marks WI `In Progress` in Plane via MCP, comments with branch name
+- Reads `docs/agents/plane/universal.md` and
+  `docs/agents/plane/implement-task.md` at startup; validates project
+  bootstrap per `universal.md § 3`
+- Takes a Plane Work Item id, verifies not blocked per
+  `implement-task.md § 5`
+- Creates branch per `implement-task.md § 1`
+- Marks WI `In Progress` per `implement-task.md § 2-3`, comments per
+  `implement-task.md § 4`
 - Runs internal pipeline: Code → Test design → Test write → Review →
   (Fix cycle ≤ 2) → PR
 - Marks WI `In Review` after `gh pr create`, comments with PR URL
 - Supports `isolation: "worktree"` for parallel sessions on
   independent Work Items
+- Failure recovery follows `implement-task.md § 6`
 
 **Effort:** 6-10 h. Largest step. May be split into 7a (single-task
 path: steps 0-4 of internal pipeline) and 7b (worktree concurrency +
@@ -308,6 +321,9 @@ the same session), or standalone with `<pr-url>` argument.
 - Integration hook in `/implement-task` SKILL.md (final step)
 
 **Acceptance criteria:**
+- Reads `docs/agents/plane/universal.md` and
+  `docs/agents/plane/log-episode.md` at startup; validates project
+  bootstrap per `universal.md § 3`
 - Auto-extracts metadata from `phase-state.md`, `events.jsonl` (when
   available), `git diff`, PR API
 - Drafts `decisions`, `blockers`, `dead_ends`, `learnings` from
@@ -316,6 +332,9 @@ the same session), or standalone with `<pr-url>` argument.
 - Validates against `docs/episodes/schema.json` before append
 - Includes `session_ids` populated from `meta.json` of all skill-log
   runs that contributed to this Work Item
+- Marks corresponding Plane WI `Done` per `log-episode.md § 1`,
+  comments per `log-episode.md § 2`; episode log entry written
+  regardless of Plane outcome per `log-episode.md § 4`
 
 **Effort:** 3-4 h.
 
@@ -400,6 +419,14 @@ step 10 deprecates the old skills.
 
 - **Skill bloat.** Each new SKILL.md must stay under 200 lines.
   Reference material goes to `references/`. Re-check on every PR.
+- **Per-skill module loading** (architecture § 1 invariant 10).
+  Reference docs consumed by multiple skills (currently
+  `docs/agents/plane/`; later candidates: DB conventions, API
+  conventions) are split into a universal core and per-skill modules.
+  Skills load only the universal core plus their own module. When
+  building each Plane-using skill (steps 6, 7, 9), confirm SKILL.md
+  references the right two `plane/*.md` files and does not duplicate
+  their content.
 - **Subagent contract drift.** When two skills consume the same
   subagent (e.g. `code-architect` used by both `/code-architect` and
   `/design`), a change in one prompt can break the other. Mitigation:

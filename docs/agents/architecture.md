@@ -50,6 +50,12 @@ breaking any of them defeats the design.
    chunks; independent chunks run in parallel as separate
    `/implement-task` sessions in worktrees. Sequential coupling is the
    exception, not the default.
+10. **Per-skill module loading.** Reference documents consumed by
+    multiple skills are split into a universal core and per-skill
+    modules. Each skill loads only the universal core plus its own
+    module, not the full reference. This bounds context cost as the
+    number of skills grows and keeps each skill's working set small.
+    First instance: `docs/agents/plane/` (see § 3).
 
 ## 2. Tier map
 
@@ -145,7 +151,7 @@ intent.
 |--------------------------------------|-----------------------------|-----------------------------------------|------------------------------------------------|
 | Work Item created from plan DAG      | `/tasks`                    | initial state (Plane default: Backlog)  | none                                           |
 | `/implement-task <WI-id>` invoked    | `/implement-task` step 0    | → `In Progress`                         | "Implementation started on branch `<branch>`"  |
-| `gh pr create` succeeds              | `/implement-task` step 6    | → `In Review` (if state exists, else stay `In Progress`) | "PR opened: `<pr-url>`"            |
+| `gh pr create` succeeds              | `/implement-task` step 6    | → `In Review`                           | "PR opened: `<pr-url>`"                        |
 | PR merged into `main`                | `/log-episode <pr-url>`     | → `Done`                                | "Merged: `<pr-url>` (commit `<sha>`)"          |
 | Feature cancelled / Work Item killed | user (Plane UI)             | → `Cancelled`                           | manual                                         |
 | Backlog grooming (re-priority, etc.) | user (Plane UI)             | within Plane workflow                   | manual                                         |
@@ -160,6 +166,28 @@ existing state, not assume hardcoded names.
 auth), the skill must **not** silently continue — it logs the failure
 to scratchpad and reports to the user. Status drift between git and
 Plane is acceptable temporarily; silent drift is not.
+
+### Operational conventions
+
+The operational rules for working with the project's Plane workspace
+are split per § 1 invariant 10 (per-skill module loading) into:
+
+- `docs/agents/plane/universal.md` — workspace identity, bootstrap
+  requirements, state-name resolution, general failure policy,
+  comment prefix rule, subagent rule. Loaded by every Plane-using
+  skill.
+- `docs/agents/plane/tasks.md` — entity scope, hierarchy, naming,
+  Epic and Work Item schemas, labels, relations. Loaded only by
+  `/tasks`.
+- `docs/agents/plane/implement-task.md` — branch naming, status
+  transitions, comment templates, read contract. Loaded only by
+  `/implement-task`.
+- `docs/agents/plane/log-episode.md` — `Done` transition, comment
+  templates, read contract. Loaded only by `/log-episode`.
+
+This document (§ 3) defines *what* Plane is for and the public
+contracts (link policy, work-item-relation use, status lifecycle
+overview); the modules above define *how* skills carry it out.
 
 ## 4. Pipeline phases
 
