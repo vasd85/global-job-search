@@ -38,9 +38,13 @@ breaking any of them defeats the design.
 5. **Truth vs Acceleration is enforced.** Canonical stores are git
   (documents, code) and Plane (work items). Scratchpads, indexes and
    per-session caches are derived and fully rebuildable.
-6. **One canonical writer per tier.** Tier 1 is written through PR review
-  only. Tier 2 (episode log) is written by a skill's finale or by
-   `/log-episode`, never silently by hooks. Tier 3 is read-only.
+6. **One canonical writer per Tier 1 store.** Each Tier 1 store has
+  a designated write mechanism: git documents and code are written
+   through PR review only; Plane work items are written by exactly
+   three skills (`/tasks`, `/implement-task`, `/log-episode`) per
+   the lifecycle in § 3. Tier 2 (episode log) is written by a skill's
+   finale or by `/log-episode`, never silently by hooks. Tier 3 is
+   read-only.
 7. **Promotion is explicit.** Nothing moves from Tier 2 to Tier 1
   automatically. ADRs, rule updates and CLAUDE.md changes go through
    PRs with human approval.
@@ -59,18 +63,23 @@ breaking any of them defeats the design.
 
 ## 2. Tier map
 
-### Tier 1 — project canon (git, written via PR)
+### Tier 1 — project canon
+
+Two stores with different write mechanisms — git (via PR review)
+and Plane (via the three Plane-writing skills). Both are canonical;
+neither is reduced to "external" or "read-only".
 
 
-| Artefact                           | Location                      | Lifecycle                                  |
-| ---------------------------------- | ----------------------------- | ------------------------------------------ |
-| Root constitution                  | `CLAUDE.md`                   | rare, deliberate updates                   |
-| Project conventions / module rules | `.claude/rules/*.md`          | per-module, rare updates                   |
-| Product Requirements Documents     | `docs/product/<slug>.md`      | one per feature, locked after PR           |
-| Technical designs                  | `docs/designs/<slug>.md`      | one per feature (when needed)              |
-| Implementation plans               | `docs/plans/<slug>.md`        | one per feature, derived from PRD + design |
-| Architecture Decision Records      | `docs/adr/<NNNN>-<slug>.md`   | append-only, status moves only             |
-| This architecture document         | `docs/agents/architecture.md` | edited as the system evolves               |
+| Artefact                           | Store     | Location / access                                   | Lifecycle                                  |
+| ---------------------------------- | --------- | --------------------------------------------------- | ------------------------------------------ |
+| Root constitution                  | git       | `CLAUDE.md`                                         | rare, deliberate updates                   |
+| Project conventions / module rules | git       | `.claude/rules/*.md`                                | per-module, rare updates                   |
+| Product Requirements Documents     | git       | `docs/product/<slug>.md`                            | one per feature, locked after PR           |
+| Technical designs                  | git       | `docs/designs/<slug>.md`                            | one per feature (when needed)              |
+| Implementation plans               | git       | `docs/plans/<slug>.md`                              | one per feature, derived from PRD + design |
+| Architecture Decision Records      | git       | `docs/adr/<NNNN>-<slug>.md`                         | append-only, status moves only             |
+| This architecture document         | git       | `docs/agents/architecture.md`                       | edited as the system evolves               |
+| Plane work items + comments        | Plane     | workspace `gjs` via `mcp__plane__*`                 | created by `/tasks`; transitioned by `/implement-task` and `/log-episode` per § 3 |
 
 
 The three feature-specific document types — PRD, design, plan — answer
@@ -107,14 +116,16 @@ gitignored.
 | --------------------------------- | ------------------------------------ |
 | Own codebase                      | `Read` / `Glob` / `Grep` tools       |
 | Project database                  | `mcp__postgres__execute_sql` (dbhub) |
-| Plane (work items, comments)      | `mcp__plane__`*                      |
 | Browser automation (verification) | `mcp__claude-in-chrome__*`           |
 | Personal Drive (occasional notes) | `mcp__claude_ai_Google_Drive__*`     |
 | Framework / library docs          | (future) Context7 or equivalent MCP  |
 
 
 Code is special: writing it makes it Tier 1, reading it is Tier 3. The
-boundary is the PR.
+boundary is the PR. Plane reads by skills outside the three writers
+(e.g., a future read-only summarisation skill) follow the same
+boundary — Tier 1 only when the skill is one of the canonical
+writers performing its designated transitions.
 
 ### Non-normative reference
 
@@ -131,7 +142,8 @@ external-and-current.
 ## 3. Plane positioning
 
 Plane stores **only** Work Items (atomic tasks) and their organising
-parents (Epics, Modules, Cycles). It does **not** store documents.
+parent Epics. It does **not** store documents. Modules and Cycles
+exist in Plane's data model but are unused per `plane/tasks.md § 1`.
 
 - PRDs, designs, plans, ADRs all live in git under `docs/`.
 - Work Items reference git documents via `main`-branch URLs.
@@ -157,9 +169,10 @@ intent.
 | Trigger                              | Actor                    | Status transition                      | Side effect (comment in Work Item)            |
 | ------------------------------------ | ------------------------ | -------------------------------------- | --------------------------------------------- |
 | Work Item created from plan DAG      | `/tasks`                 | initial state (Plane default: Backlog) | none                                          |
-| `/implement-task <WI-id>` invoked    | `/implement-task` step 0 | → `In Progress`                        | "Implementation started on branch `<branch>`" |
+| `/implement-task <wi-code>` invoked  | `/implement-task` step 0 | → `In Progress`                        | "Implementation started on branch `<branch>`" |
 | `gh pr create` succeeds              | `/implement-task` step 6 | → `In Review`                          | "PR opened: `<pr-url>`"                       |
 | PR merged into `main`                | `/log-episode <pr-url>`  | → `Done`                               | "Merged: `<pr-url>` (commit `<sha>`)"         |
+| Plan rerun removes chunk             | `/tasks` reconcile       | → `Cancelled`                          | "Chunk removed from plan in `<commit-sha>`"   |
 | Feature cancelled / Work Item killed | user (Plane UI)          | → `Cancelled`                          | manual                                        |
 | Backlog grooming (re-priority, etc.) | user (Plane UI)          | within Plane workflow                  | manual                                        |
 
@@ -325,8 +338,8 @@ synchronisation primitives, locks, or cross-session coordination.
 **Worktree cleanup.** Cleanup after a merged PR (`git worktree
 remove .claude/worktrees/<wi-code>` and branch deletion) is a manual
 post-merge step. `/log-episode` may surface a reminder; the cleanup
-policy under multiple concurrent sessions is the only remaining open
-question — see §13.
+policy under multiple concurrent sessions is the open question
+specifically about parallel worktrees — see § 13.
 
 **Episode log timing.** `/log-episode` runs after PR merge. It can be
 invoked as the finale of a `/implement-task` session that survived
@@ -343,7 +356,7 @@ happened later or in a different session.
 
 Phase 8 is not part of the per-feature or per-task workflow. It runs
 periodically (e.g., monthly) when the episode log accumulates enough
-data to surface patterns. See section 11.
+data to surface patterns. See § 10 (Promotion gate).
 
 ## 5. Skills
 
@@ -378,9 +391,15 @@ Every skill follows the same interface contract:
 a structured reference exists.
 - **Output**: a single artefact at a known location (file path or Plane
 entity id).
-- **Phase tracking**: writes start/end timestamps and status to
-`.claude/scratchpads/<feature-slug>/phase-state.md` for session
-recovery and episode log telemetry.
+- **Phase tracking**: writes start/end timestamps and status to a
+`phase-state.md` file for session recovery and episode log
+telemetry. Path is feature-level
+(`.claude/scratchpads/<feature-slug>/phase-state.md`) for the
+sequential planning skills (`/research`, `/prd`, `/design`,
+`/plan`, `/tasks`); per-task
+(`.claude/scratchpads/<feature-slug>/tasks/<wi-code>/phase-state.md`)
+for `/implement-task` and `/log-episode`, since multiple parallel
+sessions would race on a shared file.
 - **Context budget**: the skill's SKILL.md declares which tiers it reads
 (T1 / T2 / T3) and its expected token budget. This is documentation,
 not enforcement.
@@ -512,19 +531,28 @@ Every writer skill that has a required reviewer follows this loop:
 
 ### 8.3 Review file layout
 
+Scratchpad holds **review files and ephemeral working state only**.
+Canonical PRD / design / plan artefacts live at their git locations
+(`docs/product/`, `docs/designs/`, `docs/plans/`); reviewers read
+from there. Research is the exception — it is not promoted to git
+and stays in scratchpad as `research.md`. `phase-state.md` exists
+at two levels: feature-level for the planning phases (one writer at
+a time), and per-task under `tasks/<wi-code>/` for `/implement-task`
+sessions, since multiple parallel sessions would race on a single
+file.
+
 ```
 .claude/scratchpads/<feature-slug>/
-├── phase-state.md
-├── research.md
-├── (research-review.md)        # if research-reviewer ran
-├── prd.md
-├── prd-review.md               # required
-├── design.md                   # if /design ran
-├── (design-review.md)          # if design-reviewer ran
-├── plan.md
-├── plan-review.md              # required
+├── phase-state.md                     # feature-level — planning phases only
+├── research.md                        # canonical (not committed to git)
+├── (research-review.md)               # if research-reviewer ran
+├── prd-review.md                      # required (PRD itself in docs/product/)
+├── (design-review.md)                 # if design-reviewer ran (design in docs/designs/)
+├── plan-review.md                     # required (plan in docs/plans/)
+├── plane-failures.jsonl               # accumulated MCP errors per universal.md § 7
 └── tasks/
-    └── <task-id>/
+    └── <wi-code>/
+        ├── phase-state.md             # per-task; written by /implement-task
         ├── test-scenarios.md
         ├── code-review.md
         └── ...
@@ -552,25 +580,26 @@ when the calling skill decides past episodes are relevant.
 
 ```json
 {
-  "episode_id": "2026-04-28-fix-greenhouse-rate-limit-WI-456",
+  "schema_version": 1,
+  "episode_id": "2026-04-28-fix-greenhouse-rate-limit-GJS-42",
   "feature_slug": "fix-greenhouse-rate-limit",
-  "task_id": "WI-456",
+  "task_id": "GJS-42",
   "task_type": "fix",
   "status": "merged",
   "started_at": "2026-04-28T10:15:00Z",
   "completed_at": "2026-04-28T11:42:00Z",
 
-  "branch": "fix/greenhouse-rate-limit-WI-456",
+  "branch": "fix/greenhouse-backoff-GJS-42",
   "pr_url": "https://github.com/vasd85/global-job-search/pull/123",
-  "plane_work_item_id": "WI-456",
-  "plane_epic_id": "EPIC-78",
+  "plane_work_item_id": "GJS-42",
+  "plane_epic_id": "GJS-40",
   "prd_link": "docs/product/fix-greenhouse-rate-limit.md",
   "design_link": null,
   "plan_link": "docs/plans/fix-greenhouse-rate-limit.md",
   "session_ids": ["1124e18f-3963-43d3-93ce-424420a57222"],
 
   "phases_run": ["research", "prd", "plan", "tasks", "implement", "review"],
-  "parallel_with": ["WI-457"],
+  "parallel_with": ["GJS-43"],
 
   "reviews": {
     "prd":  { "cycles": 1, "verdict": "approved" },
@@ -668,13 +697,16 @@ retrieval failure)
 - `verified` — backed by tests or production metric
 - `provisional` — works, but not proven optimal
 
-`task_type`:
+`task_type` (matches the Conventional Commits types in CLAUDE.md
+"Git" section and the `type:*` labels in `plane/tasks.md § 6`; the
+three sources must stay in sync):
 
 - `feat` — new functionality
 - `fix` — bug fix
 - `refactor` — non-functional restructuring
 - `chore` — tooling, dependencies, infrastructure
 - `docs` — documentation-only
+- `test` — test-only change
 
 ### 9.4 Use cases (read-side)
 
