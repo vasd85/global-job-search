@@ -274,21 +274,25 @@ defined in architecture §6.1.
 - Runs internal pipeline: Code → Test design → Test write → Review →
   (Fix cycle ≤ 2) → PR
 - Marks WI `In Review` after `gh pr create`, comments with PR URL
-- Supports `isolation: "worktree"` for parallel sessions on
-  independent Work Items
+- Implements the worktree contract from architecture § 6.1 step 0:
+  detects sequential vs parallel mode, creates branch from current
+  HEAD, never invokes `git worktree add` itself
 - Failure recovery follows `implement-task.md § 6`
 
 **Effort:** 6-10 h. Largest step. May be split into 7a (single-task
-path: steps 0-4 of internal pipeline) and 7b (worktree concurrency +
-Plane status integration) if 7a needs to land independently for
-validation.
+path: steps 0-4 of internal pipeline, sequential mode only) and 7b
+(parallel-mode worktree contract + Plane status integration) if 7a
+needs to land independently for validation.
 
 **Risks:**
 - Migrating Phases 3-7 logic from existing `/implement` while keeping
   it working is the main complexity. Mitigation: build new skill
   alongside old one; do not delete old until step 10.
-- Worktree concurrency may surface stale-state bugs. Mitigation: test
-  with two simultaneous Work Items before committing.
+- Across-WI multi-session parallelism is genuinely new (not just a
+  rename of `/implement` Phase 3 — see architecture § 4.2 for the
+  distinction). Mitigation: test sequential mode first; add parallel
+  mode only after the single-WI path is solid; manually validate two
+  simultaneous WIs before declaring 7b done.
 
 ### Step 8 — `/feature` chain orchestrator
 
