@@ -84,12 +84,13 @@ is right there in the schema) and the user will lose trust.
 
 Read order, stopping when you have enough grounding:
 
-1. `CLAUDE.md` at repo root.
-2. `docs/business-logic-job-search.md` — always.
-3. Other `docs/*.md` topically relevant to the request.
-4. `apps/web/src/lib/db/schema.ts` — entities involved.
-5. Key route handlers or components — locate via `Grep`, do not read
-   the whole tree.
+1. `CLAUDE.md` plus `docs/agents/architecture.md` (the latter when the
+   request touches the agent system itself).
+2. Topical reads under `docs/product/`, `docs/designs/`, `docs/plans/`,
+   `docs/archive/` (legacy domain notes — non-normative per
+   `architecture.md § 2`; e.g. `docs/archive/business-logic-job-search.md`).
+3. `apps/web/src/lib/db/schema.ts` — entities involved.
+4. Key route handlers or components — locate via `Grep`.
 
 If the request involves data the product already collects, run small
 `mcp__postgres__execute_sql` queries (read-only) to ground claims in
