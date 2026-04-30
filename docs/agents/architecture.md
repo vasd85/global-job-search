@@ -180,10 +180,9 @@ Plane is acceptable temporarily; silent drift is not.
 The operational rules for working with the project's Plane workspace
 are split per § 1 invariant 10 (per-skill module loading) into:
 
-- `docs/agents/plane/universal.md` — workspace identity, bootstrap
-requirements, state-name resolution, general failure policy,
-comment prefix rule, subagent rule. Loaded by every Plane-using
-skill.
+- `docs/agents/plane/universal.md` — workspace identity, feature
+slug, state-name resolution, general failure policy, comment prefix
+rule, subagent rule. Loaded by every Plane-using skill.
 - `docs/agents/plane/tasks.md` — entity scope, hierarchy, naming,
 Epic and Work Item schemas, labels, relations. Loaded only by
 `/tasks`.
@@ -192,6 +191,10 @@ transitions, comment templates, read contract. Loaded only by
 `/implement-task`.
 - `docs/agents/plane/log-episode.md` — `Done` transition, comment
 templates, read contract. Loaded only by `/log-episode`.
+- `docs/agents/plane/bootstrap.md` — one-time workspace setup
+checklist (feature flags, required states, demo cleanup). **Not
+loaded by any skill** — consulted manually during project setup or
+when an MCP failure suggests a misconfiguration.
 
 This document (§ 3) defines *what* Plane is for and the public
 contracts (link policy, work-item-relation use, status lifecycle

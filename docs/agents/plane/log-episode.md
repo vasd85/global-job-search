@@ -37,11 +37,11 @@ covers only the `Done` transition.
   The episode log entry is **still written** (git is canonical); the
   Plane drift is logged.
 
-State name resolution rule lives in `universal.md` § 5.
+State name resolution rule lives in `universal.md` § 4.
 
 ## 2. Comment templates
 
-Prefix rule lives in `universal.md` § 6.
+Prefix rule lives in `universal.md` § 5.
 
 | Trigger                                 | Comment text                                                              |
 |-----------------------------------------|---------------------------------------------------------------------------|
@@ -53,11 +53,15 @@ Prefix rule lives in `universal.md` § 6.
 `/log-episode` reads:
 
 - **Work Item**: `id`, `name`, `state`, `parent`, `external_id`,
-  `labels`, `created_at`, `completed_at`
+  `labels`, `created_at`. Plane does not expose a flat
+  `completed_at` field — the merge timestamp comes from
+  `gh pr view <pr-url> --json mergedAt` (git is canonical for
+  completion time per `architecture.md § 9.6`).
 - **Work Item comments**: only those with skill-prefix (filtered by
   text-prefix match), used for cross-checking timing in the episode
   log auto-extracted fields
-- Does NOT read: relations (DAG is in plan, not derived from Plane)
+- Does NOT read: relations (DAG is in plan, not derived from Plane);
+  Plane state-history (use `gh pr view` for the merge timestamp)
 
 **Response shaping.** Pass `fields=` and `expand=` parameters to MCP
 calls to keep payloads small.
@@ -65,17 +69,16 @@ calls to keep payloads small.
 ## 4. Failure recovery
 
 Per-operation rules for `/log-episode`. General logging and
-notification policy lives in `universal.md` § 8.
+notification policy lives in `universal.md` § 7.
 
 | Operation                       | On failure                                                                                                        |
 |---------------------------------|-------------------------------------------------------------------------------------------------------------------|
 | Read Work Item / comments       | Continue with partial data; missing fields filled with `null` in the episode entry; warning surfaced              |
 | State update to `Done`          | Episode log entry **still written** (git is canonical); drift logged; user notified                               |
 | Comment posting                 | Continue (comment is convenience)                                                                                 |
-| Bootstrap validation            | Abort with `"Bootstrap incomplete: <reason>; see plane/universal.md § 3"`                                         |
 
 The episode log JSONL append is **independent** of any Plane MCP call.
 If Plane is fully unreachable, the episode entry is still written;
 only Plane-side state remains stale. This is the load-bearing
-guarantee that `architecture.md § 9` "self-contained reasoning trace"
+guarantee that `architecture.md § 9.6` "self-contained reasoning trace"
 relies on.

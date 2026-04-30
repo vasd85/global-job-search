@@ -102,7 +102,7 @@ Item under the same Epic, not a child Work Item.
 
 ## 3. Naming
 
-Feature slug rule lives in `universal.md` § 4 — invariant across PRD,
+Feature slug rule lives in `universal.md` § 3 — invariant across PRD,
 design, plan, Epic, Work Items.
 
 **Epic name.** The H1 / title of `docs/product/<slug>.md`. Human-
@@ -117,7 +117,7 @@ Plane shows the parent Epic in its UI. Example:
 **Branch name** is set by `/implement-task`; see `implement-task.md`
 § 1.
 
-**Comment prefix rule** lives in `universal.md` § 6.
+**Comment prefix rule** lives in `universal.md` § 5.
 `/tasks`-specific templates in § 7 below.
 
 **Label format** — see § 6.
@@ -260,7 +260,7 @@ the repository's module boundaries stabilise (§ 1, "Modules").
 
 ## 7. Comment templates
 
-Prefix rule (`[<skill>]`) lives in `universal.md` § 6.
+Prefix rule (`[<skill>]`) lives in `universal.md` § 5.
 
 | Trigger                                 | Comment text                                                                                |
 |-----------------------------------------|---------------------------------------------------------------------------------------------|
@@ -272,7 +272,7 @@ Other skills' templates live in their respective module files.
 ## 8. Failure recovery
 
 Per-operation rules for `/tasks`. General logging and notification
-policy lives in `universal.md` § 8.
+policy lives in `universal.md` § 7.
 
 | Operation                       | On failure                                                                              |
 |---------------------------------|-----------------------------------------------------------------------------------------|
@@ -280,4 +280,3 @@ policy lives in `universal.md` § 8.
 | Work Item create                | Continue with remaining WIs; report partial; rerun reconciles via idempotency (§ 4.2)   |
 | Relation create                 | Continue; missing relations logged; rerun reconciles                                    |
 | Label create                    | Continue without that label; comment on first affected WI                               |
-| Bootstrap validation            | Abort with `"Bootstrap incomplete: <reason>; see plane/universal.md § 3"`               |
