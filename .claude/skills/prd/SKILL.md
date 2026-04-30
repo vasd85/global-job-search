@@ -105,6 +105,10 @@ Length budget: soft cap ~400 lines. Compress §6 and §11.4 first;
 never compress §11.2, §11.3, or §4 — those are the load-bearing
 contract.
 
+**Before spawning the reviewer**, verify the draft against the
+template (every `## N` heading present, in order; no empty
+sections). This mechanical check is yours — the reviewer is semantic.
+
 ### 4. Review loop (`prd-reviewer` in fresh context)
 
 Once the draft is on disk, spawn the reviewer:
@@ -116,14 +120,13 @@ Agent(
   prompt: |
     ARTIFACT_PATH: docs/product/<slug>.md
     RESEARCH_PATH: .claude/scratchpads/<slug>/research.md
-    TEMPLATE_PATH: ${CLAUDE_SKILL_DIR}/assets/prd-template.md
-    VERDICT_PATH: .claude/scratchpads/<slug>/prd-review.md
+    VERDICT_PATH:  .claude/scratchpads/<slug>/prd-review.md
 )
 ```
 
 Pass file paths only — never working notes, partial drafts, or your
-own framing. The reviewer reads ARTIFACT, RESEARCH, and TEMPLATE
-independently and writes verdict + findings to VERDICT_PATH.
+own framing. The reviewer reads ARTIFACT and RESEARCH independently
+and writes verdict + findings to VERDICT_PATH.
 
 Read in two passes:
 
