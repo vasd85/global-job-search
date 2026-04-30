@@ -4,8 +4,8 @@ description: >-
   Second phase of the agent-system pipeline. Read the research note
   written by /research and produce a Product Requirements Document
   at docs/product/<slug>.md on the plan/<slug> branch. Required
-  reviewer (prd-reviewer) runs in fresh context per architecture
-  § 8. Manual invocation only.
+  reviewer (prd-reviewer) runs in a fresh context. Manual
+  invocation only.
 disable-model-invocation: true
 argument-hint: "<feature-slug>"
 ---
@@ -58,7 +58,8 @@ no scratchpad state behind.
 
 ### 2. Set the planning branch and open phase-state
 
-Per architecture § 4.1, phases 2-4 share branch `plan/<slug>`. Enforce:
+The PRD, design, and plan all commit to one shared branch
+`plan/<slug>`; the bundled PR opens after `/plan`. Enforce:
 
 - On `plan/<slug>` already, clean tree → continue.
 - On `main`, clean tree → `git checkout -b plan/<slug>`.
@@ -124,7 +125,7 @@ Pass file paths only — never working notes, partial drafts, or your
 own framing. The reviewer reads ARTIFACT, RESEARCH, and TEMPLATE
 independently and writes verdict + findings to VERDICT_PATH.
 
-Per architecture § 8.2, read in two passes:
+Read in two passes:
 
 - **Pass 1 — verdict.** Read the first non-empty line under
   `### Verdict`. The token is `approved` or `changes-required`; an
@@ -158,17 +159,15 @@ downstream skills automatically.
 ## Phase tracking
 
 This skill writes the **feature-level** phase-state file at
-`.claude/scratchpads/<slug>/phase-state.md`, per
-`docs/agents/architecture.md § 5` and `docs/agents/phase-state-schema.md`.
-Fields written:
+`.claude/scratchpads/<slug>/phase-state.md`, schema at
+`docs/agents/phase-state-schema.md`. Fields written:
 
 - `phase: prd`; `next_phase: design` (or `plan` when design is skipped).
 - `started_at`: on entry to step 2; a failed step 1 leaves no file.
 - `ended_at`: `null` while running; set when step 5 finishes.
 - `status`: `in-progress` → `complete` on approval, `failed` on cycle
   exhaustion or user abort.
-- `cycles`: `0` → `+1` per writer→reviewer iteration; capped at 2
-  per `architecture.md § 8.2`.
+- `cycles`: `0` → `+1` per writer→reviewer iteration; capped at 2.
 
 ## What stays out
 

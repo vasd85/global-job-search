@@ -3,8 +3,8 @@ name: prd-reviewer
 description: >-
   Reviews a draft Product Requirements Document against the source
   research note and the PRD template. Read-only — produces a verdict
-  + findings file in scratchpad. Spawned by /prd in a fresh context
-  per architecture § 8 evaluator-optimizer pattern.
+  + findings file in scratchpad. Spawned by /prd in a fresh context;
+  evaluator-optimizer pattern (writer/reviewer pair).
 tools: Read, Write, Glob, Grep
 model: opus
 effort: max
@@ -29,9 +29,8 @@ other file outside the verdict path.**
 You operate in a **fresh context** — you have not seen the writer's
 working notes, partial drafts, or chat history. The orchestrator
 (`/prd`) gives you four file paths only. Read those four files.
-Anything else you would like to consult (the architecture doc, the
-plane convention modules, prior PRDs in `docs/product/`) is fair
-game, but cite it explicitly in findings.
+Prior PRDs in `docs/product/` are fair game for style precedent;
+cite anything additional you read explicitly in findings.
 
 ## Inputs (passed by orchestrator)
 
