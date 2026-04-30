@@ -2,9 +2,430 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/vasd85/global-job-search/docs/episodes/schema.json",
   "title": "Episode log entry",
-  "description": "One JSON object per line in docs/episodes/<YYYY-MM>.jsonl. One entry corresponds to one Work Item / one PR / one merge. Schema sourced from docs/agents/architecture.md § 9.1. The schema_version field is required from day one (§ 6 cross-cutting risks); bump it whenever the entry shape changes incompatibly.",
+  "description": "One JSON object per line in docs/episodes/<YYYY-MM>.jsonl. One entry corresponds to one Work Item / one PR / one merge.",
   "type": "object",
-  "additionalProperties": true,
+  "properties": {
+    "schema_version": {
+      "type": "number",
+      "const": 1,
+      "description": "Schema version for forward-compat migrations. Bump on incompatible shape changes; never break existing grep contracts."
+    },
+    "episode_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable id of the form <YYYY-MM-DD>-<feature-slug>-<task-id>."
+    },
+    "feature_slug": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Kebab-case slug for the parent feature; matches docs/product/<slug>.md when present."
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Plane Work Item code (e.g. GJS-42)."
+    },
+    "task_type": {
+      "type": "string",
+      "enum": [
+        "feat",
+        "fix",
+        "refactor",
+        "chore",
+        "docs",
+        "test"
+      ],
+      "description": "Conventional Commits type. Must stay in sync with CLAUDE.md \"Git\" section and docs/agents/plane/tasks.md § 6."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "merged"
+      ],
+      "description": "Terminal episode status. Episodes are only logged after PR merge, so the only value emitted today is \"merged\". Future statuses (e.g. \"abandoned\") would require a schema_version bump."
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+      "description": "ISO 8601 UTC timestamp; first scratchpad write or first phase-state.md update for this task."
+    },
+    "completed_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+      "description": "ISO 8601 UTC timestamp; PR mergedAt per gh pr view --json mergedAt."
+    },
+    "branch": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Git branch the implementation lived on before merge."
+    },
+    "pr_url": {
+      "type": "string",
+      "format": "uri",
+      "description": "Full GitHub PR URL."
+    },
+    "plane_work_item_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Plane Work Item code (typically equals task_id)."
+    },
+    "plane_epic_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Plane Epic code that this Work Item rolls up to."
+    },
+    "prd_link": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Repo-relative path to the PRD on main, or null if the episode predates docs/product/ (standalone-mode replay of an old PR)."
+    },
+    "design_link": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Repo-relative path to the design on main, null if /design was skipped (trivial feature) or the episode predates docs/designs/."
+    },
+    "plan_link": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Repo-relative path to the plan on main, or null if standalone-mode replay."
+    },
+    "session_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Machine-local pointers into .claude/logs/<skill>/<run-dir>/ via the skill-logger meta.json. May be empty if skill-logger meta.json is missing for this run — see architecture § 9.6."
+    },
+    "phases_run": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Phase names that ran for this episode, in order. Free-form strings; common values are \"research\", \"prd\", \"design\", \"plan\", \"tasks\", \"implement\", \"review\"."
+    },
+    "parallel_with": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Sibling Work Item ids that ran in parallel with this one. Human-curated at log time; may be empty."
+    },
+    "reviews": {
+      "type": "object",
+      "properties": {
+        "prd": {
+          "type": "object",
+          "properties": {
+            "cycles": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "description": "Number of writer/reviewer cycles before approval. 1 = approved on first review; 2 = one round of changes-required."
+            },
+            "verdict": {
+              "type": "string",
+              "enum": [
+                "approved",
+                "changes-required"
+              ],
+              "description": "Final reviewer verdict at episode close."
+            },
+            "critical_findings_addressed": {
+              "description": "Number of Critical findings the writer addressed across all cycles. Optional.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "cycles",
+            "verdict"
+          ],
+          "additionalProperties": false
+        },
+        "design": {
+          "type": "object",
+          "properties": {
+            "cycles": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "description": "Number of writer/reviewer cycles before approval. 1 = approved on first review; 2 = one round of changes-required."
+            },
+            "verdict": {
+              "type": "string",
+              "enum": [
+                "approved",
+                "changes-required"
+              ],
+              "description": "Final reviewer verdict at episode close."
+            },
+            "critical_findings_addressed": {
+              "description": "Number of Critical findings the writer addressed across all cycles. Optional.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "cycles",
+            "verdict"
+          ],
+          "additionalProperties": false
+        },
+        "plan": {
+          "type": "object",
+          "properties": {
+            "cycles": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "description": "Number of writer/reviewer cycles before approval. 1 = approved on first review; 2 = one round of changes-required."
+            },
+            "verdict": {
+              "type": "string",
+              "enum": [
+                "approved",
+                "changes-required"
+              ],
+              "description": "Final reviewer verdict at episode close."
+            },
+            "critical_findings_addressed": {
+              "description": "Number of Critical findings the writer addressed across all cycles. Optional.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "cycles",
+            "verdict"
+          ],
+          "additionalProperties": false
+        },
+        "code": {
+          "type": "object",
+          "properties": {
+            "cycles": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "description": "Number of writer/reviewer cycles before approval. 1 = approved on first review; 2 = one round of changes-required."
+            },
+            "verdict": {
+              "type": "string",
+              "enum": [
+                "approved",
+                "changes-required"
+              ],
+              "description": "Final reviewer verdict at episode close."
+            },
+            "critical_findings_addressed": {
+              "description": "Number of Critical findings the writer addressed across all cycles. Optional.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "cycles",
+            "verdict"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false,
+      "description": "Per-phase reviewer telemetry. Keys are optional; an absent key means that reviewer did not run for this episode."
+    },
+    "duration_min_total": {
+      "anyOf": [
+        {
+          "type": "number",
+          "minimum": 0
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Total wall-clock minutes start to merge. Null when not auto-extractable (standalone-mode replay)."
+    },
+    "duration_min_by_phase": {
+      "anyOf": [
+        {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Per-phase wall-clock minutes. Null when not auto-extractable."
+    },
+    "files_touched_count": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Files changed in the merged PR (git diff). Null when not auto-extractable."
+    },
+    "test_count_added": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Net test cases added in the merged PR. Null when not auto-extractable."
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "what": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The chosen approach, in one sentence."
+          },
+          "why": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The justification — why this beat the rejected alternatives."
+          },
+          "rejected": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Alternatives considered and not taken, each with a brief reason."
+          },
+          "confidence": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Confidence label. Recommended vocabulary per architecture § 9.3: \"verified\" (backed by tests or production metric) or \"provisional\" (works, but not proven optimal). Left as a free string for now; tighten via schema_version bump if the vocabulary stabilises."
+          }
+        },
+        "required": [
+          "what",
+          "why",
+          "rejected",
+          "confidence"
+        ],
+        "additionalProperties": false
+      },
+      "description": "Architecturally significant choices made during this episode."
+    },
+    "blockers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "what": {
+            "type": "string",
+            "minLength": 1,
+            "description": "What blocked progress, in one sentence."
+          },
+          "resolution": {
+            "type": "string",
+            "minLength": 1,
+            "description": "How the blocker was cleared (or \"abandoned\" / \"deferred\")."
+          },
+          "duration_min": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Wall-clock minutes lost to this blocker."
+          },
+          "tag": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Short topical tag. See architecture § 9.3 for recommended vocabulary (external-api, tooling, requirement-unclear, flaky-test, env-config, local-context-mismatch, over-decomposition)."
+          }
+        },
+        "required": [
+          "what",
+          "resolution",
+          "duration_min",
+          "tag"
+        ],
+        "additionalProperties": false
+      },
+      "description": "Friction encountered during this episode that delayed progress."
+    },
+    "dead_ends": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "tried": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The approach attempted."
+          },
+          "why_failed": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Why it didn't work, in enough detail to deter future re-attempts."
+          }
+        },
+        "required": [
+          "tried",
+          "why_failed"
+        ],
+        "additionalProperties": false
+      },
+      "description": "Approaches tried and abandoned. Useful for future grep against \"have we tried X?\"."
+    },
+    "learnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "One-line distilled lessons. Captured here so they remain greppable even when the source PR is forgotten."
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Free-form topical tags for grep-based discovery. See architecture § 9.3 for recommended vocabularies."
+    }
+  },
   "required": [
     "schema_version",
     "episode_id",
@@ -35,244 +456,5 @@
     "learnings",
     "tags"
   ],
-  "properties": {
-    "schema_version": {
-      "description": "Schema version for forward-compat migrations. Bump on incompatible shape changes; never break existing grep contracts.",
-      "type": "integer",
-      "const": 1
-    },
-    "episode_id": {
-      "description": "Stable id of the form <YYYY-MM-DD>-<feature-slug>-<task-id>.",
-      "type": "string",
-      "minLength": 1
-    },
-    "feature_slug": {
-      "description": "Kebab-case slug for the parent feature; matches docs/product/<slug>.md when present.",
-      "type": "string",
-      "minLength": 1
-    },
-    "task_id": {
-      "description": "Plane Work Item code (e.g. GJS-42).",
-      "type": "string",
-      "minLength": 1
-    },
-    "task_type": {
-      "description": "Conventional Commits type. Must stay in sync with CLAUDE.md \"Git\" section and docs/agents/plane/tasks.md § 6.",
-      "type": "string",
-      "enum": ["feat", "fix", "refactor", "chore", "docs", "test"]
-    },
-    "status": {
-      "description": "Terminal episode status. Episodes are only logged after PR merge, so the only value emitted today is \"merged\". Future statuses (e.g. \"abandoned\") would require a schema_version bump.",
-      "type": "string",
-      "enum": ["merged"]
-    },
-    "started_at": {
-      "description": "ISO 8601 UTC timestamp; first scratchpad write or first phase-state.md update for this task.",
-      "type": "string",
-      "format": "date-time"
-    },
-    "completed_at": {
-      "description": "ISO 8601 UTC timestamp; PR mergedAt per gh pr view --json mergedAt.",
-      "type": "string",
-      "format": "date-time"
-    },
-    "branch": {
-      "description": "Git branch the implementation lived on before merge.",
-      "type": "string",
-      "minLength": 1
-    },
-    "pr_url": {
-      "description": "Full GitHub PR URL.",
-      "type": "string",
-      "format": "uri"
-    },
-    "plane_work_item_id": {
-      "description": "Plane Work Item code (typically equals task_id).",
-      "type": "string",
-      "minLength": 1
-    },
-    "plane_epic_id": {
-      "description": "Plane Epic code that this Work Item rolls up to.",
-      "type": "string",
-      "minLength": 1
-    },
-    "prd_link": {
-      "description": "Repo-relative path to the PRD on main, or null if the episode predates docs/product/ (standalone-mode replay of an old PR).",
-      "type": ["string", "null"]
-    },
-    "design_link": {
-      "description": "Repo-relative path to the design on main, null if /design was skipped (trivial feature) or the episode predates docs/designs/.",
-      "type": ["string", "null"]
-    },
-    "plan_link": {
-      "description": "Repo-relative path to the plan on main, or null if standalone-mode replay.",
-      "type": ["string", "null"]
-    },
-    "session_ids": {
-      "description": "Machine-local pointers into .claude/logs/<skill>/<run-dir>/ via the skill-logger meta.json. May be empty if skill-logger meta.json is missing for this run — see architecture § 9.6.",
-      "type": "array",
-      "items": { "type": "string" }
-    },
-    "phases_run": {
-      "description": "Phase names that ran for this episode, in order. Free-form strings; common values are \"research\", \"prd\", \"design\", \"plan\", \"tasks\", \"implement\", \"review\".",
-      "type": "array",
-      "items": { "type": "string" }
-    },
-    "parallel_with": {
-      "description": "Sibling Work Item ids that ran in parallel with this one. Human-curated at log time; may be empty.",
-      "type": "array",
-      "items": { "type": "string" }
-    },
-    "reviews": {
-      "description": "Per-phase reviewer telemetry. Keys are optional; an absent key means that reviewer did not run for this episode.",
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "prd": { "$ref": "#/$defs/reviewEntry" },
-        "design": { "$ref": "#/$defs/reviewEntry" },
-        "plan": { "$ref": "#/$defs/reviewEntry" },
-        "code": { "$ref": "#/$defs/reviewEntry" }
-      }
-    },
-    "duration_min_total": {
-      "description": "Total wall-clock minutes start to merge. Null when not auto-extractable (standalone-mode replay).",
-      "type": ["number", "null"],
-      "minimum": 0
-    },
-    "duration_min_by_phase": {
-      "description": "Per-phase wall-clock minutes. Null when not auto-extractable.",
-      "type": ["object", "null"],
-      "additionalProperties": { "type": "number", "minimum": 0 }
-    },
-    "files_touched_count": {
-      "description": "Files changed in the merged PR (git diff). Null when not auto-extractable.",
-      "type": ["integer", "null"],
-      "minimum": 0
-    },
-    "test_count_added": {
-      "description": "Net test cases added in the merged PR. Null when not auto-extractable.",
-      "type": ["integer", "null"],
-      "minimum": 0
-    },
-    "decisions": {
-      "description": "Architecturally significant choices made during this episode.",
-      "type": "array",
-      "items": { "$ref": "#/$defs/decisionEntry" }
-    },
-    "blockers": {
-      "description": "Friction encountered during this episode that delayed progress.",
-      "type": "array",
-      "items": { "$ref": "#/$defs/blockerEntry" }
-    },
-    "dead_ends": {
-      "description": "Approaches tried and abandoned. Useful for future grep against \"have we tried X?\".",
-      "type": "array",
-      "items": { "$ref": "#/$defs/deadEndEntry" }
-    },
-    "learnings": {
-      "description": "One-line distilled lessons. Captured here so they remain greppable even when the source PR is forgotten.",
-      "type": "array",
-      "items": { "type": "string" }
-    },
-    "tags": {
-      "description": "Free-form topical tags for grep-based discovery. See architecture § 9.3 for recommended vocabularies.",
-      "type": "array",
-      "items": { "type": "string" }
-    }
-  },
-  "$defs": {
-    "reviewEntry": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["cycles", "verdict"],
-      "properties": {
-        "cycles": {
-          "description": "Number of writer/reviewer cycles before approval. 1 = approved on first review; 2 = one round of changes-required.",
-          "type": "integer",
-          "minimum": 0
-        },
-        "verdict": {
-          "description": "Final reviewer verdict at episode close.",
-          "type": "string",
-          "enum": ["approved", "changes-required"]
-        },
-        "critical_findings_addressed": {
-          "description": "Number of Critical findings the writer addressed across all cycles. Optional.",
-          "type": "integer",
-          "minimum": 0
-        }
-      }
-    },
-    "decisionEntry": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["what", "why", "rejected", "confidence"],
-      "properties": {
-        "what": {
-          "description": "The chosen approach, in one sentence.",
-          "type": "string",
-          "minLength": 1
-        },
-        "why": {
-          "description": "The justification — why this beat the rejected alternatives.",
-          "type": "string",
-          "minLength": 1
-        },
-        "rejected": {
-          "description": "Alternatives considered and not taken, each with a brief reason.",
-          "type": "array",
-          "items": { "type": "string" }
-        },
-        "confidence": {
-          "description": "Confidence label. Recommended vocabulary per architecture § 9.3: \"verified\" (backed by tests or production metric) or \"provisional\" (works, but not proven optimal). Left as a free string for now; tighten via schema_version bump if the vocabulary stabilises.",
-          "type": "string",
-          "minLength": 1
-        }
-      }
-    },
-    "blockerEntry": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["what", "resolution", "duration_min", "tag"],
-      "properties": {
-        "what": {
-          "description": "What blocked progress, in one sentence.",
-          "type": "string",
-          "minLength": 1
-        },
-        "resolution": {
-          "description": "How the blocker was cleared (or \"abandoned\" / \"deferred\").",
-          "type": "string",
-          "minLength": 1
-        },
-        "duration_min": {
-          "description": "Wall-clock minutes lost to this blocker.",
-          "type": "number",
-          "minimum": 0
-        },
-        "tag": {
-          "description": "Short topical tag. See architecture § 9.3 for recommended vocabulary (external-api, tooling, requirement-unclear, flaky-test, env-config, local-context-mismatch, over-decomposition).",
-          "type": "string",
-          "minLength": 1
-        }
-      }
-    },
-    "deadEndEntry": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["tried", "why_failed"],
-      "properties": {
-        "tried": {
-          "description": "The approach attempted.",
-          "type": "string",
-          "minLength": 1
-        },
-        "why_failed": {
-          "description": "Why it didn't work, in enough detail to deter future re-attempts.",
-          "type": "string",
-          "minLength": 1
-        }
-      }
-    }
-  }
+  "additionalProperties": {}
 }

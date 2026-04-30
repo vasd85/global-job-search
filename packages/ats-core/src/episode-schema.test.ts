@@ -1,16 +1,26 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import Ajv2020, { type ValidateFunction, type ErrorObject } from "ajv/dist/2020.js";
-import addFormats from "ajv-formats";
+import { beforeAll, describe, expect, test } from "vitest";
+import {
+  EpisodeSchema,
+  generateEpisodeSchemaJson,
+  type Episode,
+} from "./episode-schema";
 
-// Resolve schema path relative to this file: packages/ats-core/src/<file> -> repo root.
+// Resolve the committed JSON Schema path relative to this file.
+// packages/ats-core/src/<file>  →  repo root  →  docs/episodes/schema.json
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SCHEMA_PATH = path.resolve(__dirname, "../../../docs/episodes/schema.json");
+const SCHEMA_JSON_PATH = path.resolve(
+  __dirname,
+  "../../../docs/episodes/schema.json",
+);
 
-// Pinned, byte-equivalent (whitespace-normalised) copy of docs/agents/architecture.md § 9.1.
-// Inlined deliberately so a markdown reflow can't silently change the test input.
-const CANONICAL_EXAMPLE = {
+// Pinned, byte-equivalent (whitespace-normalised) copy of
+// docs/agents/architecture.md § 9.1. Inlined deliberately so a markdown
+// reflow can't silently change the test input. Em-dashes preserved at
+// `decisions[0].rejected[*]` and `learnings[0]` — do not "fix" to ASCII.
+const CANONICAL_EXAMPLE: Episode = {
   schema_version: 1,
   episode_id: "2026-04-28-fix-greenhouse-rate-limit-GJS-42",
   feature_slug: "fix-greenhouse-rate-limit",
@@ -78,248 +88,187 @@ const CANONICAL_EXAMPLE = {
     "Greenhouse 429s lack standard headers — extractor needs vendor-specific wrapper",
   ],
   tags: ["extractor", "greenhouse", "rate-limit"],
-} as const;
+};
 
-type EpisodeFixture = Record<string, unknown>;
-
-function validCanonical(): EpisodeFixture {
-  return structuredClone(CANONICAL_EXAMPLE) as EpisodeFixture;
+// Helper: deep clone the canonical example so per-test mutations
+// don't leak between tests.
+function validCanonical(): Episode {
+  return structuredClone(CANONICAL_EXAMPLE);
 }
 
-let validate: ValidateFunction;
-
-beforeAll(() => {
-  const schema = JSON.parse(readFileSync(SCHEMA_PATH, "utf8")) as Record<string, unknown>;
-  // Draft 2020-12 entrypoint — required because the schema declares
-  // $schema: "https://json-schema.org/draft/2020-12/schema".
-  const ajv = new Ajv2020({ allErrors: true, strict: true });
-  // Register date-time / uri / etc. so format keywords aren't no-ops at runtime.
-  addFormats(ajv);
-  validate = ajv.compile(schema);
-});
-
-function expectError(
-  errors: ErrorObject[] | null | undefined,
-  predicate: (e: ErrorObject) => boolean,
-): void {
-  expect(errors).toBeTruthy();
-  expect(errors!.some(predicate)).toBe(true);
-}
-
-describe("episode-log JSON Schema", () => {
-  // Scenario 1 — happy path
-  describe("happy path", () => {
-    test("accepts the canonical architecture § 9.1 example", () => {
-      const fixture = validCanonical();
-      const ok = validate(fixture);
-
-      expect(validate.errors).toBeNull();
-      expect(ok).toBe(true);
-    });
-  });
-
-  // Scenario 2 — required-field enforcement (representative)
-  describe("required fields", () => {
-    test("rejects an episode missing top-level schema_version", () => {
-      const fixture = validCanonical();
-      delete fixture.schema_version;
-
-      const ok = validate(fixture);
-
-      expect(ok).toBe(false);
-      expectError(
-        validate.errors,
-        (e) =>
-          e.keyword === "required" &&
-          (e.params as { missingProperty?: string }).missingProperty === "schema_version",
+describe("EpisodeSchema (zod)", () => {
+  // Sanity check: the canonical example compiles into a known-valid
+  // input. If the schema rejects this, every other test is misleading.
+  beforeAll(() => {
+    const result = EpisodeSchema.safeParse(CANONICAL_EXAMPLE);
+    if (!result.success) {
+      throw new Error(
+        `Canonical example fails baseline validation: ${JSON.stringify(
+          result.error.issues,
+          null,
+          2,
+        )}`,
       );
-    });
+    }
   });
 
-  // Scenario 3 — enum + const enforcement (combined)
-  describe("enum and const enforcement", () => {
-    type EnumConstCase = {
-      label: string;
-      mutate: (fixture: EpisodeFixture) => void;
-      expectedKeyword: "enum" | "const";
-      expectedInstancePath: string;
-    };
-
-    const cases: EnumConstCase[] = [
-      {
-        label: "rejects unknown task_type 'chord' (typo for 'chore')",
-        mutate: (fixture) => {
-          fixture.task_type = "chord";
-        },
-        expectedKeyword: "enum",
-        expectedInstancePath: "/task_type",
-      },
-      {
-        label: "rejects schema_version other than the pinned const 1",
-        mutate: (fixture) => {
-          fixture.schema_version = 2;
-        },
-        expectedKeyword: "const",
-        expectedInstancePath: "/schema_version",
-      },
-    ];
-
-    test.each(cases)("$label", ({ mutate, expectedKeyword, expectedInstancePath }) => {
-      const fixture = validCanonical();
-      mutate(fixture);
-
-      const ok = validate(fixture);
-
-      expect(ok).toBe(false);
-      expectError(
-        validate.errors,
-        (e) => e.keyword === expectedKeyword && e.instancePath === expectedInstancePath,
-      );
-    });
+  // -- Scenario 1: Happy path -------------------------------------------
+  test("accepts the canonical architecture § 9.1 example", () => {
+    const result = EpisodeSchema.safeParse(CANONICAL_EXAMPLE);
+    expect(result.success).toBe(true);
   });
 
-  // Scenario 4 — nullable-field acceptance (standalone-mode replay)
-  describe("nullable fields", () => {
-    test("accepts null for documented-nullable auto-extracted fields", () => {
-      const fixture = validCanonical();
-      fixture.prd_link = null;
-      fixture.design_link = null;
-      fixture.plan_link = null;
-      fixture.duration_min_total = null;
-      fixture.duration_min_by_phase = null;
-      fixture.files_touched_count = null;
-      fixture.test_count_added = null;
+  // -- Scenario 2: Required-field enforcement (representative) ----------
+  test("rejects an episode missing a top-level required field", () => {
+    const fixture = validCanonical() as Partial<Episode>;
+    delete fixture.schema_version;
 
-      const ok = validate(fixture);
+    const result = EpisodeSchema.safeParse(fixture);
+    expect(result.success).toBe(false);
+    if (result.success) return;
 
-      expect(validate.errors).toBeNull();
-      expect(ok).toBe(true);
-    });
+    expect(
+      result.error.issues.some(
+        (issue) =>
+          issue.path.length === 1 && issue.path[0] === "schema_version",
+      ),
+    ).toBe(true);
   });
 
-  // Scenario 5 — empty arrays accepted
-  describe("collection fields", () => {
-    test("accepts empty arrays for all collection-typed required fields", () => {
-      const fixture = validCanonical();
-      fixture.parallel_with = [];
-      fixture.session_ids = [];
-      fixture.phases_run = [];
-      fixture.decisions = [];
-      fixture.blockers = [];
-      fixture.dead_ends = [];
-      fixture.learnings = [];
-      fixture.tags = [];
+  // -- Scenario 3: Enum + const enforcement ----------------------------
+  test.each([
+    {
+      name: "task_type outside the enum",
+      mutate: (f: Episode) => {
+        (f as unknown as { task_type: string }).task_type = "chord";
+      },
+      expectedPath: ["task_type"],
+    },
+    {
+      name: "schema_version other than const 1",
+      mutate: (f: Episode) => {
+        (f as unknown as { schema_version: number }).schema_version = 2;
+      },
+      expectedPath: ["schema_version"],
+    },
+  ])("rejects $name", ({ mutate, expectedPath }) => {
+    const fixture = validCanonical();
+    mutate(fixture);
 
-      const ok = validate(fixture);
+    const result = EpisodeSchema.safeParse(fixture);
+    expect(result.success).toBe(false);
+    if (result.success) return;
 
-      expect(validate.errors).toBeNull();
-      expect(ok).toBe(true);
-    });
+    expect(
+      result.error.issues.some(
+        (issue) =>
+          issue.path.length === expectedPath.length &&
+          issue.path.every((p, i) => p === expectedPath[i]),
+      ),
+    ).toBe(true);
   });
 
-  // Scenario 6 — additionalProperties boundary (nested vs root)
-  describe("additionalProperties boundary", () => {
-    type AdditionalPropsCase = {
-      label: string;
-      mutate: (fixture: EpisodeFixture) => void;
-      expectValid: boolean;
-      // Used only when expectValid is false.
-      expectedInstancePath?: string;
-      expectedAdditionalProperty?: string;
-    };
+  // -- Scenario 4: Nullable-field acceptance (standalone-mode replay) --
+  test("accepts null for documented-nullable auto-extracted fields", () => {
+    const fixture = validCanonical();
+    fixture.prd_link = null;
+    fixture.design_link = null;
+    fixture.plan_link = null;
+    fixture.duration_min_total = null;
+    fixture.duration_min_by_phase = null;
+    fixture.files_touched_count = null;
+    fixture.test_count_added = null;
 
-    const cases: AdditionalPropsCase[] = [
-      {
-        label: "rejects an unknown key inside a decisions[] entry",
-        mutate: (fixture) => {
-          const decisions = fixture.decisions as Array<Record<string, unknown>>;
-          decisions[0].extra = "x";
-        },
-        expectValid: false,
-        expectedInstancePath: "/decisions/0",
-        expectedAdditionalProperty: "extra",
-      },
-      {
-        label: "accepts an unknown top-level key (root is forward-compat)",
-        mutate: (fixture) => {
-          fixture.experimental_field = "x";
-        },
-        expectValid: true,
-      },
-    ];
-
-    test.each(cases)(
-      "$label",
-      ({ mutate, expectValid, expectedInstancePath, expectedAdditionalProperty }) => {
-        const fixture = validCanonical();
-        mutate(fixture);
-
-        const ok = validate(fixture);
-
-        if (expectValid) {
-          expect(validate.errors).toBeNull();
-          expect(ok).toBe(true);
-          return;
-        }
-
-        expect(ok).toBe(false);
-        expectError(
-          validate.errors,
-          (e) =>
-            e.keyword === "additionalProperties" &&
-            e.instancePath === expectedInstancePath &&
-            (e.params as { additionalProperty?: string }).additionalProperty ===
-              expectedAdditionalProperty,
-        );
-      },
-    );
+    const result = EpisodeSchema.safeParse(fixture);
+    expect(result.success).toBe(true);
   });
 
-  // Scenario 7 — reviews sub-shape: verdict enum + sparse keys
-  describe("reviews sub-shape", () => {
-    type ReviewsCase = {
-      label: string;
-      mutate: (fixture: EpisodeFixture) => void;
-      expectValid: boolean;
-      expectedInstancePath?: string;
-    };
+  // -- Scenario 5: Empty arrays accepted -------------------------------
+  test("accepts empty arrays for collection fields", () => {
+    const fixture = validCanonical();
+    fixture.parallel_with = [];
+    fixture.session_ids = [];
+    fixture.phases_run = [];
+    fixture.decisions = [];
+    fixture.blockers = [];
+    fixture.dead_ends = [];
+    fixture.learnings = [];
+    fixture.tags = [];
 
-    const cases: ReviewsCase[] = [
-      {
-        label: "rejects reviews.code.verdict not in the enum",
-        mutate: (fixture) => {
-          const reviews = fixture.reviews as Record<string, Record<string, unknown>>;
-          reviews.code.verdict = "rejected";
-        },
-        expectValid: false,
-        expectedInstancePath: "/reviews/code/verdict",
-      },
-      {
-        label: "accepts an empty reviews object (all reviewer keys absent)",
-        mutate: (fixture) => {
-          fixture.reviews = {};
-        },
-        expectValid: true,
-      },
-    ];
+    const result = EpisodeSchema.safeParse(fixture);
+    expect(result.success).toBe(true);
+  });
 
-    test.each(cases)("$label", ({ mutate, expectValid, expectedInstancePath }) => {
-      const fixture = validCanonical();
-      mutate(fixture);
+  // -- Scenario 6: additionalProperties polarity (nested vs root) ------
+  test("rejects extras inside decisions[] items (nested strict)", () => {
+    const fixture = validCanonical();
+    (
+      fixture.decisions[0] as unknown as { extra: string }
+    ).extra = "x";
 
-      const ok = validate(fixture);
+    const result = EpisodeSchema.safeParse(fixture);
+    expect(result.success).toBe(false);
+    if (result.success) return;
 
-      if (expectValid) {
-        expect(validate.errors).toBeNull();
-        expect(ok).toBe(true);
-        return;
-      }
+    // zod 4 reports unknown keys in strict objects with code === "unrecognized_keys"
+    // and an empty-or-shallow path; the keys themselves live in `keys`.
+    expect(
+      result.error.issues.some(
+        (issue) =>
+          issue.code === "unrecognized_keys" &&
+          "keys" in issue &&
+          Array.isArray((issue as { keys: unknown }).keys) &&
+          ((issue as { keys: string[] }).keys).includes("extra"),
+      ),
+    ).toBe(true);
+  });
 
-      expect(ok).toBe(false);
-      expectError(
-        validate.errors,
-        (e) => e.keyword === "enum" && e.instancePath === expectedInstancePath,
-      );
-    });
+  test("accepts extras at the root (loose forward-compat)", () => {
+    const fixture = validCanonical() as Episode & Record<string, unknown>;
+    fixture.experimental_field = "x";
+
+    const result = EpisodeSchema.safeParse(fixture);
+    expect(result.success).toBe(true);
+  });
+
+  // -- Scenario 7: reviews shape — verdict enum + sparse keys ----------
+  test("rejects unknown reviews.code.verdict", () => {
+    const fixture = validCanonical();
+    if (!fixture.reviews.code) {
+      throw new Error("canonical example must define reviews.code");
+    }
+    (fixture.reviews.code as unknown as { verdict: string }).verdict =
+      "rejected";
+
+    const result = EpisodeSchema.safeParse(fixture);
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    expect(
+      result.error.issues.some(
+        (issue) =>
+          issue.path.length === 3 &&
+          issue.path[0] === "reviews" &&
+          issue.path[1] === "code" &&
+          issue.path[2] === "verdict",
+      ),
+    ).toBe(true);
+  });
+
+  test("accepts a reviews object with no keys", () => {
+    const fixture = validCanonical();
+    fixture.reviews = {};
+
+    const result = EpisodeSchema.safeParse(fixture);
+    expect(result.success).toBe(true);
+  });
+
+  // -- Drift detection: generated JSON Schema matches committed file ---
+  // If this fails, run `pnpm --filter @gjs/ats-core gen:episode-schema`
+  // and commit the regenerated `docs/episodes/schema.json`.
+  test("docs/episodes/schema.json matches z.toJSONSchema(EpisodeSchema)", () => {
+    const expected = generateEpisodeSchemaJson();
+    const actual = readFileSync(SCHEMA_JSON_PATH, "utf-8");
+    expect(actual).toBe(expected);
   });
 });
