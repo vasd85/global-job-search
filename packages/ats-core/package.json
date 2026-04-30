@@ -17,11 +17,13 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest",
-    "build:city-index": "npx tsx scripts/build-city-index.ts"
+    "build:city-index": "npx tsx scripts/build-city-index.ts",
+    "gen:episode-schema": "npx tsx scripts/gen-episode-schema.ts"
   },
   "dependencies": {
     "@gjs/logger": "workspace:*",
-    "cheerio": "^1.0.0"
+    "cheerio": "^1.0.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
