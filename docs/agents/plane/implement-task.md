@@ -56,7 +56,7 @@ are listed below; transitions handled by other skills (`/tasks`,
 | Cancelled                 | any              | `Cancelled`     | manual (user) or `/tasks` reconcile            |
 
 State name resolution rule (call `mcp__plane__list_states`, no
-hardcoded UUIDs) lives in `universal.md` § 5.
+hardcoded UUIDs) lives in `universal.md` § 4.
 
 ## 3. Transition guards
 
@@ -81,7 +81,7 @@ overwrite mismatched states.
 ## 4. Comment templates
 
 `/implement-task`-authored comments. Prefix rule
-(`[<skill> step <N>]`) lives in `universal.md` § 6.
+(`[<skill> step <N>]`) lives in `universal.md` § 5.
 
 | Trigger                                 | Comment text                                                                                              |
 |-----------------------------------------|-----------------------------------------------------------------------------------------------------------|
@@ -107,7 +107,7 @@ small. Follow `/plane-integration` skill guidance.
 ## 6. Failure recovery
 
 Per-operation rules for `/implement-task`. General logging and
-notification policy lives in `universal.md` § 8.
+notification policy lives in `universal.md` § 7.
 
 | Operation                            | On failure                                                                              |
 |--------------------------------------|-----------------------------------------------------------------------------------------|
@@ -115,4 +115,3 @@ notification policy lives in `universal.md` § 8.
 | State update step 0                  | Continue (work happens; drift logged in PR description)                                 |
 | State update step 6                  | Continue (PR is the canonical record); drift logged                                     |
 | Comment posting                      | Continue (comments are convenience; absence is non-fatal)                               |
-| Bootstrap validation                 | Abort with `"Bootstrap incomplete: <reason>; see plane/universal.md § 3"`               |
