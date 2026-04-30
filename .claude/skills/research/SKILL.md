@@ -84,11 +84,12 @@ is right there in the schema) and the user will lose trust.
 
 Read order, stopping when you have enough grounding:
 
-1. `CLAUDE.md` plus `docs/agents/architecture.md` (the latter when the
-   request touches the agent system itself).
+1. `CLAUDE.md` for project conventions. For agent-system topics,
+   consult `docs/agents/architecture.md` selectively (specific § via
+   offset/limit; do not load the full 900-line file).
 2. Topical reads under `docs/product/`, `docs/designs/`, `docs/plans/`,
-   `docs/archive/` (legacy domain notes — non-normative per
-   `architecture.md § 2`; e.g. `docs/archive/business-logic-job-search.md`).
+   `docs/archive/` (legacy domain notes — non-normative; e.g.
+   `docs/archive/business-logic-job-search.md`).
 3. `apps/web/src/lib/db/schema.ts` — entities involved.
 4. Key route handlers or components — locate via `Grep`.
 
@@ -152,11 +153,9 @@ One subagent per external question. Do not chain three searches inline
 ## Phase tracking
 
 This skill writes the **feature-level** phase-state file at
-`.claude/scratchpads/<feature-slug>/phase-state.md`, per
-`docs/agents/architecture.md § 5` (research is a sequential planning
-skill — only one writer at a time).
-
-The schema is `docs/agents/phase-state-schema.md`. This skill writes:
+`.claude/scratchpads/<feature-slug>/phase-state.md` (only one writer
+at a time, so a single file is safe). Schema:
+`docs/agents/phase-state-schema.md`. This skill writes:
 
 - `phase: research`
 - `started_at` set on entry to step 2 (slug + scratchpad creation).
@@ -164,9 +163,9 @@ The schema is `docs/agents/phase-state-schema.md`. This skill writes:
 - `status: in-progress` → `complete` at the end of step 5; `failed` if
   the user aborts or an unrecoverable subagent error halts step 4.
 - `next_phase: prd`.
-- `cycles: 0` — `/research` has no required reviewer per
-  `architecture.md § 8.1`, so this counter stays at 0 unless a future
-  optional `research-reviewer` is added.
+- `cycles: 0` — `/research` has no required reviewer in this
+  pipeline, so this counter stays at 0 unless a future optional
+  `research-reviewer` is added.
 
 ## What stays out
 

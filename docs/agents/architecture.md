@@ -515,19 +515,29 @@ Every writer skill that has a required reviewer follows this loop:
 
 1. **Write** the artefact to its known location.
 2. **Spawn reviewer subagent** in fresh context. Pass file paths only,
-  not content. Reviewer reads input(s) + the artefact independently.
-3. **Reviewer writes verdict** to `<slug>/<phase>-review.md` with two
-  sections: `### Verdict` (`approved` or `changes-required`) and
-   `### Findings` (Critical / Warning, with file:line refs).
-4. **Writer skill reads only `### Verdict`.** Full findings are read
-  only if verdict is `changes-required`.
-5. If `approved` → phase complete.
-6. If Critical findings → writer revises the artefact, re-spawns
-  reviewer. Cycle counter increments.
-7. **Maximum 2 cycles.** After 2 cycles the skill pauses and asks the
-  user how to proceed (override, defer, abort).
-8. Warning-only findings are surfaced to the user with three choices:
-  fix now, defer to follow-up, or skip with rationale.
+   not content. Reviewer reads input(s) + the artefact independently.
+3. **Reviewer writes verdict** to `<slug>/<phase>-review.md`:
+   - `### Verdict` — the verdict token (`approved` or
+     `changes-required`) is the **first non-empty line** under this
+     heading; an optional 1-2 sentence summary may follow.
+   - `### Findings` (optional block) — `#### Critical` sub-section
+     appears only on `changes-required`; `#### Warning` sub-section
+     appears on either verdict when warnings exist; the whole
+     `### Findings` block is omitted when there are zero Criticals
+     **and** zero Warnings. Each finding: `**[file:line or §X.Y]**
+     — issue — why — fix`.
+4. **Writer skill reads `### Verdict` first**, then descends into
+   `### Findings` only when needed:
+   - `approved` with no `### Findings` block → phase complete.
+   - `approved` with `### Findings` (Warning-only) → surface each
+     Warning to the user with three choices: fix now, defer to
+     follow-up, or skip with rationale. Then phase complete.
+   - `changes-required` → read the full `### Findings` block; revise
+     the artefact on Critical, re-spawn reviewer. Cycle counter
+     increments.
+5. **Maximum 2 cycles.** After 2 cycles still `changes-required`, the
+   skill pauses and asks the user how to proceed (override, defer,
+   abort).
 
 ### 8.3 Review file layout
 
