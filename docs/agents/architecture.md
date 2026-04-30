@@ -659,8 +659,6 @@ when the calling skill decides past episodes are relevant.
 `.claude/logs/<skill>/<run-dir>/`; machine-local pointers — see §9.6)
 - `phases_run` (from `events.jsonl` `skill_start` records when
 available, else from `phase-state.md`)
-- `parallel_with` (from `phase-state.md` of sibling Work Items running
-in the same window)
 - `reviews` (cycles and verdicts from `*-review.md` artefacts; counts
 cross-checked against subagent-spawn events in `events.jsonl` when
 available)
@@ -671,6 +669,15 @@ timestamps when available, else from `phase-state.md`)
 **Human-curated, agent-drafted** (require approval):
 
 - `decisions`, `blockers`, `dead_ends`, `learnings`, `tags`
+- `parallel_with` — sibling Work Item ids that were running in
+parallel with this one. Auto-detection across worktree-isolated
+sessions has no good prior art and adds infrastructure cost not
+justified at solo-project scale; `/log-episode` instead prompts
+the user during draft approval ("any sibling WIs running in
+parallel? e.g. `GJS-43, GJS-44`"). User memory degrades fast over
+days, so the prompt fires near merge time, not when the standalone
+mode runs against an old PR. See § 13 open question for the
+auto-extraction roadmap if scale changes.
 
 The agent (in `/log-episode`) drafts these from scratchpads and PR
 diff, then presents the draft for the user to edit and approve before
@@ -899,4 +906,37 @@ merges, who removes the worktree and prunes the branch —
 `/log-episode`, a separate `/cleanup-worktree` skill, or the user
 manually? Decide when episode count makes manual cleanup tedious;
 until then, manual is fine.
+- **Auto-extracting `parallel_with`.** Currently human-curated
+(§ 9.2): `/log-episode` prompts the user for sibling WI ids during
+draft approval. This works while parallelism is small (solo project,
+2-3 concurrent sessions) and recall is fresh (prompt fires near
+merge time). Trigger to automate: peak concurrent sessions ≥ 4
+sustained for several weeks, or a re-read of episodes shows
+consistently empty `parallel_with` on weeks where parallel work
+clearly happened. Concrete approach when triggered, derived from a
+survey of prior art (Sidekiq `WorkSet`, Claude Code Agent Teams
+shared-state, OpenTelemetry span links — none directly fit, all
+suggest the same shape):
+  1. `/implement-task` step 0 writes a marker file
+  `<main-repo>/.claude/sessions/active/<session-id>.json` with
+   `{session_id, work_item_id, worktree_path, started_at}`.
+  2. `/implement-task` end-of-task (or `/log-episode` finale)
+  removes the marker.
+  3. `/log-episode` populates `parallel_with` by listing markers
+  whose `started_at`-to-now window overlaps this WI's
+   `[started_at, completed_at]`, excluding self.
+  4. Resolve `<main-repo>` from inside any worktree via
+  `git worktree list --porcelain` (first record is the primary
+   checkout).
+  5. Stale-purge by `started_at` TTL (24 h) on each read — simpler
+  and more portable than PID liveness checks.
+  6. Use a **directory of marker files** rather than a single shared
+  JSON file: avoids merge-contention without locks, stale-purge
+   becomes `find -mtime +1 -delete`. Same shape as Claude Code
+   Agent Teams shared-state.
+  7. Where to mint `<session-id>` is its own sub-question — Claude
+  Code does record session ids under
+   `~/.claude/projects/<encoded>/sessions/`, but accessing that from
+   inside the running session requires confirming the runtime API.
+   If unavailable, mint a UUID at step 0 instead.
 
