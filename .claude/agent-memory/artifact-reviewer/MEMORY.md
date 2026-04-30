@@ -1,0 +1,1 @@
+- [Warnings on approved](feedback_warnings_on_approved.md) — cross-check writer/reviewer pairs for warnings-on-approved output-format mismatch (architecture § 8.2 trap)
