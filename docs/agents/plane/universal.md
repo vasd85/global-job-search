@@ -54,8 +54,9 @@ relevant MCP call fails and § 7 failure handling applies.
 
 ## 3. Feature slug
 
-The slug is invariant across PRD, design, plan, Epic, and Work Items.
-Defined when `/research` creates the scratchpad:
+The slug is invariant across the **scratchpad folder name**, PRD,
+design, plan, Epic, and Work Items. Defined when `/research`
+creates the scratchpad:
 
 ```
 <YYYY-MM-DD>-<topic-kebab-case>
@@ -65,11 +66,23 @@ The date is today (the day the slug is first created); the topic is
 lowercase kebab-case derived from the PRD subject.
 
 The date prefix sorts file listings under `docs/product/`,
-`docs/designs/`, `docs/plans/` chronologically by `ls`. The slug is
-**invariant** — once chosen, it does not change even if the work spans
-multiple days.
+`docs/designs/`, `docs/plans/`, and `.claude/scratchpads/`
+chronologically by `ls`. The slug is **invariant** — once chosen, it
+does not change even if the work spans multiple days.
 
-Example: `2026-04-29-fix-greenhouse-rate-limit`.
+Example slug: `2026-04-29-fix-greenhouse-rate-limit`. The scratchpad
+folder is then `.claude/scratchpads/2026-04-29-fix-greenhouse-rate-limit/`,
+the plan file `docs/plans/2026-04-29-fix-greenhouse-rate-limit.md`,
+the Epic external_id `gjs:epic:2026-04-29-fix-greenhouse-rate-limit`,
+etc. — same string everywhere.
+
+Legacy artefacts created without the date prefix (slugs that
+predate this convention, e.g. `agent-system` or
+`fix-greenhouse-rate-limit`) are not retroactively renamed —
+renaming a Plane Epic's `external_id` would break `/tasks`
+idempotency, and renaming a committed plan file would churn cross
+references for no real benefit. New work always follows the
+convention from creation.
 
 ## 4. State name resolution
 
