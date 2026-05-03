@@ -263,6 +263,13 @@ the orchestrator hands control back to the user with the list of Work
 Item ids. The chain does **not** continue into phases 6-7 because
 implementation spans multiple sessions and blocks on PR merge cycles.
 
+**Partial-failure recovery.** If `/feature` is interrupted mid-chain
+(crash, rate-limit, manual abort), re-invoking `/feature <slug>` resumes
+from the most recent sub-skill's `phase-state.md` rather than restarting
+or handing off. Each sub-skill rewrites `phase-state.md` for its phase;
+the orchestrator reads `(status, next_phase)` and dispatches to the next
+step. Resume contract details live in `.claude/skills/feature/SKILL.md`.
+
 ### 4.2 Per-task loop (parallel-capable, manually triggered)
 
 For each Work Item (in dependency-respecting order, possibly in
@@ -903,9 +910,6 @@ based on observed context size. Tracked in `phase-state.md`.
 are kept indefinitely. Revisit when total log size exceeds 5 MB.
 - **Context7 (or equivalent) MCP.** Will be added when framework
 documentation lookup becomes a recurring blocker (`blocker.tag = local-context-mismatch` repeats).
-- `**/feature` orchestrator behaviour on partial failure.** Does it
-resume from `phase-state.md`, restart, or hand off to the user?
-Decide when building step 8 of the migration roadmap.
 - **Episode log read-mode trigger.** Stage 2 says "after ~15-20
 episodes", but the heuristic should be revisited in practice.
 - **Worktree cleanup policy for parallel `/implement-task` sessions.**
