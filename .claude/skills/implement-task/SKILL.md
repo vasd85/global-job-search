@@ -146,9 +146,12 @@ After the PR opens:
 `mcp__plane__create_work_item_comment` per `implement-task.md § 4`
 step-6: `[implement-task step 6] PR opened: <pr-url>`. Update
 `phase-state.md`: `status: complete`,
-`ended_at: <now ISO 8601 UTC>`. Tell the user the PR URL and that
-`/log-episode` is the next manual step after merge. Control returns
-to the user — do NOT auto-invoke downstream skills.
+`ended_at: <now ISO 8601 UTC>`. Tell the user the PR URL.
+**Finale handoff:** if the user merges the PR in this same session,
+immediately invoke `/log-episode` (no argument — finale mode
+discovers the PR from the branch); otherwise the user runs
+`/log-episode <pr-url>` later in a fresh session (standalone mode).
+`/log-episode` is the only sanctioned auto-invocation; never auto-invoke other downstream skills.
 
 ## Phase tracking
 
@@ -192,8 +195,6 @@ title/body: always English** — read by downstream agents.
 
 ## When NOT to use this skill
 
-- WI is blocked (any `blocked_by` not in `Done`) → finish blockers first or unblock in Plane.
 - WI not created by `/tasks` (no `gjs:wi:...` `external_id`) → implement directly.
 - Multi-PR scope → split via `/plan` rerun + `/tasks` rerun first.
-- WI already past `Backlog`/`Todo`/`In Progress` → step 0 aborts; use `/log-episode` or triage in Plane.
 - Ad-hoc fix with no Plane WI → branch and PR per `CLAUDE.md § Git`.
