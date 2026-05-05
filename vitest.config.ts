@@ -7,6 +7,7 @@ export default defineConfig({
       "apps/worker/vitest.config.ts",
       "packages/ats-core/vitest.config.ts",
       "packages/ingestion/vitest.config.ts",
+      "scripts/episode/test/vitest.config.ts",
     ],
   },
 });

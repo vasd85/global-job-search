@@ -70,31 +70,25 @@ In finale mode, rewrite per-task `phase-state.md` frontmatter:
 
 ### 2. Auto-extract telemetry
 
-Populate auto-extracted fields. On individual extraction failure,
-log and substitute `null` (or `[]` / `{}`) — never abort for a
-missing optional field.
+Run the helper `scripts/episode/auto-extract.sh` to draft every
+auto-extracted field per `docs/episodes/schema.json`:
 
-- `episode_id` = `<YYYY-MM-DD>-<feature-slug>-<wi-code>` using
-  `mergedAt`'s date in UTC; fallback to `<YYYY-MM-DD>-<wi-code>` when slug null.
-- `started_at` — earliest `started_at` in per-task `phase-state.md`;
-  `null` in standalone without scratchpad.
-- `completed_at` — `gh pr view <pr-url> --json mergedAt` (Plane has
-  no flat `completed_at` per `log-episode.md § 3`).
-- `branch`, `pr_url`, `plane_work_item_id` — direct from PR / WI.
-- `prd_link`, `design_link`, `plan_link` — repo-relative paths under
-  `docs/product/`, `docs/designs/`, `docs/plans/` matching `<slug>`,
-  verified at merge SHA; `null` if absent.
-- `session_ids` — glob `.claude/logs/<skill>/<run-dir>/meta.json`,
-  filter by `repo` matching this repo path AND `started_at` within
-  the episode window; collect each `session_id`. No matches → `[]`.
-- `phases_run`, `duration_min_total`, `duration_min_by_phase`,
-  `reviews.*` — from `events.jsonl` resolved via `session_ids`,
-  fallback to per-task `phase-state.md` Notes; standalone → `[]`
-  for `phases_run`, `null` for durations, `{}` for `reviews`.
-- `files_touched_count`, `test_count_added` — `gh pr diff <pr-url>`
-  or `git diff <merge-base>...<merge-sha>`; count files and net-added
-  test cases (`+` `it(`/`test(`/`describe(` minus deleted). `null`
-  on failure.
+```bash
+scripts/episode/auto-extract.sh <pr-url> \
+  --epic-code <plane_epic_id> \
+  [--feature-slug <slug>] > /tmp/episode-<wi-code>.json
+```
+
+`<plane_epic_id>` comes from one `mcp__plane__retrieve_work_item_by_identifier`
+call in step 1 (the script never talks to Plane). The helper populates
+auto-extracted fields and emits human-curated fields (`decisions`,
+`blockers`, `dead_ends`, `learnings`, `tags`, `parallel_with`) as
+empty arrays for step 3 to fill in. On non-zero exit, abort and
+surface the script's stderr to the user.
+Note: when the helper cannot derive `feature_slug` (no `--feature-slug`,
+no scratchpad glob match), it emits `feature_slug: ""` and a slug-less
+`episode_id`; the user must supply the slug in Step 3 or schema
+validation will fail in Step 4.
 
 ### 3. Draft reasoning trace
 

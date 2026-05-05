@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# PATH-shadow `gh` mock for auto-extract.sh tests.
+#
+# Dispatches on `$1 $2` and reads fixture files keyed by sub-command from
+# the directory in $MOCK_GH_FIXTURE_DIR. Failure toggles via env:
+#   MOCK_GH_FAIL_VIEW=1          → `gh pr view ...` exits 2 with stderr
+#   MOCK_GH_FAIL_DIFF_NAMES=1    → `gh pr diff ... --name-only` exits 2
+#   MOCK_GH_FAIL_DIFF=1          → `gh pr diff ...` (no --name-only) exits 2
+#
+# Fixture files (each optional; absent → empty stdout, exit 0):
+#   $MOCK_GH_FIXTURE_DIR/view-json.json   — body for `gh pr view`
+#   $MOCK_GH_FIXTURE_DIR/diff-name-only.txt — body for `gh pr diff --name-only`
+#   $MOCK_GH_FIXTURE_DIR/diff-full.diff   — body for `gh pr diff` (no flags)
+
+set -u
+
+emit() {
+  if [[ -f "$1" ]]; then
+    cat "$1"
+  fi
+}
+
+case "$1 $2" in
+  "pr view")
+    if [[ "${MOCK_GH_FAIL_VIEW:-0}" = "1" ]]; then
+      printf 'mock gh: pr view forced failure\n' >&2
+      exit 2
+    fi
+    emit "${MOCK_GH_FIXTURE_DIR:-/dev/null}/view-json.json"
+    exit 0
+    ;;
+  "pr diff")
+    # `--name-only` may appear at $4 (after the URL) or $3 (no URL).
+    has_name_only=0
+    for arg in "$@"; do
+      if [[ "$arg" = "--name-only" ]]; then
+        has_name_only=1
+        break
+      fi
+    done
+    if [[ "$has_name_only" = "1" ]]; then
+      if [[ "${MOCK_GH_FAIL_DIFF_NAMES:-0}" = "1" ]]; then
+        printf 'mock gh: pr diff --name-only forced failure\n' >&2
+        exit 2
+      fi
+      emit "${MOCK_GH_FIXTURE_DIR:-/dev/null}/diff-name-only.txt"
+      exit 0
+    fi
+    if [[ "${MOCK_GH_FAIL_DIFF:-0}" = "1" ]]; then
+      printf 'mock gh: pr diff forced failure\n' >&2
+      exit 2
+    fi
+    emit "${MOCK_GH_FIXTURE_DIR:-/dev/null}/diff-full.diff"
+    exit 0
+    ;;
+  *)
+    printf 'mock gh: unhandled subcommand: %s\n' "$*" >&2
+    exit 1
+    ;;
+esac
