@@ -12,6 +12,17 @@ const SCRIPT_PATH = path.resolve(
   __dirname,
   "../scripts/validate-episode.ts",
 );
+// Resolve tsx via the package's own node_modules/.bin (declared as a
+// devDependency). Direct binary path makes the spawn cwd-independent —
+// `pnpm test` at the workspace root sets cwd to the root, where tsx
+// is not always linked into ./node_modules/.bin under a clean install.
+const TSX_BIN = path.resolve(
+  __dirname,
+  "..",
+  "node_modules",
+  ".bin",
+  "tsx",
+);
 
 // Pinned, byte-equivalent (whitespace-normalised) copy of
 // docs/agents/architecture.md § 9.1. Inlined deliberately so this CLI
@@ -116,18 +127,18 @@ type SpawnResult = {
 };
 
 function runScript(...args: string[]): SpawnResult {
-  // pnpm exec tsx is the workspace-stable way to invoke the script;
-  // npx tsx prints noisy npm-config warnings on this dev box.
   const result = spawnSync(
-    "pnpm",
-    ["exec", "tsx", SCRIPT_PATH, ...args],
+    TSX_BIN,
+    [SCRIPT_PATH, ...args],
     { encoding: "utf-8" },
   );
-  // Surface spawn-level failures (e.g. pnpm not on PATH) before the
+  // Surface spawn-level failures (e.g. tsx not installed) before the
   // status-code assertions run. Without this guard, a missing binary
   // shows up as "expected 0 to be null" — masking the real cause.
   if (result.error) {
-    throw new Error(`failed to spawn 'pnpm': ${result.error.message}`);
+    throw new Error(
+      `failed to spawn tsx at ${TSX_BIN}: ${result.error.message}`,
+    );
   }
   return {
     status: result.status,
