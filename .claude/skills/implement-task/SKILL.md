@@ -148,10 +148,9 @@ step-6: `[implement-task step 6] PR opened: <pr-url>`. Update
 `phase-state.md`: `status: complete`,
 `ended_at: <now ISO 8601 UTC>`. Tell the user the PR URL.
 **Finale handoff:** if the user merges the PR in this same session,
-immediately invoke `/log-episode` (no argument — finale mode
-discovers the PR from the branch); otherwise the user runs
-`/log-episode <pr-url>` later in a fresh session (standalone mode).
-`/log-episode` is the only sanctioned auto-invocation; never auto-invoke other downstream skills.
+invoke `/log-episode` (no argument — finale mode); otherwise the user
+runs `/log-episode <pr-url>` later in a fresh session (standalone mode).
+`/log-episode` is the only sanctioned auto-invocation.
 
 ## Phase tracking
 
@@ -176,6 +175,7 @@ rules from `implement-task.md § 6`:
 | State update step 0             | Continue (work happens; drift logged in PR description) |
 | State update step 6             | Continue (PR is the canonical record); drift logged     |
 | Comment posting                 | Continue (comments are convenience; absence non-fatal)  |
+| MCP failure (graceful)          | Post WARN per `implement-task.md § 4`; rerun if drift   |
 
 No bootstrap-time validation: a misconfigured workspace surfaces
 via the failing MCP call's error pointing to `bootstrap.md` per `universal.md § 7`.

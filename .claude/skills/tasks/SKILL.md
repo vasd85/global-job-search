@@ -165,12 +165,13 @@ Logging and notification follow `universal.md § 7`
 (`plane-failures.jsonl` append, user notification, bounded retries
 with backoff on `429`). Per-operation rules from `tasks.md § 8`:
 
-| Operation         | On failure                                                              |
-|-------------------|-------------------------------------------------------------------------|
-| Epic create       | Abort entire run; user reruns after triage                              |
-| Work Item create  | Continue with remaining WIs; report partial; rerun reconciles via § 4.2 |
-| Relation create   | Continue; missing relations logged; rerun reconciles                    |
-| Label create      | Continue without that label; comment on first affected WI               |
+| Operation              | On failure                                                              |
+|------------------------|-------------------------------------------------------------------------|
+| Epic create            | Abort entire run; user reruns after triage                              |
+| Work Item create       | Continue with remaining WIs; report partial; rerun reconciles via § 4.2 |
+| Relation create        | Continue; missing relations logged; rerun reconciles                    |
+| Label create           | Continue without that label; comment on first affected WI               |
+| MCP failure (graceful) | Post WARN per `tasks.md § 7`; rerun reconciles                          |
 
 No bootstrap-time validation: a misconfigured workspace surfaces via the
 failing MCP call's error message pointing to `bootstrap.md` per `universal.md § 7`.
