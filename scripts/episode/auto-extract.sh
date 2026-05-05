@@ -90,6 +90,13 @@ yaml_frontmatter_value() {
   ' "$file"
 }
 
+# ---------- bash version guard ----------------------------------------------
+
+# This script uses bash 4+ features (`declare -A`, `BASH_REMATCH`). On macOS the
+# default `/bin/bash` is 3.2 — fail fast with a clear remediation instead of a
+# cryptic `declare: -A: invalid option` mid-run.
+[[ "${BASH_VERSINFO[0]:-0}" -ge 4 ]] || die "auto-extract.sh: bash >= 4 required (have ${BASH_VERSION:-unknown}); install via 'brew install bash' on macOS"
+
 # ---------- argument parsing ------------------------------------------------
 
 pr_url=""
@@ -337,7 +344,10 @@ if [[ -n "$feature_slug" ]]; then
   code_review_path=".claude/scratchpads/${feature_slug}/tasks/${task_id}/code-review.md"
   if [[ -f "$code_review_path" ]]; then
     # Verdict = first non-empty, non-heading line under "### Verdict".
-    verdict="$(awk '
+    # Pre-strip CR before awk: a CRLF-edited code-review.md leaves a `\r`-only
+    # blank line under the heading, which satisfies awk's `NF > 0` and would
+    # be consumed as the verdict if the strip ran later in the pipe.
+    verdict="$(tr -d '\r' < "$code_review_path" | awk '
       /^### Verdict[[:space:]]*$/ { in_block = 1; next }
       /^### / && in_block { exit }
       in_block && NF > 0 {
@@ -347,7 +357,7 @@ if [[ -n "$feature_slug" ]]; then
         print
         exit
       }
-    ' "$code_review_path" | tr -d '\r' | awk '{print tolower($0)}')"
+    ' | awk '{print tolower($0)}')"
 
     case "$verdict" in
       approved|changes-required) ;;
@@ -357,13 +367,14 @@ if [[ -n "$feature_slug" ]]; then
     if [[ -n "$verdict" ]]; then
       critical_count=0
       if [[ "$verdict" == "changes-required" ]]; then
-        # Count "#### Critical*" headings under "### Findings".
-        critical_count="$(awk '
+        # Count "#### Critical*" headings under "### Findings". Pre-strip CR
+        # for parity with the verdict parser above (CRLF-edited markdown).
+        critical_count="$(tr -d '\r' < "$code_review_path" | awk '
           /^### Findings[[:space:]]*$/ { in_block = 1; next }
           /^### / && in_block { exit }
           in_block && /^#### Critical/ { count++ }
           END { print count + 0 }
-        ' "$code_review_path")"
+        ')"
       fi
       reviews_json="$(jq -n \
         --arg verdict "$verdict" \

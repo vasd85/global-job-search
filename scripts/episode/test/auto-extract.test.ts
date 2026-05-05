@@ -1480,17 +1480,10 @@ describe("auto-extract.sh — reviews.code parsing", () => {
     },
   );
 
-  // BUG: CRLF-edited code-review.md files lose the verdict.
-  // The awk pipeline at scripts/episode/auto-extract.sh:340-350 advances
-  // past the `### Verdict` heading, then encounters the `\r` blank line.
-  // Awk's `NF > 0` is true (the lone `\r` counts as one field), so the
-  // print branch fires on the blank line. Substitutions strip the `\r` to
-  // empty, awk emits an empty line, the downstream `tr -d '\r'` runs too
-  // late, and `verdict` becomes "" — which the case-allowlist rejects,
-  // dropping reviews to `{}`. Fix: run `tr -d '\r' < file | awk ...`
-  // (CR-strip BEFORE awk) or insert a `gsub(/\r$/, "")` at the top of the
-  // awk program. See test-progress.md for follow-up routing.
-  test.skip("normalises verdict to lowercase trimmed (CRLF line endings)", () => {
+  // CRLF-edited code-review.md files preserve the verdict: the auto-extract
+  // pipeline pre-strips `\r` before awk so the `\r`-only blank line under
+  // `### Verdict` no longer satisfies awk's `NF > 0` and gets consumed.
+  test("normalises verdict to lowercase trimmed (CRLF line endings)", () => {
     const { repo, cleanup } = makeTmpRepo();
     try {
       writeFiles(repo, {

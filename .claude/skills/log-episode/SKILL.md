@@ -85,6 +85,10 @@ auto-extracted fields and emits human-curated fields (`decisions`,
 `blockers`, `dead_ends`, `learnings`, `tags`, `parallel_with`) as
 empty arrays for step 3 to fill in. On non-zero exit, abort and
 surface the script's stderr to the user.
+Note: when the helper cannot derive `feature_slug` (no `--feature-slug`,
+no scratchpad glob match), it emits `feature_slug: ""` and a slug-less
+`episode_id`; the user must supply the slug in Step 3 or schema
+validation will fail in Step 4.
 
 ### 3. Draft reasoning trace
 
