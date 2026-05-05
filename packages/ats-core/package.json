@@ -18,7 +18,8 @@
     "lint": "eslint .",
     "test": "vitest",
     "build:city-index": "npx tsx scripts/build-city-index.ts",
-    "gen:episode-schema": "npx tsx scripts/gen-episode-schema.ts"
+    "gen:episode-schema": "npx tsx scripts/gen-episode-schema.ts",
+    "validate:episode": "npx tsx scripts/validate-episode.ts"
   },
   "dependencies": {
     "@gjs/logger": "workspace:*",

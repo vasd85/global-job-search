@@ -115,17 +115,14 @@ must approve before step 4.
 
 ### 4. Validate against schema
 
-Validate the candidate against `docs/episodes/schema.json` before
-any append. Required keys are listed in the schema's `required`
-array (including `schema_version: 1`). Method: write to
-`/tmp/episode-<wi-code>.json`, run `npx --yes ajv-cli@5 validate -s
-docs/episodes/schema.json -d /tmp/episode-<wi-code>.json
---spec=draft2020`. On error, print the specific output, ask the
-user to edit the offending field, re-validate. Loop until valid.
-If `npx` is unavailable, hand-check: every `required` key present;
-enums match (`status: "merged"`, `task_type` ∈ {feat, fix,
-refactor, chore, docs, test}); timestamps match the schema's
-`pattern`; nullable fields are `null` (not `""` or omitted).
+Validate the candidate against `EpisodeSchema` (zod source of truth
+in `packages/ats-core/src/episode-schema.ts`) before any append.
+Required keys are listed in the schema's `required` array
+(including `schema_version: 1`). Method: write to
+`/tmp/episode-<wi-code>.json`, run `pnpm --filter @gjs/ats-core
+validate:episode /tmp/episode-<wi-code>.json`. On error, print the
+specific output, ask the user to edit the offending field,
+re-validate. Loop until valid.
 
 ### 5. Append, then update Plane
 
