@@ -37,13 +37,13 @@ try {
 }
 
 const result = EpisodeSchema.safeParse(parsed);
-if (result.success) {
-  process.stdout.write(`validate-episode: ok (${inputPath})\n`);
-  process.exit(0);
+if (!result.success) {
+  for (const issue of result.error.issues) {
+    const path = issue.path.join(".");
+    process.stdout.write(`${path} :: ${issue.code} :: ${issue.message}\n`);
+  }
+  process.exit(1);
 }
 
-for (const issue of result.error.issues) {
-  const path = issue.path.join(".");
-  process.stdout.write(`${path} :: ${issue.code} :: ${issue.message}\n`);
-}
-process.exit(1);
+process.stdout.write(`validate-episode: ok (${inputPath})\n`);
+process.exit(0);
