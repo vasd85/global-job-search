@@ -1,9 +1,10 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import type { Episode } from "./episode-schema";
 
 // packages/ats-core/src/<file> → packages/ats-core/scripts/validate-episode.ts
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -11,29 +12,97 @@ const SCRIPT_PATH = path.resolve(
   __dirname,
   "../scripts/validate-episode.ts",
 );
-const FIXTURE_JSONL = path.resolve(
-  __dirname,
-  "../../../docs/episodes/2026-05.jsonl",
-);
+
+// Pinned, byte-equivalent (whitespace-normalised) copy of
+// docs/agents/architecture.md § 9.1. Inlined deliberately so this CLI
+// suite is self-contained — no dependency on docs/episodes/<YYYY-MM>.jsonl
+// (which is mutated by /log-episode runs and may not exist on a fresh
+// CI checkout). Em-dashes preserved at `decisions[0].rejected[*]` and
+// `learnings[0]` — do not "fix" to ASCII.
+const CANONICAL_EXAMPLE: Episode = {
+  schema_version: 1,
+  episode_id: "2026-04-28-fix-greenhouse-rate-limit-GJS-42",
+  feature_slug: "fix-greenhouse-rate-limit",
+  task_id: "GJS-42",
+  task_type: "fix",
+  status: "merged",
+  started_at: "2026-04-28T10:15:00Z",
+  completed_at: "2026-04-28T11:42:00Z",
+
+  branch: "fix/greenhouse-backoff-GJS-42",
+  pr_url: "https://github.com/vasd85/global-job-search/pull/123",
+  plane_work_item_id: "GJS-42",
+  plane_epic_id: "GJS-40",
+  prd_link: "docs/product/fix-greenhouse-rate-limit.md",
+  design_link: null,
+  plan_link: "docs/plans/fix-greenhouse-rate-limit.md",
+  session_ids: ["1124e18f-3963-43d3-93ce-424420a57222"],
+
+  phases_run: ["research", "prd", "plan", "tasks", "implement", "review"],
+  parallel_with: ["GJS-43"],
+
+  reviews: {
+    prd: { cycles: 1, verdict: "approved" },
+    plan: { cycles: 2, verdict: "approved", critical_findings_addressed: 3 },
+    code: { cycles: 1, verdict: "approved" },
+  },
+
+  duration_min_total: 87,
+  duration_min_by_phase: {
+    research: 12,
+    prd: 18,
+    plan: 22,
+    implement: 30,
+    review: 5,
+  },
+  files_touched_count: 4,
+  test_count_added: 6,
+
+  decisions: [
+    {
+      what: "exponential backoff with 5 max retries, jitter 100-500ms",
+      why: "3 retries miss 4xx storms in production; jitter prevents thundering herd",
+      rejected: [
+        "circuit breaker — overkill for this scope",
+        "fixed delay — uneven load",
+      ],
+      confidence: "verified",
+    },
+  ],
+  blockers: [
+    {
+      what: "Greenhouse 429 responses lack standard Retry-After header",
+      resolution: "extracted from response body via vendor wrapper",
+      duration_min: 25,
+      tag: "external-api",
+    },
+  ],
+  dead_ends: [
+    {
+      tried: "react-query default retry config",
+      why_failed: "doesn't expose Retry-After header to caller code",
+    },
+  ],
+  learnings: [
+    "Greenhouse 429s lack standard headers — extractor needs vendor-specific wrapper",
+  ],
+  tags: ["extractor", "greenhouse", "rate-limit"],
+};
+
+// Helper: deep clone the canonical example so per-test mutations
+// don't leak between tests. Mirrors the helper in episode-schema.test.ts.
+function validCanonical(): Episode {
+  return structuredClone(CANONICAL_EXAMPLE);
+}
 
 let tmpDir: string;
 let validFixturePath: string;
-let firstLine: string;
 
 beforeAll(() => {
   tmpDir = mkdtempSync(path.join(os.tmpdir(), "validate-episode-"));
 
-  // Use the GJS-19 entry committed to docs/episodes/2026-05.jsonl as a
-  // known-valid example. The file is jsonl (multi-line); extract line 1.
-  const raw = readFileSync(FIXTURE_JSONL, "utf-8");
-  const candidate = raw.split("\n").find((line) => line.trim().length > 0);
-  if (!candidate) {
-    throw new Error(`fixture ${FIXTURE_JSONL} has no non-empty lines`);
-  }
-  firstLine = candidate;
-
   validFixturePath = path.join(tmpDir, "valid.json");
-  writeFileSync(validFixturePath, firstLine);
+  writeFileSync(validFixturePath, JSON.stringify(CANONICAL_EXAMPLE));
 });
 
 afterAll(() => {
@@ -54,6 +123,12 @@ function runScript(...args: string[]): SpawnResult {
     ["exec", "tsx", SCRIPT_PATH, ...args],
     { encoding: "utf-8" },
   );
+  // Surface spawn-level failures (e.g. pnpm not on PATH) before the
+  // status-code assertions run. Without this guard, a missing binary
+  // shows up as "expected 0 to be null" — masking the real cause.
+  if (result.error) {
+    throw new Error(`failed to spawn 'pnpm': ${result.error.message}`);
+  }
   return {
     status: result.status,
     stdout: result.stdout ?? "",
@@ -77,14 +152,11 @@ describe("validate-episode CLI", () => {
     // Tamper schema_version: 1 → 2 (literal mismatch). The schema's own
     // rule for this is exhaustively tested in episode-schema.test.ts;
     // this test asserts the CLI's output contract on a known-bad input.
-    const tampered = firstLine.replace(
-      /"schema_version":\s*1\b/,
-      '"schema_version":2',
-    );
-    expect(tampered).not.toBe(firstLine);
+    const fixture = validCanonical();
+    (fixture as unknown as { schema_version: number }).schema_version = 2;
 
     const tamperedPath = path.join(tmpDir, "tampered.json");
-    writeFileSync(tamperedPath, tampered);
+    writeFileSync(tamperedPath, JSON.stringify(fixture));
 
     const { status, stdout } = runScript(tamperedPath);
     expect(status).toBe(1);
@@ -131,16 +203,13 @@ describe("validate-episode CLI", () => {
     // path. The CLI does `issue.path.join(".")`, so the line must read
     // `decisions.0.confidence :: …`. A regression to e.g. `join("/")` or
     // dropping `join` entirely (printing the raw array) would fail this.
-    const parsed = JSON.parse(firstLine) as {
-      decisions: { confidence: string }[];
-    };
-    if (!parsed.decisions || parsed.decisions.length === 0) {
-      throw new Error("fixture line must have at least one decisions entry");
-    }
-    parsed.decisions[0].confidence = "";
+    const fixture = validCanonical();
+    (
+      fixture.decisions[0] as unknown as { confidence: string }
+    ).confidence = "";
 
     const nestedPath = path.join(tmpDir, "nested.json");
-    writeFileSync(nestedPath, JSON.stringify(parsed));
+    writeFileSync(nestedPath, JSON.stringify(fixture));
 
     const { status, stdout } = runScript(nestedPath);
     expect(status).toBe(1);
@@ -152,18 +221,14 @@ describe("validate-episode CLI", () => {
     // The script's `for (const issue of result.error.issues)` loop is
     // the only thing guaranteeing both surface; a refactor to
     // `result.error.issues[0]` would silently lose one.
-    const parsed = JSON.parse(firstLine) as {
-      task_type: string;
-      decisions: { confidence: string }[];
-    };
-    if (!parsed.decisions || parsed.decisions.length === 0) {
-      throw new Error("fixture line must have at least one decisions entry");
-    }
-    parsed.task_type = "bogus";
-    parsed.decisions[0].confidence = "";
+    const fixture = validCanonical();
+    (fixture as unknown as { task_type: string }).task_type = "bogus";
+    (
+      fixture.decisions[0] as unknown as { confidence: string }
+    ).confidence = "";
 
     const multiPath = path.join(tmpDir, "multi.json");
-    writeFileSync(multiPath, JSON.stringify(parsed));
+    writeFileSync(multiPath, JSON.stringify(fixture));
 
     const { status, stdout } = runScript(multiPath);
     expect(status).toBe(1);

@@ -117,8 +117,8 @@ must approve before step 4.
 
 Validate the candidate against `EpisodeSchema` (zod source of truth
 in `packages/ats-core/src/episode-schema.ts`) before any append.
-Required keys are listed in the schema's `required` array
-(including `schema_version: 1`). Method: write to
+Required keys are pinned by zod's `EpisodeSchema` (surfaced in the
+generated `docs/episodes/schema.json` `required` array). Method: write to
 `/tmp/episode-<wi-code>.json`, run `pnpm --filter @gjs/ats-core
 validate:episode /tmp/episode-<wi-code>.json`. On error, print the
 specific output, ask the user to edit the offending field,
