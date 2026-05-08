@@ -50,10 +50,11 @@ All fields live inside the frontmatter block.
   - `failed` — phase aborted (max review cycles exceeded, subagent
     error, user abort). The skill must surface failure to the user;
     orchestrators must not silently advance past `failed`.
-- **`next_phase`** — string, optional. Pointer for orchestrators
-  (`/feature`, `/implement-task`) so they can decide where to resume
-  after interruption. Omitted when no next phase applies (terminal
-  states such as `tasks` or `log-episode`).
+- **`next_phase`** — string, optional. Pointer that each skill
+  prints to the user as the next manual command after a phase
+  completes; also used by `/implement-task` to decide where to
+  resume after interruption. Omitted when no next phase applies
+  (terminal states such as `tasks` or `log-episode`).
 - **`cycles`** — integer, required (default `0`). Number of
   evaluator-loop cycles spent on the current phase. Incremented each
   time a writer subagent re-runs after `changes-required`. Capped at 2

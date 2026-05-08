@@ -218,16 +218,18 @@ overview); the modules above define *how* skills carry it out.
 The SDLC pipeline has **two distinct levels** that must not be
 conflated:
 
-- **Per-feature workflow** (phases 1-5) — a one-shot chain executed
-once per feature. Produces planning artefacts and a list of Work
-Items in Plane. Orchestrated by `/feature`.
+- **Per-feature workflow** (phases 1-5) — a chain executed once per
+feature, one skill per phase, invoked manually in order. Produces
+planning artefacts and a list of Work Items in Plane. Each skill
+prints the next-step command at completion; the user copies and
+runs it.
 - **Per-task loop** (phases 6-7) — repeated for each Work Item, often
 in parallel for independent tasks. Each iteration produces one PR
 and one episode log entry. Triggered manually per Work Item.
 
 Plus one **standalone periodic activity** (phase 8 — Promotion).
 
-### 4.1 Per-feature workflow (one-shot, /feature orchestrates)
+### 4.1 Per-feature workflow (manual chain)
 
 
 | #   | Phase    | Skill       | Input            | Output                              | Gate before next                          | Required reviewer |
@@ -243,10 +245,11 @@ Plus one **standalone periodic activity** (phase 8 — Promotion).
 **one** branch — `plan/<slug>` — sequentially. There is no PR between
 PRD and Design, or between Design and Plan; the reviewer subagent at
 each phase provides the quality gate, not a separate PR. After phase 4
-finishes (plan written, plan-reviewer passes), `/feature` (or the user)
-opens a single PR closing the entire planning phase. After this PR
-merges to `main`, phase 5 (`/tasks`) runs against `main` and creates
-Plane Work Items with stable `main`-branch URLs.
+finishes (plan written, plan-reviewer passes), `/plan` itself pushes
+the branch and opens the single planning PR; the user only reviews
+and merges. After that PR merges to `main`, phase 5 (`/tasks`) runs
+against `main` and creates Plane Work Items with stable `main`-branch
+URLs.
 
 This results in **one PR per feature for planning** (phases 2-4
 together), and **N PRs per feature for implementation** (one per Work
@@ -254,21 +257,24 @@ Item, phase 6).
 
 **Conditional /design.** Phase 3 is skipped for trivial features (1-2
 files, no architectural decisions, no new data models, no new API
-contracts). The orchestrator decides based on the PRD's complexity
-signals; if uncertain, it asks the user. When skipped, `/plan` reads
-only the PRD.
+contracts). The decision lives inside `/design` itself: the user always
+runs `/design <slug>` after `/prd`, and the skill applies its skip
+criteria (asking the user via `AskUserQuestion` when uncertain). When
+skipped, the phase-state still advances to `next_phase: plan` and
+`/plan` reads only the PRD.
 
-`/feature <topic>` chains phases 1-5 in a single session. After phase 5,
-the orchestrator hands control back to the user with the list of Work
-Item ids. The chain does **not** continue into phases 6-7 because
-implementation spans multiple sessions and blocks on PR merge cycles.
+Phases 1-5 are invoked manually, one at a time. Each skill prints the
+next-step command (e.g. `Run next: /prd <slug>`) so the chain is
+self-documenting without a separate orchestrator. `/plan` ends with
+the planning PR already pushed and opened; the printed next command
+is `/tasks <slug>`, runnable after the human reviewer merges the PR.
 
-**Partial-failure recovery.** If `/feature` is interrupted mid-chain
-(crash, rate-limit, manual abort), re-invoking `/feature <slug>` resumes
-from the most recent sub-skill's `phase-state.md` rather than restarting
-or handing off. Each sub-skill rewrites `phase-state.md` for its phase;
-the orchestrator reads `(status, next_phase)` and dispatches to the next
-step. Resume contract details live in `.claude/skills/feature/SKILL.md`.
+**Partial-failure recovery.** If a phase aborts (crash, reviewer
+exhaustion, user abort), the same skill is re-invokable — every skill
+starts by reading `phase-state.md` and resumes accordingly. There is no
+cross-phase resume contract because there is no orchestrator: each
+skill owns the resume logic for its own phase, and the user re-runs
+the skill that failed.
 
 ### 4.2 Per-task loop (parallel-capable, manually triggered)
 
@@ -377,12 +383,11 @@ Target skill inventory. Status column shows current state.
 | `/design`             | TO BUILD         | (extracted from `/code-architect`)        | Conditional; reads PRD, writes design + ADRs                         |
 | `/plan`               | TO BUILD         | (extracted from `/implement` Phase 2)     | Reads PRD + design, writes plan with DAG                             |
 | `/tasks`              | TO BUILD         | (new)                                     | Plan → Plane Epic + Work Items + relations                           |
-| `/feature`            | TO BUILD         | (replaces `/implement` chain)             | Chain orchestrator phases 1-5                                        |
 | `/implement-task`     | TO BUILD         | (extracted from `/implement` Phase 3-7)   | One Work Item → branch + PR                                          |
 | `/log-episode`        | TO BUILD         | (new)                                     | Standalone episode log writer (also finale of `/implement-task`)     |
 | `/promote-pattern`    | TO BUILD (later) | (new)                                     | Surfaces patterns from episode log; drafts promotion PR              |
 | `/product-research`   | DEPRECATE        | →`/research` + `/prd`                     | Keep working until both replacements ready                           |
-| `/implement`          | DEPRECATE        | →`/plan` + `/implement-task` + `/feature` | Keep working until all replacements ready                            |
+| `/implement`          | DEPRECATE        | →`/plan` + `/implement-task` (manual chain) | Keep working until all replacements ready                          |
 | `/plane-integration`  | KEEP             | —                                         | Reference map, used by `/tasks`                                      |
 | `/pre-pr`             | KEEP             | —                                         | Lightweight quality gate for ad-hoc commits                          |
 | `/code-architect`     | KEEP             | —                                         | Standalone architectural planning (also wrapped by `/design`)        |
@@ -468,8 +473,8 @@ user with the remaining findings and pauses for direction.
 ### 6.2 Other skills
 
 Internal pipelines for `/research`, `/prd`, `/design`, `/plan`,
-`/tasks`, `/feature`, `/log-episode` are described in their respective
-SKILL.md files when built. The general pattern is: writer skill → write
+`/tasks`, `/log-episode` are described in their respective SKILL.md
+files when built. The general pattern is: writer skill → write
 artefact → spawn reviewer subagent → loop on findings (max 2) → finalise.
 See section 8 for the evaluator-optimizer template.
 
@@ -864,15 +869,14 @@ state and closes one observable gap. Old skills (`/implement`,
 | 5   | Build `/plan` + `plan-reviewer` subagent (extracted from `/implement` Phase 2; emits DAG)                          | 3-4 h  | Plan phase with dependencies + reviewer |
 | 6   | Build `/tasks` (plan DAG → Plane Epic + Work Items + relations)                                                    | 3-4 h  | Plane wiring automated                  |
 | 7   | Build `/implement-task` (extracted from `/implement` Phases 3-7)                                                   | 4-6 h  | Atomic implementation skill             |
-| 8   | Build `/feature` chain orchestrator (phases 1-5)                                                                   | 2-3 h  | Per-feature workflow tied together      |
-| 9   | Build `/log-episode` + `/implement-task` finale integration                                                        | 3-4 h  | Episode log foundation (Stage 0)        |
-| 10  | Deprecate `/product-research` and `/implement`                                                                     | 1 h    | Single canonical pipeline               |
-| 11  | (later) Stage 2 of episode log: grep in `/plan` and `/prd`                                                         | 1-2 h  | Episode log earns its keep              |
-| 12  | (later) Stage 3 of episode log: aggregation + `/promote-pattern` skill                                             | 4-6 h  | Promotion gate operational              |
+| 8   | Build `/log-episode` + `/implement-task` finale integration                                                        | 3-4 h  | Episode log foundation (Stage 0)        |
+| 9   | Deprecate `/product-research` and `/implement`                                                                     | 1 h    | Single canonical pipeline               |
+| 10  | (later) Stage 2 of episode log: grep in `/plan` and `/prd`                                                         | 1-2 h  | Episode log earns its keep              |
+| 11  | (later) Stage 3 of episode log: aggregation + `/promote-pattern` skill                                             | 4-6 h  | Promotion gate operational              |
 
 
-Steps 11-12 are deferred until enough episodes accumulate (~15-20 for
-step 11, ~30-50 for step 12).
+Steps 10-11 are deferred until enough episodes accumulate (~15-20 for
+step 10, ~30-50 for step 11).
 
 ## 12. Out of scope
 
@@ -900,10 +904,10 @@ combined code-review at step 4 of `/implement-task`.
 Items that are not yet decided. Each will be resolved when a step
 that depends on it begins.
 
-- **Conditional `/design` criteria.** Heuristics for when `/feature`
-skips phase 3. First draft: skip if PRD Section 4 (scope) is ≤ 2
-files and §11.2 (locked product concepts) has no architectural items.
-Validate empirically as features are run.
+- **Conditional `/design` criteria.** Heuristics for when `/design`
+skips its own phase. First draft: skip if PRD Section 4 (scope) is
+≤ 2 files and §11.2 (locked product concepts) has no architectural
+items. Validate empirically as features are run.
 - **Token budgets per phase.** Will be set when each skill is built,
 based on observed context size. Tracked in `phase-state.md`.
 - **Episode log retention.** Currently no retention policy — JSONL files

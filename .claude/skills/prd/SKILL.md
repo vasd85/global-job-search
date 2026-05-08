@@ -154,10 +154,16 @@ push or open a PR — the planning branch waits for `/design` and
 `/plan`.
 
 Update `phase-state.md`: `status: complete`, `ended_at: <now ISO 8601
-UTC>`, `next_phase: design` (or `plan` if design is skipped). Tell
-the user the PRD path and that `/design` (or `/plan` for trivial
-features) is next. Control returns to the user — do NOT invoke
-downstream skills automatically.
+UTC>`, `next_phase: design`. Print the PRD path, then print the exact
+next command for the user to copy:
+
+```
+Run next: /design <slug>
+```
+
+`/design` itself decides whether to design or skip (per its skip
+criteria) — always route through it; do not pre-judge here. Control
+returns to the user — do NOT invoke downstream skills automatically.
 
 ## Phase tracking
 
@@ -165,7 +171,8 @@ This skill writes the **feature-level** phase-state file at
 `.claude/scratchpads/<slug>/phase-state.md`, schema at
 `docs/agents/phase-state-schema.md`. Fields written:
 
-- `phase: prd`; `next_phase: design` (or `plan` when design is skipped).
+- `phase: prd`; `next_phase: design`. The skip decision lives in
+  `/design`, not here, so this skill never sets `next_phase: plan`.
 - `started_at`: on entry to step 2; a failed step 1 leaves no file.
 - `ended_at`: `null` while running; set when step 5 finishes.
 - `status`: `in-progress` → `complete` on approval, `failed` on cycle

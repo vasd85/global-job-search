@@ -127,8 +127,14 @@ with a few holes beat long interviews — correction is cheap.
 Write `.claude/scratchpads/<slug>/research.md` with the four sections
 above. Keep it concise — references and one-liners over prose blocks.
 Update `phase-state.md`: `status: complete`, `ended_at: <now ISO 8601
-UTC>`. Tell the user the file path and that `/prd` is next. **Do not
-invoke `/prd` automatically** — control returns to the user.
+UTC>`. Print the file path, then print the exact next command for the
+user to copy:
+
+```
+Run next: /prd <slug>
+```
+
+**Do not invoke `/prd` automatically** — control returns to the user.
 
 ## Subagent delegation
 

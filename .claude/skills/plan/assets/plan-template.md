@@ -237,10 +237,9 @@ chunks reference cross-cutting risks but §6 does not summarise them.>
 
 <End-to-end "the feature is shipped" definition. This is what makes
 the plan complete, beyond individual chunk acceptance criteria. State
-the steps a human (or `/feature` orchestrator) takes after every
-chunk has merged: which command to run, which path to visit, which
-data to inspect. If the validation requires real data, name the
-fixture or query.>
+the steps the user takes after every chunk has merged: which command
+to run, which path to visit, which data to inspect. If the validation
+requires real data, name the fixture or query.>
 
 1. <step — what to verify>.
 2. <step>.
