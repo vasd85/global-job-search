@@ -134,6 +134,7 @@ These shape every choice below. Listed once.
 | D12 | L3 cap / ordering / extend increment | Tunable via `app_config` | — |
 | D13 | Empty-tree Profile-Map UX | DEFER (UI sub-feature) | — |
 | D14 | "Description does not mention" L3 | Neutral 5 + `mentioned: false` | (in L3 ADR) |
+| D15 | Canonical branch coupling | TS constant + `migrate-leaves` utility | ADR-0011 |
 
 ---
 
@@ -461,7 +462,10 @@ diff so subsequent ones inherit a deterministic substrate.
 
 - `apps/web/src/lib/profile-tree/` — Zod leaf schema, pure CRUD
   (`appendLeaf`, `updateLeaf`, `deleteLeaf`, `getLeavesByBranch`),
-  branch-registry reader, `deriveL2Inputs(tree)`. Unit-tested.
+  branch-registry reader, `deriveL2Inputs(tree)`,
+  `canonical-branches.ts` (`CANONICAL_BRANCHES` constant per D15
+  / ADR-0011), `migrate-leaves.ts` (JSONB rewrite utility for
+  branch-composition migrations). Unit-tested.
 - `apps/web/src/lib/profile-conversation/` — no-op `processTurn`
   returning "not yet implemented" + empty mutations. Replaced by D5
   sub-feature.
@@ -559,6 +563,81 @@ sub-feature post-MVP.
 
 UI sub-feature decides between empty-state illustration, redirect to
 Chat, or placeholder branch outline. Out of umbrella scope.
+
+---
+
+## 16.5. D15 — Canonical branch coupling (TS constant + migrate-leaves)
+
+Per ADR-0011. The semantics of the nine canonical top-level branches
+live in a single TS constant `CANONICAL_BRANCHES` at
+`apps/web/src/lib/profile-tree/canonical-branches.ts`. Each entry is a
+`CanonicalBranchDef` carrying declarative behaviour hooks:
+
+```ts
+interface CanonicalBranchDef {
+  slug: string;
+  kind: CanonicalBranchKind;        // 'role' | 'skills' | 'compensation' |
+                                    //  'location' | 'industry' | 'attribute' |
+                                    //  'exclusion' | 'dealbreaker' | 'other'
+  displayName: string;
+  description: string;
+  l2Derivation?: 'titles' | 'seniority' | 'industry-tokens'
+               | 'remote-flag' | 'location-tier';
+  synonymDimension?: string;        // feeds canonical[] expansion
+  acceptsSkillIntent?: boolean;     // currently true for Skills only
+  matcherScope?: 'company' | 'job' | 'both';
+  l3Soft?: boolean;                 // contributes to per-claim L3 scoring
+}
+```
+
+The hard-coupled call sites — `deriveL2Inputs(tree)` (§ 12),
+conversation runtime prompt-builder (§ 8), L3 prompt-builder (§ 6),
+`skillIntent` validator (§ 8 step 4), exclusions/deal-breakers split
+(PRD § 6.3), synonym-dimension binding (§ 17 cross-cutting) — iterate
+over `CANONICAL_BRANCHES` rather than hardcoding slug literals. The
+DB seed migration (§ 11 D8) reads `CANONICAL_BRANCHES` to populate
+`preference_branch` rows so canonical semantics are not duplicated
+across TS and DB.
+
+**Pairs with `migrate-leaves.ts`** — a JSONB rewrite utility callable
+from any Drizzle migration. Signature:
+
+```ts
+export async function moveLeaves(
+  db: Database,
+  opts: {
+    fromSlugs: string[];
+    fromPathContains?: string;          // optional path filter
+    toSlug: string;
+    toPath: string[];
+    mutateLeaf?: (leaf: Leaf) => Leaf;  // for merges that add fields
+  },
+): Promise<void>;
+```
+
+Implementation: one transaction with `jsonb_agg` + `jsonb_set` over
+`user_profile.preferenceTree.leaves[]`, replacing `branchSlug` and
+the matching entry in `branchPath[]`.
+
+**Composition-change playbook** (full detail in ADR-0011):
+
+1. **Add canonical branch.** Edit `CANONICAL_BRANCHES`; `INSERT`
+   into `preference_branch`; PRD § 11.2 + § 6.3 update. ~30 min;
+   no leaf migration.
+2. **Move leaves between branches.** `moveLeaves` migration with
+   `fromSlugs` + `toSlug`. ~30 min – 1 h.
+3. **Delete canonical branch.** `moveLeaves` to a target branch (or
+   to `archived`); soft-delete `preference_branch` row; remove TS
+   entry; PRD update. ~1–2 h.
+4. **Merge two canonical branches.** Decide unified semantics
+   (per-leaf `scope` if matcher scope differs); `moveLeaves` from
+   each old branch with `mutateLeaf`; update matcher logic; PRD
+   update. ~3–5 h depending on semantic merge complexity.
+
+`CANONICAL_BRANCHES` is the **single source of truth for canonical
+semantics**; `preference_branch` (D2 / ADR-0004) holds runtime-
+editable display data and the editable sub-branch hierarchy under
+canonical roots.
 
 ---
 

@@ -114,8 +114,15 @@ PRD §3.2 NG1–NG11 carry through verbatim. Plan-specific exclusions:
   symmetric-with-companies. Source: PRD §11.2.
 - **C3 — nine canonical top-level branches** (Role, Skills,
   Compensation, Location, Industry, Company Attributes, Exclusions,
-  Deal-breakers, Other). Sub-branches and full hierarchy are
-  developer-editable at runtime. Source: PRD §11.2.
+  Deal-breakers, Other), with **semantics centralised in a TS
+  constant `CANONICAL_BRANCHES`** at
+  `apps/web/src/lib/profile-tree/canonical-branches.ts` (single
+  source of truth). Sub-branches and full hierarchy under canonical
+  roots are developer-editable at runtime via `preference_branch`.
+  **Composition changes to the canonical set itself** (add /
+  remove / rename / move / merge) **are supported** via TS-constant
+  edits + the `migrate-leaves.ts` utility + a Drizzle migration +
+  PRD update. Source: PRD §11.2; design §16.5 (D15); ADR-0011.
 - **C4 — collection is conversational and adaptive.** No 16-step
   linear wizard. Ambiguous input triggers agent-initiated
   clarification with best-guess phrasing before commit. Source:
@@ -234,6 +241,16 @@ Anchors G1, G6; closes ADR-0010.
 - `apps/web/src/lib/llm/{preference-llm,prompts}.ts` — delete.
 - `apps/web/src/lib/profile-tree/` — create (Zod leaf schema, pure
   CRUD, branch-registry reader, `derive-l2.ts`); unit-tested.
+- `apps/web/src/lib/profile-tree/canonical-branches.ts` — create
+  (`CANONICAL_BRANCHES` constant + `CanonicalBranchDef` type per
+  D15 / ADR-0011; single source of truth for canonical-branch
+  semantics; declarative behaviour hooks `l2Derivation`,
+  `synonymDimension`, `acceptsSkillIntent`, `matcherScope`,
+  `l3Soft`).
+- `apps/web/src/lib/profile-tree/migrate-leaves.ts` — create
+  (`moveLeaves(db, opts)` JSONB rewrite utility per ADR-0011;
+  callable from any future Drizzle migration that reshapes
+  canonical-branch composition).
 - `apps/web/src/lib/profile-conversation/` — create no-op
   `processTurn` stub.
 - `apps/web/src/app/api/chatbot/*` — modify to auth-preserving 501
@@ -265,16 +282,43 @@ Anchors G1, G6; closes ADR-0010.
 - [ ] `searchJobs` returns empty for the test user (correct
   post-wipe behaviour).
 - [ ] `grep -r 'user_company_preference\|coreSkills\|growthSkills\|avoidSkills\|dealBreakers\|preferredIndustries' apps packages` returns zero non-migration matches.
+- [ ] `CANONICAL_BRANCHES` constant exists with nine entries; each
+  entry has the declarative behaviour hooks per ADR-0011 (`slug`,
+  `kind`, `displayName`, `description`, optional `l2Derivation`,
+  `synonymDimension`, `acceptsSkillIntent`, `matcherScope`,
+  `l3Soft`).
+- [ ] `migrate-leaves.ts` exposes a `moveLeaves` function callable
+  from a Drizzle migration; one transaction; rewrites
+  `branchSlug` and the matching `branchPath[]` entry on every
+  affected `user_profile.preferenceTree.leaves[]`. Unit-tested
+  against representative tree fixtures.
+- [ ] Hard-coupled call sites (`deriveL2Inputs`, conversation
+  prompt-builder stub, L3 prompt-builder, `skillIntent` validator,
+  exclusions/deal-breakers split, synonym-dimension binding) read
+  from `CANONICAL_BRANCHES` rather than slug literals.
+- [ ] DB seed migration reads `CANONICAL_BRANCHES` to populate
+  `preference_branch` rows (no duplicate source of truth between
+  TS and DB).
+- [ ] `grep -rn "'role'\|'skills'\|'compensation'\|'location'\|'industry'\|'company-attributes'\|'exclusions'\|'deal-breakers'\|'other'" apps packages --include='*.ts'`
+  returns matches only inside `canonical-branches.ts`, the seed
+  migration, and tests / fixtures — no scattered slug literals
+  in handler code.
 
 **Test strategy.** Unit-test `apps/web/src/lib/profile-tree/`
-exhaustively (`pnpm test apps/web` with new test files). Update
-`filter-pipeline.test.ts` to reflect tree-derived inputs. Delete
-chatbot tests in the same PR as the module deletion. Schema test
+exhaustively, including `canonical-branches.ts` (snapshot of the
+nine entries) and `migrate-leaves.ts` (golden-path move + merge
+with `mutateLeaf` + edge cases like empty tree and missing slug)
+(`pnpm test apps/web` with new test files). Update
+`filter-pipeline.test.ts` to reflect tree-derived inputs and the
+constant-driven derivation. Delete chatbot tests in the same PR
+as the module deletion. Schema test
 `apps/web/src/lib/db/schema.test.ts` updated to assert new shape.
 Manual: hit `/api/chatbot/*` and confirm 501s.
 
-**Effort.** 1–3 days (full `/feature` cycle: research note +
-PRD + design + plan; then 1–3 implementation PRs).
+**Effort.** 2–5 days (full `/feature` cycle: research note +
+PRD + design + plan; then 2–4 implementation PRs — adds ~1 day
+versus the pre-amendment estimate to land the canonical
+centralisation per ADR-0011).
 
 **Risks.**
 
@@ -292,6 +336,15 @@ PRD + design + plan; then 1–3 implementation PRs).
 - Hint: `preference_branch` mirrors `role_family` (design §5).
 - Hint: branch-slug write-time validation; no Postgres FK across
   the JSONB boundary (ADR-0009 § Decision).
+- Hint: `CanonicalBranchDef` schema and the composition-change
+  playbook are in ADR-0011. Seed `preference_branch` from
+  `CANONICAL_BRANCHES` rather than re-listing slug literals in the
+  migration.
+- Hint: `moveLeaves` signature and JSONB-rewrite implementation
+  pattern are in ADR-0011 § Decision. The utility is unused in
+  this sub-feature itself (the wipe deletes flat fields, not
+  leaves) but lands here so future composition-change migrations
+  can call it without further infrastructure work.
 
 ---
 
@@ -711,6 +764,16 @@ filter post-alignment.
   has a permanent inconsistency. Mitigation: explicit decision
   (align or close) at the end of `profile-map-ui`; do not let it
   drift undecided.
+- **Branch composition change cost (post-MVP).** Adding,
+  removing, moving, or merging canonical branches as the product
+  evolves spans the TS constant + a `moveLeaves` Drizzle migration
+  + matcher logic + PRD update. Touches all chunks transitively
+  via shared canonical semantics. Mitigation: centralisation in
+  `wipe-and-foundation` (D15 / ADR-0011) localises the change to
+  a documented playbook (~30 min – 5 h per operation depending on
+  type) instead of scattered refactors. Acceptable given memory
+  ("schema/API can be broken freely") and the user's explicit
+  expectation that the canonical set will evolve.
 
 ---
 

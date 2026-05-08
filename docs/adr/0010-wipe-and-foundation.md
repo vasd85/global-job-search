@@ -76,7 +76,13 @@ contradict):
 - `apps/web/src/lib/profile-tree/` — Zod leaf schema, tree CRUD
   pure functions (`appendLeaf`, `updateLeaf`, `deleteLeaf`,
   `getLeavesByBranch`, `serialize`/`deserialize`), branch-registry
-  reader, `deriveL2Inputs(tree)` helper. All pure, all unit-tested.
+  reader, `deriveL2Inputs(tree)` helper, `canonical-branches.ts`
+  (the `CANONICAL_BRANCHES` constant and `CanonicalBranchDef`
+  type per ADR-0011), `migrate-leaves.ts` (JSONB rewrite utility
+  per ADR-0011 — `moveLeaves(db, opts)` for branch-composition
+  migrations). All pure, all unit-tested. The seed migration
+  reads `CANONICAL_BRANCHES` to populate `preference_branch` rows
+  rather than embedding slug literals.
 - `apps/web/src/lib/profile-conversation/` — exports a no-op
   `processTurn` that returns "not yet implemented" plus empty
   mutations. Replaced by the conversation runtime sub-feature.

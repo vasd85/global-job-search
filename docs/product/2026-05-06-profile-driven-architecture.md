@@ -735,8 +735,19 @@ user.
 - The canonical top-level branch set is **the nine branches in
   § 6.3**: Role, Skills, Compensation, Location, Industry,
   Company Attributes, Exclusions, Deal-breakers, Other.
-  Sub-branches and the full hierarchy are developer-editable at
-  runtime.
+  Sub-branches and the full hierarchy under canonical roots are
+  developer-editable at runtime via the `preference_branch` table.
+- **Composition changes to the canonical set itself** (add / remove
+  / rename / move / merge a canonical branch) **are supported and
+  expected** as the product's understanding of preferences evolves.
+  Canonical-branch semantics live in a single TS constant
+  `CANONICAL_BRANCHES` at
+  `apps/web/src/lib/profile-tree/canonical-branches.ts` (single
+  source of truth); JSONB rewrite of leaves on composition change
+  uses the `migrate-leaves.ts` utility. Composition changes still
+  require updating this PRD § 11.2 + § 6.3 (governance preserved);
+  the architecture absorbs the change without scattered refactors.
+  Detail and playbook: ADR-0011.
 - Tree depth is variable. Leaves live at any depth. The UI renders
   up to a configured max depth; deeper levels reachable via
   drill-down. Both hierarchy AND max render depth are
@@ -888,6 +899,19 @@ user.
   tree schema and branch registry, leaving L2 / L3 reading the
   remaining fields (or stubbed) so `pnpm test` remains green at
   PR boundary.
+- Hint — **canonical-branches TS constant.** Add
+  `apps/web/src/lib/profile-tree/canonical-branches.ts` exporting
+  `CANONICAL_BRANCHES: CanonicalBranchDef[]` where each entry
+  carries declarative behaviour hooks: `slug`, `kind`,
+  `displayName`, `description`, `l2Derivation?`,
+  `synonymDimension?`, `acceptsSkillIntent?`, `matcherScope?`,
+  `l3Soft?`. All hard-coupled call sites (`deriveL2Inputs`,
+  conversation prompt-builder, L3 prompt-builder, `skillIntent`
+  validator, exclusions/deal-breakers split, synonym dimension
+  binding) read from this constant rather than hardcoding slug
+  literals. Pairs with `migrate-leaves.ts` (JSONB rewrite for
+  branch composition migrations). Detail and composition-change
+  playbook: ADR-0011.
 
 ### 11.5 Verified during research
 
