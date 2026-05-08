@@ -19,8 +19,7 @@ Decision) — multi-decision overhaul.
 - PRD: `docs/product/2026-05-06-profile-driven-architecture.md`
   (binding; §11.2 locks; §11.1/§10 routes the open questions to here).
 - Research: `./research.md`.
-- Manifesto:
-  `/Users/vasd85/Documents/Notes/Projects/global-job-search/product-manifesto.md`
+- Manifesto: `docs/base/product-manifesto.md`
   (overrides on conflict).
 - Predecessor: `docs/archive/preference-tree-profile.md`.
 - Schema today: `packages/db/src/schema.ts`.
