@@ -36,8 +36,9 @@ Cited ADRs at `docs/adr/<NNNN>-*.md` are read only when the design
 references them.
 
 **Output:** `docs/plans/<slug>.md`, committed on `plan/<slug>`. The
-branch is then ready for the single planning PR (PRD + optional
-design + plan together). `/plan` does NOT push or open the PR.
+branch is then pushed and the single planning PR (PRD + optional
+design + plan together) opens — `/plan` does both at the end of
+step 5 so the user goes straight to review.
 
 **Side-output:** `.claude/scratchpads/<slug>/plan-review.md` written
 by `plan-reviewer`. Read-only after finalisation.
@@ -150,19 +151,49 @@ writes verdict + findings to VERDICT_PATH. Read in two passes:
     (fix now / defer to follow-up / skip with rationale), then step 5.
   - `approved` with no `### Findings` → step 5.
 
-### 5. Commit and hand off
+### 5. Commit, push, open the PR, hand off
 
 Commit the plan on `plan/<slug>` per `CLAUDE.md § Git` (stdin
 HEREDOC, Conventional Commits). Type `chore` if the plan only
 sequences existing scope, `feat` if it introduces new product
-surface. Do NOT push or open a PR — the branch is now ready for the
-single planning PR (PRD + optional design + plan together), opened
-by the user or by `/feature` later. Update `phase-state.md`:
-`status: complete`, `ended_at: <now ISO 8601 UTC>`, `next_phase:
-tasks`. Tell the user the plan path and that the planning PR is
-ready to open; once it merges to `main`, `/tasks` runs against
-`main`. Control returns to the user — do NOT invoke `/tasks`
-automatically.
+surface.
+
+Then push and open the planning PR yourself:
+
+```bash
+git push -u origin plan/<slug>
+gh pr create \
+  --title "chore(<slug>): planning bundle (PRD + design + plan)" \
+  --body "$(cat <<'EOF'
+Bundles the planning artefacts:
+- PRD: docs/product/<slug>.md
+- Design: docs/designs/<slug>.md
+- Plan: docs/plans/<slug>.md
+- ADRs: docs/adr/NNNN-...md
+
+After this PR merges to `main`, run `/tasks <slug>`.
+EOF
+)"
+```
+
+Adjust the title type to `feat(<slug>): ...` if the commit used
+`feat`. Omit the Design or ADRs body lines when those artefacts
+don't exist for this feature. The `pre-pr-checks` hook gates
+`gh pr create` (typecheck + lint + tests) — docs-only changes pass
+it cleanly. Never bypass with `--no-verify`; if the hook fails,
+fix the underlying breakage and rerun.
+
+Update `phase-state.md`: `status: complete`, `ended_at: <now ISO
+8601 UTC>`, `next_phase: tasks`. Print the plan path, the PR URL,
+and the exact next command for the user to copy:
+
+```
+Run next (after the planning PR merges to main):
+
+  /tasks <slug>
+```
+
+Control returns to the user — do NOT invoke `/tasks` automatically.
 
 ## Phase tracking
 
@@ -184,8 +215,8 @@ This skill writes the **feature-level** phase-state file at
 - **Code-level decisions** not pinned by the design (library names,
   column types, algorithms) — at most chunk-level Hints.
 - **Implementation code** — `/implement-task`'s job.
-- **Pushing or opening a PR** — the planning PR opens after `/plan`,
-  not from inside it.
+- **Merging the planning PR** — human reviewer's call, not the
+  skill's. `/plan` opens the PR; the user reviews and merges.
 
 ## Language
 

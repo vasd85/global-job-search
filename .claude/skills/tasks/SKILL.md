@@ -143,10 +143,25 @@ non-`blocked_by` relations untouched.
 
 Print: Epic code (e.g. `GJS-8`) and title; WI
 created/updated/cancelled counts; failure count and
-`plane-failures.jsonl` path if any. Update `phase-state.md`:
+`plane-failures.jsonl` path if any.
+
+Then derive **unblocked WI codes** — chunks whose `depends_on` list
+is empty in this run. These are the parallel-safe entry points;
+sequential users can pick any one. Update `phase-state.md`:
 `status: complete`, `ended_at: <now ISO 8601 UTC>`,
-`next_phase: implement-task`. Tell the user `/implement-task <wi-code>`
-is the next manual step.
+`next_phase: implement-task`. Print the exact next command for the
+user to copy (one or many, depending on how many roots the DAG has):
+
+```
+Run next (any unblocked WI; multiple may run in parallel worktrees):
+
+  /implement-task GJS-<n>     # <wi-name>
+  /implement-task GJS-<m>     # <wi-name>
+  ...
+```
+
+Control returns to the user — do NOT invoke `/implement-task`
+automatically.
 
 ## Phase tracking
 

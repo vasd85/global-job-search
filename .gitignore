@@ -47,6 +47,7 @@ dbhub.toml
 .claude/worktrees/
 .claude/scratchpads/
 .claude/logs/
+.claude/*.lock
 
 # User specific files
 qa-jobs-scrapper/

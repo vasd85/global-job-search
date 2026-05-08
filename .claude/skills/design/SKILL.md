@@ -102,8 +102,13 @@ Apply skip criteria. Three outcomes:
 - **Clearly skip** — present a 1-2 sentence rationale, ask the user
   to confirm via `AskUserQuestion`. On confirmation, rewrite
   `phase-state.md`: `status: complete`, `ended_at: <now ISO 8601
-  UTC>`, body note `skipped: true; reason: <rationale>`. Phase
-  ends; tell the user `/plan` is next.
+  UTC>`, `next_phase: plan`, body note `skipped: true; reason:
+  <rationale>`. Phase ends; print the exact next command for the
+  user to copy:
+
+  ```
+  Run next: /plan <slug>
+  ```
 - **Clearly design** — proceed to step 3.
 - **Uncertain** — `AskUserQuestion`: list the borderline signals
   and ask whether to design or skip; honor the answer.
@@ -150,9 +155,15 @@ Once the subagent returns, the orchestrator:
 ### 4. Update phase-state, hand off
 
 Set `phase-state.md`: `status: complete`, `ended_at: <now ISO 8601
-UTC>`, `next_phase: plan`. Tell the user the design path (and ADR
-paths if any) and that `/plan` is next. Control returns to the
-user — do NOT invoke downstream skills automatically.
+UTC>`, `next_phase: plan`. Print the design path (and ADR paths if
+any), then print the exact next command for the user to copy:
+
+```
+Run next: /plan <slug>
+```
+
+Control returns to the user — do NOT invoke downstream skills
+automatically.
 
 ## Phase tracking
 
