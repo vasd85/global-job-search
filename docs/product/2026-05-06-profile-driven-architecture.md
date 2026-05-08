@@ -18,8 +18,7 @@ Status: **Draft v1** | Date: 2026-05-06 | Owner: vasd85
 
 - **Repo:** `/Users/vasd85/repo/personal-projects/global-job-search`
 - **Canonical product reference:**
-  `/Users/vasd85/Documents/Notes/Projects/global-job-search/product-manifesto.md`
-  — overrides any conflicting proposal.
+  `docs/base/product-manifesto.md` — overrides any conflicting proposal.
 - **Predecessor draft:**
   `docs/archive/preference-tree-profile.md` (Draft v1, not approved)
   — substantial portions adopted; refinements documented in §§ 6–11
