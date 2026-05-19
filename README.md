@@ -2,15 +2,21 @@
 
 A universal job aggregator for IT professionals, powered by ATS APIs.
 
-The app collects job listings directly from Greenhouse, Lever, Ashby, and SmartRecruiters — no scraping, no rate limits, no cost. It keeps a live database of open positions across thousands of companies, updated daily, and (coming soon) ranks them against your profile using an LLM scoring model.
+The app collects job listings directly from Greenhouse, Lever, Ashby, and SmartRecruiters — no scraping, no rate limits, no cost. It keeps a live database of open positions across thousands of companies and ranks them against your profile using an LLM scoring model (bring-your-own Anthropic key).
+
+> Experimental, solo project. Schema and API may break between commits — no backwards-compat guarantees.
 
 ## Features
 
-- **ATS-first ingestion** — collects all open jobs from company ATS boards via free JSON APIs
-- **Diff engine** — tracks new/updated/closed jobs on every poll, no duplicates
-- **Search & filter** — by keyword, workplace type (remote/hybrid/onsite), ATS vendor, or company
-- **Companies dashboard** — see all tracked companies with job counts and poll status
-- **Job detail API** — full description text for each job, ready for LLM scoring
+- **ATS-first ingestion** — collects open jobs from company ATS boards via free JSON APIs
+- **Diff engine** — tracks new/updated/closed jobs per poll, no duplicates
+- **Adaptive polling** — pg-boss queue with per-company priority and backoff; cron-driven dispatch
+- **Job search & filters** — keyword, workplace type (remote/hybrid/onsite), ATS vendor, company
+- **Profile-aware search** — rules-based filter pipeline driven by the signed-in user's profile
+- **LLM scoring** — R/S/L/C/D match model (Role / Skills / Location / Compensation / Domain) computed via Claude
+- **Onboarding chatbot** — Claude-driven multi-step preference extraction that fills `user_profile`
+- **BYOK** — users bring their own Anthropic key, encrypted at rest with AES-256-GCM
+- **Auth** — Better Auth with Google OAuth + email magic links (Resend)
 
 ## Tech Stack
 
@@ -19,7 +25,12 @@ The app collects job listings directly from Greenhouse, Lever, Ashby, and SmartR
 | Web framework | Next.js 16 (App Router) + React 19 |
 | Styling | Tailwind CSS 4 |
 | Database | PostgreSQL 16 + Drizzle ORM |
-| ATS library | `@gjs/ats-core` (workspace package) |
+| Auth | Better Auth + Google OAuth |
+| LLM | Anthropic Claude via `@ai-sdk/anthropic` |
+| Job queue | pg-boss (Postgres-backed) |
+| Email | Resend |
+| Forms / validation | react-hook-form + zod |
+| Logging | pino |
 | Package manager | pnpm 10 (workspaces) |
 | Language | TypeScript 5, ESM |
 
@@ -27,21 +38,26 @@ The app collects job listings directly from Greenhouse, Lever, Ashby, and SmartR
 
 ```
 global-job-search/
-├── apps/web/              # Next.js web app (UI + API routes + ingestion)
+├── apps/web/                  # Next.js web app (UI + API routes)
 │   ├── src/
-│   │   ├── app/           # App Router pages and API routes
-│   │   ├── components/    # React components (job-search, etc.)
-│   │   └── lib/
-│   │       ├── db/        # Drizzle schema + DB connection
-│   │       └── ingestion/ # Poll engine, diff logic, seed data
-│   └── drizzle/           # DB migration files
-├── packages/ats-core/     # Shared ATS extraction library (@gjs/ats-core)
-│   └── src/
-│       ├── extractors/    # Greenhouse, Lever, Ashby, SmartRecruiters
-│       ├── discovery/     # ATS vendor detection, slug parsers
-│       ├── normalizer/    # buildJob(), dedupeJobs()
-│       └── utils/         # http, hash, url, text helpers
-└── qa-jobs-scrapper/      # Legacy CLI pipeline (for reference)
+│   │   ├── app/
+│   │   │   ├── api/           # auth, jobs, search, scoring, chatbot, settings, internal
+│   │   │   ├── login/         # Login page
+│   │   │   ├── onboarding/    # Profile onboarding chatbot
+│   │   │   ├── settings/      # BYOK + profile settings
+│   │   │   └── companies/     # Companies dashboard
+│   │   ├── components/
+│   │   └── lib/               # auth, db, queue, search, scoring, chatbot glue
+│   └── drizzle/               # Drizzle-kit generated migrations
+├── packages/
+│   ├── ats-core/              # ATS extractors, discovery, normalizer, taxonomy, geo
+│   ├── db/                    # Drizzle schema — single source of truth
+│   ├── ingestion/             # Poll engine, adaptive polling, pg-boss queues
+│   ├── crypto/                # AES-256-GCM helpers for BYOK
+│   └── logger/                # pino-based structured logger
+├── docs/                      # ADRs, designs, plans, product manifesto, episodes
+├── scripts/                   # Local CLI utilities
+└── qa-jobs-scrapper/          # Legacy CLI pipeline (read-only reference)
 ```
 
 ## Local Setup
@@ -63,10 +79,7 @@ pnpm install
 ### 2. Database
 
 ```bash
-# Start PostgreSQL
 brew services start postgresql@16
-
-# Create database
 createdb global_job_search
 ```
 
@@ -74,26 +87,42 @@ createdb global_job_search
 
 ```bash
 cp apps/web/.env.example apps/web/.env.local
-# Edit .env.local and set DATABASE_URL
 ```
 
-`.env.local` example:
+Required `.env.local` keys (see [`apps/web/.env.example`](apps/web/.env.example) for the full list):
+
 ```env
 DATABASE_URL=postgresql://your_user@localhost:5432/global_job_search
-ANTHROPIC_API_KEY=your_key_here   # needed for Phase 3 LLM scoring
+
+# Better Auth
+BETTER_AUTH_SECRET=                 # openssl rand -base64 32
+BETTER_AUTH_URL=http://localhost:3000
+
+# Google OAuth — https://console.cloud.google.com/apis/credentials
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+
+# Email (Resend)
+RESEND_API_KEY=re_...
+EMAIL_FROM=noreply@yourdomain.com
+
+# BYOK encryption key — 32 bytes hex
+# Generate: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+ENCRYPTION_KEY=
+
+# Optional — server-side Anthropic key (users normally BYOK)
+ANTHROPIC_API_KEY=sk-ant-...
 ```
 
 ### 4. Run migrations
 
 ```bash
-cd apps/web
-npx drizzle-kit push
+pnpm db:migrate
 ```
 
 ### 5. Start the dev server
 
 ```bash
-cd ../..
 pnpm dev
 ```
 
@@ -104,7 +133,7 @@ Open [http://localhost:3000](http://localhost:3000).
 With the dev server running:
 
 ```bash
-# Seed initial companies (10 well-known tech companies)
+# Seed initial companies (well-known tech companies)
 curl -X POST http://localhost:3000/api/seed
 
 # Run ingestion (fetches all jobs from all active companies)
@@ -116,17 +145,39 @@ curl -X POST http://localhost:3000/api/ingestion \
 open http://localhost:3000
 ```
 
-A full ingestion of 10 seed companies takes ~60-90 seconds and collects ~2,000 jobs.
+A full ingestion of the seed set takes ~60–90 seconds.
 
 ## API Reference
+
+Public:
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/jobs` | List jobs with filters |
 | `GET` | `/api/jobs/[id]` | Job details with full description |
-| `GET` | `/api/companies` | All tracked companies |
+| `GET` | `/api/companies` | List tracked companies |
 | `POST` | `/api/seed` | Seed initial company list |
-| `POST` | `/api/ingestion` | Run ingestion for all (or specific) companies |
+| `POST` | `/api/ingestion` | Run synchronous ingestion (local dev convenience) |
+
+Authenticated:
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `*` | `/api/auth/[...all]` | Better Auth catch-all (sign-in, sign-out, callbacks) |
+| `GET` | `/api/search` | Profile-aware job search via the filter pipeline |
+| `POST` | `/api/search/expand` | Relax/expand filters for an existing search |
+| `POST` | `/api/scoring/trigger` | Enqueue LLM scoring for the user's current candidates |
+| `POST` | `/api/chatbot/message` | Send a message to the onboarding chatbot |
+| `GET` / `POST` | `/api/chatbot/state` | Read or reset conversation state |
+| `POST` | `/api/chatbot/save` | Persist the chatbot's draft as a `user_profile` |
+| `*` | `/api/settings/api-keys` | Store / list / delete user's Anthropic key (BYOK) |
+| `POST` | `/api/settings/api-keys/revalidate` | Re-validate a stored key |
+
+Internal (cron-triggered):
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/internal/dispatch-polling` | Enqueue due companies into the polling queue |
 
 ### `GET /api/jobs` query params
 
@@ -134,29 +185,24 @@ A full ingestion of 10 seed companies takes ~60-90 seconds and collects ~2,000 j
 |-------|------|-------------|
 | `search` | string | Filter by title or department (case-insensitive) |
 | `workplaceType` | `remote\|hybrid\|onsite` | Filter by workplace type |
-| `vendor` | `greenhouse\|lever\|ashby` | Filter by ATS vendor |
-| `company` | string | Filter by company slug (e.g. `greenhouse-stripe`) |
+| `vendor` | `greenhouse\|lever\|ashby\|smartrecruiters` | Filter by ATS vendor |
+| `company` | string | Filter by company slug |
 | `status` | `open\|stale\|closed` | Job status (default: `open`) |
+| `hasDescription` | `true` | Restrict to jobs with extracted description text |
 | `limit` | number | Page size, max 200 (default: 50) |
 | `offset` | number | Pagination offset (default: 0) |
 
 ## Development
 
 ```bash
-pnpm dev          # Start Next.js dev server on :3000
+pnpm dev          # Next.js dev server on :3000
 pnpm typecheck    # TypeScript check across all packages
 pnpm lint         # ESLint across all packages
+pnpm test         # Vitest across the workspace
 pnpm build        # Production build
+pnpm db:generate  # Generate a Drizzle migration from schema changes
+pnpm db:migrate   # Apply pending migrations
 ```
-
-## Roadmap
-
-- [x] **Phase 0** — Monorepo setup, `ats-core` package extraction
-- [x] **Phase 1** — Ingestion pipeline: ATS poll → diff → upsert, poll logs
-- [x] **Phase 2** — Job search UI: keyword search, filters, pagination, companies dashboard
-- [ ] **Phase 3** — LLM scoring: user profile → M/D/S/C model via Claude API, `job_match` cache
-- [ ] **Phase 4** — Company discovery: URL submission, demand-driven LLM discovery
-- [ ] **Phase 5** — Auth, saved jobs, notifications
 
 ## Supported ATS Vendors
 
