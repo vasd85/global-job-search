@@ -84,6 +84,12 @@ Hooks enforce typecheck + lint before commit and tests before PR creation.
 
 ### Workflows
 
-- `/implement <task>` — full pipeline for medium/large tasks (3+ files, new features, architecture).
-- `/pre-pr` — quick quality gate for small changes.
-- `/code-architect` — standalone architectural planning.
+The agent pipeline lives under `.claude/skills/` and is sequenced as
+`/research` → `/prd` → `/design` (conditional) → `/plan` → `/tasks`
+(materialise as Plane Work Items) → `/implement-task` (one WI to PR)
+→ `/log-episode` (append to `docs/episodes/<YYYY-MM>.jsonl` and mark
+the WI Done). See `docs/agents/architecture.md` for the full
+contract.
+
+- `/pre-pr` — quick quality gate for small changes that bypass the pipeline.
+- `/code-architect` — standalone architectural planning (also wrapped by `/design`).

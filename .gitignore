@@ -52,3 +52,4 @@ dbhub.toml
 # User specific files
 qa-jobs-scrapper/
 sql-scripts/
+docs/personal/

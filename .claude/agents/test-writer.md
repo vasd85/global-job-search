@@ -127,8 +127,8 @@ If `pnpm typecheck` fails on Vitest globals (`describe`, `test`, `expect`,
 
 ## Output
 
-When invoked by the `/implement` orchestrator, write a progress summary to
-the scratchpad path specified in the prompt (e.g.,
+When invoked by a pipeline skill (e.g. `/implement-task`), write a
+progress summary to the scratchpad path specified in the prompt (e.g.,
 `.claude/scratchpads/<task>/test-progress.md`). Include:
 
 - Which scenario files were implemented
