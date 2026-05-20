@@ -303,13 +303,13 @@ errors in earlier drafts of this document — keep them separate.
 | Worktree owner     | user (created before launching `claude` in it)    | Agent tool (created automatically by `isolation`)  |
 | Lifecycle owner    | user (manual launch and cleanup)                  | orchestrator skill (worktree disposable on return) |
 | Branches and PRs   | N branches → N PRs → N merges                     | 1 branch, 1 PR, 1 merge (subagent branches merge locally first) |
-| Provenance         | new in this architecture; no prior precedent here | reused unchanged from current `/implement` Phase 3 |
+| Provenance         | new in this architecture; no prior precedent here | inherited from the legacy implement skill's Phase 3 pattern (skill removed in GJS-13) |
 
 
-The within-WI mechanism is the existing `/implement` Phase 3 pattern
-(see `.claude/skills/implement/SKILL.md` "Parallel chunks") and is
-carried forward as-is for any subagent parallelism a future skill
-needs. It does *not* produce multiple PRs — subagent branches merge
+The within-WI mechanism is inherited from the legacy implement
+skill's Phase 3 "parallel chunks" pattern (skill removed in GJS-13)
+and is carried forward as-is for any subagent parallelism a future
+skill needs. It does *not* produce multiple PRs — subagent branches merge
 into a single feature branch before the PR is opened. The across-WI
 mechanism is genuinely new for this project; it is not "proven by"
 the within-WI pattern, only conceptually adjacent.
@@ -378,16 +378,16 @@ Target skill inventory. Status column shows current state.
 
 | Skill                 | Status           | Replaces                                  | Notes                                                                |
 | --------------------- | ---------------- | ----------------------------------------- | -------------------------------------------------------------------- |
-| `/research`           | TO BUILD         | (extracted from `/product-research`)      | Discovery + external research; isolated context                      |
-| `/prd`                | TO BUILD         | (extracted from `/product-research`)      | Reads research, writes PRD; reviewer required                        |
+| `/research`           | TO BUILD         | (extracted from legacy product-research)  | Discovery + external research; isolated context                      |
+| `/prd`                | TO BUILD         | (extracted from legacy product-research)  | Reads research, writes PRD; reviewer required                        |
 | `/design`             | TO BUILD         | (extracted from `/code-architect`)        | Conditional; reads PRD, writes design + ADRs                         |
-| `/plan`               | TO BUILD         | (extracted from `/implement` Phase 2)     | Reads PRD + design, writes plan with DAG                             |
+| `/plan`               | TO BUILD         | (planning phase of legacy implement skill) | Reads PRD + design, writes plan with DAG                            |
 | `/tasks`              | TO BUILD         | (new)                                     | Plan → Plane Epic + Work Items + relations                           |
-| `/implement-task`     | TO BUILD         | (extracted from `/implement` Phase 3-7)   | One Work Item → branch + PR                                          |
+| `/implement-task`     | TO BUILD         | (implementation phases of legacy implement skill) | One Work Item → branch + PR                                  |
 | `/log-episode`        | TO BUILD         | (new)                                     | Standalone episode log writer (also finale of `/implement-task`)     |
 | `/promote-pattern`    | TO BUILD (later) | (new)                                     | Surfaces patterns from episode log; drafts promotion PR              |
-| `/product-research`   | DEPRECATE        | →`/research` + `/prd`                     | Keep working until both replacements ready                           |
-| `/implement`          | DEPRECATE        | →`/plan` + `/implement-task` (manual chain) | Keep working until all replacements ready                          |
+| product-research      | REMOVED          | →`/research` + `/prd`                     | Removed in GJS-13 after new pipeline shipped end-to-end              |
+| implement             | REMOVED          | →`/plan` + `/implement-task` (manual chain) | Removed in GJS-13 after new pipeline shipped end-to-end             |
 | `/plane-integration`  | KEEP             | —                                         | Reference map, used by `/tasks`                                      |
 | `/pre-pr`             | KEEP             | —                                         | Lightweight quality gate for ad-hoc commits                          |
 | `/code-architect`     | KEEP             | —                                         | Standalone architectural planning (also wrapped by `/design`)        |
@@ -855,22 +855,26 @@ provisional rules.
 
 ## 11. Migration roadmap
 
-The new architecture is built incrementally. Each step ships a working
-state and closes one observable gap. Old skills (`/implement`,
-`/product-research`) keep working until their replacements are stable.
+The new architecture was built incrementally. Each step shipped a
+working state and closed one observable gap. The two legacy monolithic
+skills (the prior product-research and implement orchestrators) kept
+working until their replacements were stable; both were removed in
+GJS-13 after the new pipeline shipped end-to-end. The detailed
+historical step-by-step lives in `docs/plans/agent-system.md`; the
+table below summarises it.
 
 
 | #   | Step                                                                                                               | Effort | Closes gap                              |
 | --- | ------------------------------------------------------------------------------------------------------------------ | ------ | --------------------------------------- |
 | 1   | Create `docs/designs/`, `docs/plans/`, `docs/adr/`, `docs/episodes/`; commit ADR template and episode JSONL schema | 30 min | Locations exist                         |
-| 2   | Build `/research` (extracted from `/product-research` Phases 1-3)                                                  | 2-3 h  | Research isolated                       |
-| 3   | Build `/prd` + `prd-reviewer` subagent (extracted from `/product-research` Phases 4-5)                             | 3-4 h  | PRD phase + required reviewer           |
+| 2   | Build `/research` (research phase extracted from legacy product-research skill)                                    | 2-3 h  | Research isolated                       |
+| 3   | Build `/prd` + `prd-reviewer` subagent (PRD phase extracted from legacy product-research skill)                    | 3-4 h  | PRD phase + required reviewer           |
 | 4   | Build `/design` wrapping `code-architect` (conditional skip logic)                                                 | 3-4 h  | Technical design phase                  |
-| 5   | Build `/plan` + `plan-reviewer` subagent (extracted from `/implement` Phase 2; emits DAG)                          | 3-4 h  | Plan phase with dependencies + reviewer |
+| 5   | Build `/plan` + `plan-reviewer` subagent (planning phase extracted from legacy implement skill; emits DAG)         | 3-4 h  | Plan phase with dependencies + reviewer |
 | 6   | Build `/tasks` (plan DAG → Plane Epic + Work Items + relations)                                                    | 3-4 h  | Plane wiring automated                  |
-| 7   | Build `/implement-task` (extracted from `/implement` Phases 3-7)                                                   | 4-6 h  | Atomic implementation skill             |
+| 7   | Build `/implement-task` (atomic implementation phases extracted from legacy implement skill)                       | 4-6 h  | Atomic implementation skill             |
 | 8   | Build `/log-episode` + `/implement-task` finale integration                                                        | 3-4 h  | Episode log foundation (Stage 0)        |
-| 9   | Deprecate `/product-research` and `/implement`                                                                     | 1 h    | Single canonical pipeline               |
+| 9   | Remove the legacy product-research and implement monolithic skills                                                 | 1 h    | Single canonical pipeline               |
 | 10  | (later) Stage 2 of episode log: grep in `/plan` and `/prd`                                                         | 1-2 h  | Episode log earns its keep              |
 | 11  | (later) Stage 3 of episode log: aggregation + `/promote-pattern` skill                                             | 4-6 h  | Promotion gate operational              |
 

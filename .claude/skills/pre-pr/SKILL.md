@@ -10,9 +10,11 @@ argument-hint: "[base-branch]"
 # Pre-PR Pipeline
 
 > **For comprehensive coverage** on medium/large tasks (3+ files, new
-> features, architectural changes), use `/implement` instead. It runs
-> the full pipeline: architect → developer → test-scenario-designer →
-> test-writer → code-reviewer → PR.
+> features, architectural changes), use the pipeline skills
+> (`/research` → `/prd` → `/design` → `/plan` → `/tasks` →
+> `/implement-task` → `/log-episode`). They run architect → developer
+> → test-scenario-designer → test-writer → code-reviewer → PR with
+> proper context isolation.
 >
 > `/pre-pr` is the **fast path** for small changes where you've already
 > written the code and tests yourself and just need quality checks.

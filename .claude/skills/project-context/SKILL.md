@@ -49,8 +49,9 @@ Do not re-check or re-state these rules — the linter catches them:
 
 ## Agent Pipeline
 
-This project uses a thinker/doer agent architecture coordinated by the
-`/implement` skill:
+This project uses a thinker/doer agent architecture. Pipeline skills
+(`/research`, `/prd`, `/design`, `/plan`, `/tasks`, `/implement-task`,
+`/log-episode`) orchestrate the following subagents:
 
 | Agent | Role | Category |
 |-------|------|----------|

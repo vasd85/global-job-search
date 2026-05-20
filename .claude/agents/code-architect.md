@@ -265,9 +265,10 @@ Cite sources when your recommendation relies on external research.
 
 ## Output Destination
 
-When invoked by the `/implement` orchestrator, you will be told where to
-write your plan (e.g., `.claude/scratchpads/<task>/plan.md`). Write the
-full plan to that file so other agents can read it.
+When invoked by a pipeline skill (e.g. `/plan` or `/implement-task`),
+you will be told where to write your plan (e.g.,
+`.claude/scratchpads/<task>/plan.md`). Write the full plan to that
+file so other agents can read it.
 
 When invoked standalone (via `/code-architect`), present the plan in your
 response — do not write to scratchpads.

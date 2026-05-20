@@ -5,11 +5,10 @@ description: >-
   locate it, skim events.jsonl for the tool-call skeleton, drill into
   raw.jsonl for agent reasoning, inspect per-subagent transcripts under
   session-dir/subagents/. Use when the user wants to review, debug, or
-  audit how a past `/product-research`, `/implement`, or any `/<skill>`
-  run behaved — phrasings like "review the last run", "why did the agent
-  do X", "what tools did it call", "what happened on that run", "where
-  did it go wrong", "walk me through the run", "show events.jsonl",
-  "debug the skill".
+  audit how any past `/<skill>` run behaved — phrasings like "review the
+  last run", "why did the agent do X", "what tools did it call", "what
+  happened on that run", "where did it go wrong", "walk me through the
+  run", "show events.jsonl", "debug the skill".
 argument-hint: "<skill name, run dir, or empty for latest>"
 context: fork
 ---

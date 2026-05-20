@@ -178,9 +178,8 @@ at a time, so a single file is safe). Schema:
 - **The PRD itself** — that is `/prd`'s job. This skill ends with a
   research note in scratchpads, not a contract in `docs/product/`.
 - **The pre-PRD approval gate** ("Before I write the PRD, here's the
-  summary…" of `/product-research` Phase 4). That gate now lives in
-  `/prd`. `/research` ends by handing off, not by negotiating final
-  scope.
+  summary…"). That gate now lives in `/prd`. `/research` ends by
+  handing off, not by negotiating final scope.
 - **Concrete implementation proposals** — column names, enum values,
   config keys, library choices. These are downstream-agent territory.
   If something feels load-bearing, file it under `## Open questions`
