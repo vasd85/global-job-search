@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# auto-extract.sh — emit a schema-shaped episode-log JSON draft for one merged PR.
+# auto-extract.sh — emit a schema-shaped episode-log JSON draft for one PR.
 #
 # Replaces the in-context "Step 2 auto-extract" recipe of the /log-episode skill
 # (see .claude/skills/log-episode/SKILL.md). The agent passes the PR url plus the
@@ -14,6 +14,7 @@
 # Sources, per docs/agents/architecture.md § 9.2 / § 9.6:
 #   - gh pr view / gh pr diff   — PR-level facts and diff stats
 #   - git ls-tree at merge SHA  — verifies prd/design/plan doc presence on main
+#     (pre-merge mode: HEAD-tip fallback when mergeCommit is null)
 #   - per-task phase-state.md   — started_at fallback when skill-logger is absent
 #   - .claude/logs/<skill>/<run-dir>/{meta.json,events.jsonl}
 #                                — session_ids, phases_run, durations
@@ -21,11 +22,21 @@
 #                                — reviews.code.{cycles,verdict,critical_findings_addressed}
 #
 # Usage:
-#   auto-extract.sh <pr-url> --epic-code <code> [--feature-slug <slug>]
+#   auto-extract.sh <pr-url> --epic-code <code> [--feature-slug <slug>] \
+#                            [--completed-at <iso-8601>]
+#
+# Modes:
+#   - Standalone (post-merge): --completed-at omitted. PR must be merged
+#     (gh returns non-null mergedAt); completed_at = mergedAt; doc-link
+#     tree = mergeCommit.oid.
+#   - Pre-merge (finale): --completed-at supplied. PR may still be open
+#     (mergedAt may be null); completed_at = flag value; doc-link tree
+#     falls back to HEAD when mergeCommit is null.
 #
 # Exit codes:
 #   0 — JSON emitted on stdout
-#   1 — hard failure (missing args, gh failure, unmerged PR, unparseable branch)
+#   1 — hard failure (missing args, gh failure, unparseable branch, or
+#       PR is unmerged AND --completed-at was not supplied)
 
 set -euo pipefail
 
@@ -102,6 +113,7 @@ yaml_frontmatter_value() {
 pr_url=""
 epic_code=""
 feature_slug_arg=""
+completed_at_arg=""
 
 # First positional = pr-url; remaining flags consumed by name.
 if [[ $# -lt 1 || "$1" == --* ]]; then
@@ -120,6 +132,11 @@ while [[ $# -gt 0 ]]; do
     --feature-slug)
       [[ $# -ge 2 ]] || die "--feature-slug requires a value"
       feature_slug_arg="$2"
+      shift 2
+      ;;
+    --completed-at)
+      [[ $# -ge 2 ]] || die "--completed-at requires a value"
+      completed_at_arg="$2"
       shift 2
       ;;
     *)
@@ -144,8 +161,15 @@ if ! pr_json="$(gh pr view "$pr_url" --json url,mergedAt,headRefName,title,body,
 fi
 
 merged_at="$(printf '%s' "$pr_json" | jq -r '.mergedAt // empty')"
-if [[ -z "$merged_at" ]]; then
-  die "auto-extract.sh: PR '$pr_url' is not merged (mergedAt is null)"
+# Pre-merge (finale) mode: --completed-at takes precedence over mergedAt and
+# allows the PR to still be open. Standalone mode (no --completed-at) keeps the
+# original guarantee that the PR is already merged.
+if [[ -n "$completed_at_arg" ]]; then
+  completed_at="$completed_at_arg"
+elif [[ -n "$merged_at" ]]; then
+  completed_at="$merged_at"
+else
+  die "auto-extract.sh: PR '$pr_url' is not merged (mergedAt is null); pass --completed-at <iso> for pre-merge mode"
 fi
 
 branch="$(printf '%s' "$pr_json" | jq -r '.headRefName // empty')"
@@ -194,25 +218,34 @@ fi
 
 # ---------- episode_id ------------------------------------------------------
 
-# YYYY-MM-DD comes from the first 10 chars of the ISO-8601 mergedAt string —
-# UTC by definition (gh emits Z-suffixed timestamps).
-merged_date="${merged_at:0:10}"
+# YYYY-MM-DD comes from the first 10 chars of the ISO-8601 completed_at string —
+# UTC by definition (gh emits Z-suffixed timestamps; --completed-at must too).
+completed_date="${completed_at:0:10}"
 if [[ -n "$feature_slug" ]]; then
-  episode_id="${merged_date}-${feature_slug}-${task_id}"
+  episode_id="${completed_date}-${feature_slug}-${task_id}"
 else
-  episode_id="${merged_date}-${task_id}"
+  episode_id="${completed_date}-${task_id}"
 fi
 
 # ---------- prd / design / plan link verification at merge SHA --------------
 
-# null when feature_slug is empty OR the file isn't present in the merge tree.
+# Tree to inspect: mergeCommit if present, else HEAD when --completed-at was
+# supplied (pre-merge mode — feature branch tip carries the docs that will land
+# in the squash-merge). Standalone mode preserves the defensive empty when
+# mergeCommit is null (a botched mergeCommit must not silently read HEAD).
+doc_tree_ref="$merge_commit"
+if [[ -z "$doc_tree_ref" && -n "$completed_at_arg" ]]; then
+  doc_tree_ref="HEAD"
+fi
+
+# null when feature_slug is empty OR the file isn't present in the tree ref.
 verify_doc_at_merge() {
   local rel_path="$1"
-  if [[ -z "$feature_slug" || -z "$merge_commit" ]]; then
+  if [[ -z "$feature_slug" || -z "$doc_tree_ref" ]]; then
     return 1
   fi
   local hit
-  hit="$(git ls-tree --name-only "$merge_commit" -- "$rel_path" 2>/dev/null || true)"
+  hit="$(git ls-tree --name-only "$doc_tree_ref" -- "$rel_path" 2>/dev/null || true)"
   [[ -n "$hit" ]]
 }
 
@@ -267,10 +300,10 @@ if [[ "$started_at_json" != "null" ]]; then
       meta_skill="$(jq -r '.skill // empty' "$meta" 2>/dev/null || true)"
       [[ -z "$meta_repo" || -z "$meta_started" || -z "$meta_session" || -z "$meta_skill" ]] && continue
       [[ "$meta_repo" != "$repo_root" ]] && continue
-      # Window check: started_at <= meta_started <= merged_at (lexicographic
+      # Window check: started_at <= meta_started <= completed_at (lexicographic
       # ISO-8601 compare is safe — both ends are Z-suffixed UTC).
       if [[ "$meta_started" < "$started_at" ]]; then continue; fi
-      if [[ "$meta_started" > "$merged_at" ]]; then continue; fi
+      if [[ "$meta_started" > "$completed_at" ]]; then continue; fi
       run_dir="$(dirname "$meta")"
       matched_runs+="${meta_session}\t${meta_skill}\t${run_dir}\n"
     done
@@ -420,7 +453,7 @@ jq -n \
   --arg task_type "$task_type" \
   --arg status "merged" \
   --argjson started_at "$started_at_json" \
-  --arg completed_at "$merged_at" \
+  --arg completed_at "$completed_at" \
   --arg branch "$branch" \
   --arg pr_url "$canonical_pr_url" \
   --arg plane_work_item_id "$task_id" \

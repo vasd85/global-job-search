@@ -77,16 +77,16 @@ auto-extracted field per `docs/episodes/schema.json`:
 
 ```bash
 scripts/episode/auto-extract.sh <pr-url> \
-  --epic-code <plane_epic_id> \
+  --epic-code <plane_epic_id> --completed-at <iso> \
   [--feature-slug <slug>] > /tmp/episode-<wi-code>.json
 ```
 
-`<plane_epic_id>` comes from step 1 (script never talks to Plane).
-Helper populates auto-extracted fields and emits human-curated fields
-(`decisions`, `blockers`, `dead_ends`, `learnings`, `tags`,
-`parallel_with`) as empty arrays for step 3. On non-zero exit, abort
-and surface stderr. When the helper cannot derive `feature_slug`, it
-emits `""`; the user must supply it in Step 3 or validation fails.
+`<plane_epic_id>` comes from step 1. `--completed-at <now-iso>` required
+in finale (PR open); omit in standalone (helper reads `mergedAt`). Helper
+emits human-curated fields (`decisions`, `blockers`, `dead_ends`,
+`learnings`, `tags`, `parallel_with`) as empty arrays for step 3; on
+non-zero exit abort and surface stderr. Empty `feature_slug` falls back
+to `""`; user supplies in step 3 or validation fails.
 
 ### 3. Draft reasoning trace
 
