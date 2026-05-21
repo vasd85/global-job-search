@@ -139,7 +139,7 @@ export const EpisodeSchema = z
       .string()
       .min(1)
       .describe(
-        "Kebab-case slug for the parent feature; matches docs/product/<slug>.md when present.",
+        "Kebab-case slug for the parent feature; matches docs/product/<slug>.md when present. Reserved literal value 'adhoc' marks ad-hoc Work Items not created via /tasks (no PRD/design/plan trail); in that case prd_link/design_link/plan_link are also null.",
       ),
     task_id: z
       .string()
@@ -179,7 +179,9 @@ export const EpisodeSchema = z
     plane_epic_id: z
       .string()
       .min(1)
-      .describe("Plane Epic code that this Work Item rolls up to."),
+      .describe(
+        "Plane Epic code that this Work Item rolls up to. Reserved literal value 'adhoc' is used for ad-hoc Work Items with no parent Epic (paired with feature_slug = 'adhoc').",
+      ),
     prd_link: z
       .string()
       .nullable()

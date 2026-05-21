@@ -28,8 +28,9 @@ never write Plane state.
 
 ## Inputs and outputs
 
-**Input:** `<wi-code>` like `GJS-12` — a WI created by `/tasks`
-(carries `external_id` like `gjs:wi:<feature-slug>:<chunk-id>`).
+**Input:** `<wi-code>` like `GJS-12`. Mode by WI `external_id`:
+`gjs:wi:<slug>:<chunk>` = **planned** (from `/tasks`); `null` =
+**ad-hoc** (standalone, no plan trail, no parent Epic).
 **Contracts loaded at startup** (cited below by section, not paraphrased):
 
 - `docs/agents/plane/universal.md` — workspace facts, slug rule,
@@ -52,11 +53,10 @@ call `mcp__plane__retrieve_work_item_by_identifier(project_identifier="GJS",
 issue_identifier=<n>, expand="state,labels")` per
 `implement-task.md § 5`. Read both contract files in full. Derive
 `<wi-code>` = `GJS-<n>`, `<wi-name>` = title, `<wi-state>` from
-expanded state. Parse `external_id` matching
-`gjs:wi:<feature-slug>:<chunk-id>` → `<feature-slug>`,
-`<chunk-id>`. Null or non-matching `external_id` → abort: `WI
-<code> was not created by /tasks (no agent-system external_id) —
-manual workflow not supported`.
+expanded state. Resolve mode from `external_id`:
+`gjs:wi:<feature-slug>:<chunk-id>` → **planned**; `null` →
+**ad-hoc** with `<feature-slug>=adhoc`, `<chunk-id>=null`. Other
+non-null string → abort `WI <code> has foreign external_id <value>`.
 
 **Blocker check** per `implement-task.md § 5`. Call
 `mcp__plane__list_work_item_relations(work_item_id=<id>)`; filter
@@ -93,10 +93,10 @@ Then rewrite the per-task `phase-state.md` frontmatter (see Phase tracking) — 
 
 ### 1. Code (`developer`)
 
-Spawn `developer` in fresh context with WI name, description, files
-(from the description's "Files (expected)" section), and acceptance
-criteria as plain text per `universal.md § 6`. Subagent commits on
-the current branch; no Plane access.
+Spawn `developer` in fresh context with WI name, full description,
+acceptance criteria, and "Files (expected)" if present (planned WIs;
+ad-hoc WIs let `developer` derive scope). All plain text per
+`universal.md § 6`. Subagent commits on the branch; no Plane access.
 
 ### 2. Test design (`test-scenario-designer`)
 
@@ -195,6 +195,6 @@ title/body: always English** — read by downstream agents.
 
 ## When NOT to use this skill
 
-- WI not created by `/tasks` (no `gjs:wi:...` `external_id`) → implement directly.
 - Multi-PR scope → split via `/plan` rerun + `/tasks` rerun first.
-- Ad-hoc fix with no Plane WI → branch and PR per `CLAUDE.md § Git`.
+- Ad-hoc fix with no Plane WI at all → branch and PR per `CLAUDE.md § Git`.
+- WI has a non-null, non-`gjs:wi:...` `external_id` → foreign system; reconcile manually.

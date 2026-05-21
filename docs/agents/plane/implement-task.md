@@ -97,11 +97,19 @@ The Step 6 PR-opened comment is the canonical PR-URL artifact.
 `/implement-task` step 0 reads:
 
 - **Work Item**: `id`, `name`, `state`, `description_html`,
-  `external_id`, `parent`, `labels`, `sequence_id`
+  `external_id`, `parent`, `labels`, `sequence_id`. `external_id`
+  may be `null` — ad-hoc WIs (not created by `/tasks`) are
+  accepted; only a non-null, non-`gjs:wi:...` value aborts as a
+  foreign-system marker.
 - **Work Item relations** — `blocked_by` only — verifies all blockers
   are in `Done` state; aborts with `"WI <code> is blocked by <list>"`
   if any blocker is open
 - Does NOT read: `comments`, `links`, work-item history, attachments
+
+**Ad-hoc WIs.** `external_id == null` → `<feature-slug>=adhoc`,
+`<chunk-id>=null`. `parent` is also typically `null`. The WI
+description may lack a "Files (expected)" section — the
+`developer` subagent then derives scope from the description body.
 
 **Response shaping.** Pass `fields=` and `expand=` parameters to MCP
 `retrieve_work_item` and `list_work_item_relations` to keep payloads

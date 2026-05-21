@@ -79,7 +79,7 @@ neither is reduced to "external" or "read-only".
 | Implementation plans               | git       | `docs/plans/<slug>.md`                              | one per feature, derived from PRD + design |
 | Architecture Decision Records      | git       | `docs/adr/<NNNN>-<slug>.md`                         | append-only, status moves only             |
 | This architecture document         | git       | `docs/agents/architecture.md`                       | edited as the system evolves               |
-| Plane work items + comments        | Plane     | workspace `gjs` via `mcp__plane__*`                 | created by `/tasks`; transitioned by `/implement-task` and `/log-episode` per § 3 |
+| Plane work items + comments        | Plane     | workspace `gjs` via `mcp__plane__*`                 | created by `/tasks` (planned) or manually (ad-hoc); transitioned by `/implement-task` and `/log-episode` per § 3 |
 
 
 The three feature-specific document types — PRD, design, plan — answer

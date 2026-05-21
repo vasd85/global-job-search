@@ -53,7 +53,10 @@ Prefix rule lives in `universal.md` § 5.
 `/log-episode` reads:
 
 - **Work Item**: `id`, `name`, `state`, `parent`, `external_id`,
-  `labels`, `created_at`. Plane does not expose a flat
+  `labels`, `created_at`. `external_id` and `parent` may both be
+  `null` for ad-hoc WIs (no `/tasks` plan trail) — in that case
+  `feature_slug` and `plane_epic_id` default to the literal
+  sentinel `"adhoc"`. Plane does not expose a flat
   `completed_at` field — in finale mode, `completed_at` is set to
   `now()` (pre-merge timestamp; see `architecture.md § 9`); in
   standalone mode it comes from `gh pr view <pr-url> --json mergedAt`.
