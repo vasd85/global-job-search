@@ -478,6 +478,149 @@ describe("auto-extract.sh — gh pr view + merge state", () => {
   });
 });
 
+describe("auto-extract.sh — --completed-at / pre-merge mode", () => {
+  const COMPLETED_AT = "2026-05-21T10:56:35Z";
+
+  // S39: --completed-at value-less
+  test("exits 1 when --completed-at has no value", () => {
+    const { repo, cleanup } = makeTmpRepo();
+    try {
+      const { status, stderr } = runScript(
+        repo,
+        [PR_URL, "--epic-code", "GJS-40", "--completed-at"],
+        {},
+      );
+      expect(status).toBe(1);
+      expect(stderr).toMatch(/--completed-at requires a value/);
+    } finally {
+      cleanup();
+    }
+  });
+
+  // S40: --completed-at allows mergedAt: null (pre-merge finale)
+  test("accepts --completed-at when mergedAt is null and uses it for completed_at + episode_id", () => {
+    const { repo, cleanup } = makeTmpRepo();
+    try {
+      const { status, stdout, stderr } = runScript(
+        repo,
+        [
+          PR_URL,
+          "--epic-code",
+          "GJS-40",
+          "--feature-slug",
+          FEATURE_SLUG,
+          "--completed-at",
+          COMPLETED_AT,
+        ],
+        {
+          view: canonicalView({ mergedAt: null, mergeCommit: null }),
+          diffNameOnly: "",
+          diffFull: "",
+        },
+      );
+      expect(status).toBe(0);
+      expect(stderr).toBe("");
+      const out = parseJson(stdout);
+      expect(out.completed_at).toBe(COMPLETED_AT);
+      expect(out.episode_id).toBe(
+        `2026-05-21-${FEATURE_SLUG}-${TASK_ID}`,
+      );
+    } finally {
+      cleanup();
+    }
+  });
+
+  // S41: HEAD-fallback for prd/design/plan when mergeCommit is null
+  test("falls back to HEAD for doc-link verification when mergeCommit is null in pre-merge mode", () => {
+    const { repo, cleanup } = makeTmpRepo();
+    try {
+      // Commit all three docs to HEAD. mergeCommit is null (PR not yet
+      // merged), so the script must read git ls-tree HEAD instead.
+      commitFiles(repo, {
+        [`docs/product/${FEATURE_SLUG}.md`]: "# product\n",
+        [`docs/designs/${FEATURE_SLUG}.md`]: "# designs\n",
+        [`docs/plans/${FEATURE_SLUG}.md`]: "# plans\n",
+      });
+      const { status, stdout } = runScript(
+        repo,
+        [
+          PR_URL,
+          "--epic-code",
+          "GJS-40",
+          "--feature-slug",
+          FEATURE_SLUG,
+          "--completed-at",
+          COMPLETED_AT,
+        ],
+        {
+          view: canonicalView({ mergedAt: null, mergeCommit: null }),
+          diffNameOnly: "",
+          diffFull: "",
+        },
+      );
+      expect(status).toBe(0);
+      const out = parseJson(stdout);
+      expect(out.prd_link).toBe(`docs/product/${FEATURE_SLUG}.md`);
+      expect(out.design_link).toBe(`docs/designs/${FEATURE_SLUG}.md`);
+      expect(out.plan_link).toBe(`docs/plans/${FEATURE_SLUG}.md`);
+    } finally {
+      cleanup();
+    }
+  });
+
+  // S42: --completed-at takes precedence even when PR is merged
+  test("uses --completed-at over mergedAt when both are present", () => {
+    const { repo, cleanup } = makeTmpRepo();
+    try {
+      const { status, stdout } = runScript(
+        repo,
+        [
+          PR_URL,
+          "--epic-code",
+          "GJS-40",
+          "--feature-slug",
+          FEATURE_SLUG,
+          "--completed-at",
+          COMPLETED_AT,
+        ],
+        {
+          // mergedAt is non-null; flag should still win.
+          view: canonicalView(),
+          diffNameOnly: "",
+          diffFull: "",
+        },
+      );
+      expect(status).toBe(0);
+      const out = parseJson(stdout);
+      expect(out.completed_at).toBe(COMPLETED_AT);
+      expect(out.completed_at).not.toBe(MERGED_AT);
+      expect(out.episode_id).toBe(
+        `2026-05-21-${FEATURE_SLUG}-${TASK_ID}`,
+      );
+    } finally {
+      cleanup();
+    }
+  });
+
+  // S43: original S6 still passes — mergedAt null + no --completed-at = die
+  test("preserves original behaviour: exits 1 when mergedAt null AND --completed-at absent", () => {
+    const { repo, cleanup } = makeTmpRepo();
+    try {
+      const { status, stderr } = runScript(
+        repo,
+        [PR_URL, "--epic-code", "GJS-40"],
+        { view: canonicalView({ mergedAt: null }) },
+      );
+      expect(status).toBe(1);
+      expect(stderr).toMatch(/PR '.+' is not merged \(mergedAt is null\)/);
+      // The hint pointing to the new flag is also surfaced.
+      expect(stderr).toMatch(/--completed-at <iso> for pre-merge mode/);
+    } finally {
+      cleanup();
+    }
+  });
+});
+
 describe("auto-extract.sh — branch and title parsing", () => {
   // S8: allowed type prefixes (matrix)
   test.each<[string, string]>([

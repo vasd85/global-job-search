@@ -171,7 +171,7 @@ intent.
 | Work Item created from plan DAG      | `/tasks`                 | initial state (Plane default: Backlog) | none                                          |
 | `/implement-task <wi-code>` invoked  | `/implement-task` step 0 | → `In Progress`                        | "Implementation started on branch `<branch>`" |
 | `gh pr create` succeeds              | `/implement-task` step 6 | → `In Review`                          | "PR opened: `<pr-url>`"                       |
-| PR merged into `main`                | `/log-episode <pr-url>`  | → `Done`                               | "Merged: `<pr-url>` (commit `<sha>`)"         |
+| `/log-episode` finale completes append + `gh pr merge` | `/log-episode` | → `Done`                | "Merged: `<pr-url>` (commit `<sha>`)"         |
 | Plan rerun removes chunk             | `/tasks` reconcile       | → `Cancelled`                          | "Chunk removed from plan in `<commit-sha>`"   |
 | Feature cancelled / Work Item killed | user (Plane UI)          | → `Cancelled`                          | manual                                        |
 | Backlog grooming (re-priority, etc.) | user (Plane UI)          | within Plane workflow                  | manual                                        |
@@ -283,10 +283,14 @@ parallel):
 
 
 | #   | Phase     | Skill             | Input        | Output                                    | Gate                     | Required reviewer |
-| --- | --------- | ----------------- | ------------ | ----------------------------------------- | ------------------------ | ----------------- |
+| --- | --------- | ----------------- | ----------- | ----------------------------------------- | ------------------------ | ----------------- |
 | 6   | Implement | `/implement-task` | Work Item id | branch + PR + tests                       | PR-merge + reviewer pass | **code-reviewer** |
-| 7   | Episode   | `/log-episode`    | PR url       | append to `docs/episodes/<YYYY-MM>.jsonl` | none (manual approval)   | none              |
+| 7   | Episode   | `/log-episode`    | (none in finale; `<pr-url>` in standalone) | append to `docs/episodes/<YYYY-MM>.jsonl` on feature branch + commit + push + `gh pr merge --squash --delete-branch` + Plane `Done` | user approval before append | none |
 
+
+The episode log entry ships in the same PR as the implementation;
+`/log-episode`'s finale mode performs the merge after user CLI
+confirmation, so one PR carries code + tests + episode.
 
 **Two distinct levels of parallelism.** The architecture distinguishes
 parallelism *within* a Work Item from parallelism *across* Work Items.
@@ -354,10 +358,12 @@ post-merge step. `/log-episode` may surface a reminder; the cleanup
 policy under multiple concurrent sessions is the open question
 specifically about parallel worktrees — see § 13.
 
-**Episode log timing.** `/log-episode` runs after PR merge. It can be
-invoked as the finale of a `/implement-task` session that survived
-through merge, or standalone as `/log-episode <pr-url>` if the merge
-happened later or in a different session.
+**Episode log timing.** `/log-episode` runs as the finale of the
+same `/implement-task` session — invoked after the user confirms the
+PR is ready, it appends the entry on the feature branch and then
+performs the merge itself. Standalone `/log-episode <pr-url>` is an
+emergency-only fallback for old PRs already merged externally (e.g.,
+from a different session or another machine).
 
 ### 4.3 Standalone (periodic, manual)
 
@@ -469,6 +475,16 @@ scenarios are a spec for tests, and the writer implements the spec.
 **Fix cycle limits.** Step 5 loops back to step 4 (review) up to
 **2 cycles**. After 2 unresolved review cycles, the skill flags the
 user with the remaining findings and pauses for direction.
+
+**Finale handoff.** Step 6 still ends at PR-open: branch pushed, PR
+opened, Plane `In Review`, phase-state `complete`. The merge happens
+in `/log-episode`. When the user is ready to merge, they run
+`/log-episode` (no argument); the skill appends the episode entry on
+the feature branch, pushes, performs `gh pr merge --squash
+--delete-branch`, transitions Plane to `Done`, and leaves the user
+back on `main`. If the user defers, they may invoke
+`/log-episode <pr-url>` in a later session (standalone,
+emergency-only fallback).
 
 ### 6.2 Other skills
 
@@ -597,6 +613,12 @@ It serves two distinct purposes:
 It is **not** a memory for retrieval-augmented generation. Reads happen
 explicitly during `/research`, `/prd` and `/plan` via grep, and only
 when the calling skill decides past episodes are relevant.
+
+**`completed_at` semantics.** In finale mode, `completed_at` is the
+pre-merge timestamp captured a few seconds before `gh pr merge`
+returns — imprecision typically < 10 s, accepted by design. This is
+a documentation-only shift: no schema change. Standalone mode still
+populates `completed_at` from `gh pr view --json mergedAt`.
 
 ### 9.1 Schema
 
