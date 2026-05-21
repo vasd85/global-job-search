@@ -20,9 +20,9 @@ covers only the `Done` transition.
 
 ## 1. Done transition
 
-| Transition       | From          | To       | Trigger                                |
-|------------------|---------------|----------|----------------------------------------|
-| PR merged        | `In Review`   | `Done`   | `/log-episode` (after `gh pr merge`)   |
+| Transition       | From          | To       | Trigger                                                    |
+|------------------|---------------|----------|------------------------------------------------------------|
+| PR merged        | `In Review`   | `Done`   | `/log-episode` finale: after `gh pr merge` succeeds within the finale flow (standalone mode: after external merge) |
 
 **Transition guard:**
 
@@ -54,14 +54,18 @@ Prefix rule lives in `universal.md` § 5.
 
 - **Work Item**: `id`, `name`, `state`, `parent`, `external_id`,
   `labels`, `created_at`. Plane does not expose a flat
-  `completed_at` field — the merge timestamp comes from
-  `gh pr view <pr-url> --json mergedAt` (git is canonical for
-  completion time per `architecture.md § 9.6`).
+  `completed_at` field — in finale mode, `completed_at` is set to
+  `now()` (pre-merge timestamp; see `architecture.md § 9`); in
+  standalone mode it comes from `gh pr view <pr-url> --json mergedAt`.
+- **Merge commit SHA**: `mergeCommit.oid` is read via
+  `gh pr view <pr-url> --json mergeCommit` **after** `gh pr merge`
+  returns successfully (finale), or as-today directly from the
+  already-merged PR (standalone).
 - **Work Item comments**: only those with skill-prefix (filtered by
   text-prefix match), used for cross-checking timing in the episode
   log auto-extracted fields
 - Does NOT read: relations (DAG is in plan, not derived from Plane);
-  Plane state-history (use `gh pr view` for the merge timestamp)
+  Plane state-history.
 
 **Response shaping.** Pass `fields=` and `expand=` parameters to MCP
 calls to keep payloads small.
@@ -74,6 +78,7 @@ notification policy lives in `universal.md` § 7.
 | Operation                       | On failure                                                                                                        |
 |---------------------------------|-------------------------------------------------------------------------------------------------------------------|
 | Read Work Item / comments       | Continue with partial data; missing fields filled with `null` in the episode entry; warning surfaced              |
+| `gh pr merge` (finale)          | Episode commit remains on the feature branch; PR stays open; Plane stays `In Review`; **no forced Done**; user resolves the conflict / failing check / branch protection and may re-invoke `/log-episode` (idempotent — existing JSONL entry detected by `pr_url` and re-append skipped) |
 | State update to `Done`          | Episode log entry **still written** (git is canonical); drift logged; user notified                               |
 | Comment posting                 | Continue (comment is convenience)                                                                                 |
 

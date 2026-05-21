@@ -89,6 +89,9 @@ overwrite mismatched states.
 | Step 6 (PR opened)                      | `[implement-task step 6] PR opened: <pr-url>`                                                             |
 | MCP failure (graceful, recoverable)     | `[implement-task] WARN: <op> failed (<error>); state may drift — manual fix or skill rerun required`      |
 
+The Step 6 PR-opened comment is the canonical PR-URL artifact.
+`/log-episode` finale runs after this step and performs the merge.
+
 ## 5. Read contract
 
 `/implement-task` step 0 reads:

@@ -145,12 +145,12 @@ After the PR opens:
 `mcp__plane__update_work_item(state=<In Review id>)`, then
 `mcp__plane__create_work_item_comment` per `implement-task.md § 4`
 step-6: `[implement-task step 6] PR opened: <pr-url>`. Update
-`phase-state.md`: `status: complete`,
-`ended_at: <now ISO 8601 UTC>`. Tell the user the PR URL.
-**Finale handoff:** if the user merges the PR in this same session,
-invoke `/log-episode` (no argument — finale mode); otherwise the user
-runs `/log-episode <pr-url>` later in a fresh session (standalone mode).
-`/log-episode` is the only sanctioned auto-invocation.
+`phase-state.md`: `status: complete`, `ended_at: <now ISO 8601 UTC>`.
+Tell the user the PR URL. **Finale handoff:** when ready to merge,
+run `/log-episode` (no arg) — it appends the episode entry on this
+branch, pushes, runs `gh pr merge`, transitions the WI to `Done`,
+and leaves you back on `main`. If done for today, run
+`/log-episode <pr-url>` next session (standalone, emergency-only).
 
 ## Phase tracking
 
@@ -183,9 +183,9 @@ via the failing MCP call's error pointing to `bootstrap.md` per `universal.md §
 ## What stays out
 
 - **WI / label / relation creation, orphan cancellation** — `/tasks` owns the Plane mirror.
-- **`Done` transition and episode log** — `/log-episode` runs after PR merge.
+- **`Done` transition, `gh pr merge`, and episode log** — `/log-episode` finale runs after step 6 and owns these.
 - **PRD / design / plan editing** — re-run the planning skills on a new branch.
-- **`git worktree add` and merging the PR** — user creates worktrees; skill ends at `In Review`.
+- **`git worktree add`** — user creates worktrees; skill ends at `In Review` (merge is `/log-episode`'s job).
 - **`--no-verify`** or other pre-pr-checks bypass — fix the breakage; never skip the gate.
 
 ## Language
