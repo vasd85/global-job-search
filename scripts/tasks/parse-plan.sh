@@ -28,7 +28,7 @@
 #
 #   ```yaml
 #   id: <id>
-#   depends_on: [<other-id>, ...]   # or []
+#   depends_on: [<other-id>, ...]   # or [], or bare scalar `depends_on: <id>`
 #   labels:
 #     - type:<feat|fix|refactor|chore|docs|test>
 #     - feature:<feature-slug>
@@ -87,8 +87,8 @@ if [[ $# -ne 1 ]]; then
 fi
 
 feature_slug="$1"
-if [[ -z "$feature_slug" || "$feature_slug" =~ [[:space:]] ]]; then
-  die 1 "parse-plan.sh: <feature-slug> must be non-empty and contain no whitespace"
+if [[ ! "$feature_slug" =~ ^[A-Za-z0-9_-]+$ ]]; then
+  die 1 "parse-plan.sh: <feature-slug> must be non-empty; only [A-Za-z0-9_-] allowed"
 fi
 
 # Anchor at repo root so relative paths resolve regardless of caller cwd.

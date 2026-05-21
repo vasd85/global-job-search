@@ -433,6 +433,27 @@ describe("parse-plan.sh — happy paths", () => {
     expect(out.chunks[1]!.depends_on).toEqual(["first"]);
   });
 
+  // S35: `depends_on: first` bare scalar form (no brackets, no dash-list).
+  // Forward-compat with /plan emitting the scalar shorthand for a single dep.
+  test("S35 parses depends_on: <id> bare scalar form as a one-element array", () => {
+    repo = makeTmpRepo();
+    const plan = synthHappyPlan({
+      chunks: [
+        minimalChunk("first", "F", "scalar-dep"),
+        {
+          ...minimalChunk("second", "S", "scalar-dep"),
+          dependsOnLine: "depends_on: first",
+        },
+      ],
+    });
+    writeFiles(repo, { "docs/plans/scalar-dep.md": plan });
+    const { status, stdout, stderr } = runScript(repo, ["scalar-dep"]);
+    expect(status).toBe(0);
+    expect(stderr).toBe("");
+    const out = parseJson(stdout);
+    expect(out.chunks[1]!.depends_on).toEqual(["first"]);
+  });
+
   // S5: multi-line dash list form for depends_on, with blank lines stress.
   test("S5 parses multi-line dash-list depends_on with blank-line spacing", () => {
     repo = makeTmpRepo();
