@@ -18,7 +18,7 @@
     "feature_slug": {
       "type": "string",
       "minLength": 1,
-      "description": "Kebab-case slug for the parent feature; matches docs/product/<slug>.md when present."
+      "description": "Kebab-case slug for the parent feature; matches docs/product/<slug>.md when present. Reserved literal value 'adhoc' marks ad-hoc Work Items not created via /tasks (no PRD/design/plan trail); in that case prd_link/design_link/plan_link are also null."
     },
     "task_id": {
       "type": "string",
@@ -74,7 +74,7 @@
     "plane_epic_id": {
       "type": "string",
       "minLength": 1,
-      "description": "Plane Epic code that this Work Item rolls up to."
+      "description": "Plane Epic code that this Work Item rolls up to. Reserved literal value 'adhoc' is used for ad-hoc Work Items with no parent Epic (paired with feature_slug = 'adhoc')."
     },
     "prd_link": {
       "anyOf": [

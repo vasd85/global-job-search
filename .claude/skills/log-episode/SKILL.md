@@ -39,6 +39,7 @@ argument presence AND scratchpad existence at
 `.claude/scratchpads/<feature-slug>/tasks/<wi-code>/`. In standalone
 without scratchpad, schema-nullable fields fall back to `null` / `[]` / `{}`;
 `feature_slug` and reasoning trace are user-typed; no phase-state write.
+**Ad-hoc WIs** (`external_id == null`): `feature_slug` and `plane_epic_id` = literal `adhoc`; `*_link` fields = `null`.
 
 **Contracts loaded at startup** (cited below by section, not paraphrased):
 
@@ -62,7 +63,8 @@ from argument (standalone) or `gh pr view --json url` (finale, on
 current feature branch). From the PR derive: `<wi-code>` by parsing
 `headRefName` against `<type>/<short>-GJS-<n>` (fallback: PR title);
 `<feature-slug>` from the per-task scratchpad parent dir; `<plane_epic_id>`
-from the WI's `parent` via `mcp__plane__retrieve_work_item_by_identifier`.
+from the WI's `parent` via `mcp__plane__retrieve_work_item_by_identifier`
+(both default to literal `adhoc` for ad-hoc WIs).
 In finale, `completed_at = now` (ISO 8601 UTC) — pre-merge timestamp
 captured seconds before `gh pr merge` returns; imprecision (< 10 s)
 accepted by design. Standalone uses `gh pr view --json mergedAt`. In
@@ -197,4 +199,4 @@ Plane comments: always English** — read by downstream agents.
 ## When NOT to use this skill
 
 - PR not yet opened → `/implement-task` opens the PR; run this only after step 6 completes.
-- WI not created by `/tasks` (no `gjs:wi:...` `external_id`) → no episode entry needed.
+- WI has a non-null, non-`gjs:wi:...` `external_id` → foreign system; reconcile manually.
