@@ -49,10 +49,9 @@ without scratchpad, schema-nullable fields fall back to `null` / `[]` / `{}`;
   comment templates (§ 2), read contract (§ 3), failure recovery (§ 4).
 
 **Output:** one JSON line appended to `docs/episodes/<YYYY-MM>.jsonl`;
-in finale, also commit + push + `gh pr merge --squash --delete-branch`
-+ return to `main`. WI in `Done` with merge comment per `log-episode.md § 2`.
-Per-task `phase-state.md` written in finale only; `plane-failures.jsonl`
-appended on MCP failure per `universal.md § 7`.
+in finale, also commit + push + `gh pr merge --merge --delete-branch`
++ return to `main`; WI `Done` per `log-episode.md § 2`;
+`plane-failures.jsonl` appended on MCP failure per `universal.md § 7`.
 
 ## The flow
 
@@ -137,7 +136,7 @@ EOF
 ```
 
 (e) `git push`.
-(f) `gh pr merge <pr-url> --squash --delete-branch`.
+(f) `gh pr merge <pr-url> --merge --delete-branch`.
 (g) `gh pr view <pr-url> --json mergeCommit` — extract `mergeCommit.oid` as `<sha>`.
 (h) **Plane `Done`.** Resolve id per `universal.md § 4`; apply guard
 per `log-episode.md § 1`; call `mcp__plane__update_work_item(state=<Done id>)`.
@@ -157,11 +156,10 @@ any drift to `plane-failures.jsonl`.
 
 ## Phase tracking
 
-Writes per-task `.claude/scratchpads/<feature-slug>/tasks/<wi-code>/phase-state.md`
-**in finale only**, schema at `docs/agents/phase-state-schema.md`.
-`phase: log-episode`, `next_phase: null`; `started_at` in step 1,
-`ended_at` at step 5(l); `status: in-progress` → `complete` on
-success, `failed` on user abort or append-write failure; `cycles: 0`.
+Finale-only: writes per-task `phase-state.md` (schema:
+`docs/agents/phase-state-schema.md`) with `phase: log-episode`,
+`next_phase: null`, `cycles: 0`, `started_at` set in step 1, `ended_at`
+in step 5(l); `status` `in-progress` → `complete` (`failed` on abort).
 
 ## Failure handling
 

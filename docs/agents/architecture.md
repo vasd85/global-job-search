@@ -188,6 +188,8 @@ auth), the skill must **not** silently continue — it logs the failure
 to scratchpad and reports to the user. Status drift between git and
 Plane is acceptable temporarily; silent drift is not.
 
+**Merge-strategy rationale.** See [ADR-0012](../adr/0012-merge-strategy.md).
+
 ### Operational conventions
 
 The operational rules for working with the project's Plane workspace
@@ -285,7 +287,7 @@ parallel):
 | #   | Phase     | Skill             | Input        | Output                                    | Gate                     | Required reviewer |
 | --- | --------- | ----------------- | ----------- | ----------------------------------------- | ------------------------ | ----------------- |
 | 6   | Implement | `/implement-task` | Work Item id | branch + PR + tests                       | PR-merge + reviewer pass | **code-reviewer** |
-| 7   | Episode   | `/log-episode`    | (none in finale; `<pr-url>` in standalone) | append to `docs/episodes/<YYYY-MM>.jsonl` on feature branch + commit + push + `gh pr merge --squash --delete-branch` + Plane `Done` | user approval before append | none |
+| 7   | Episode   | `/log-episode`    | (none in finale; `<pr-url>` in standalone) | append to `docs/episodes/<YYYY-MM>.jsonl` on feature branch + commit + push + `gh pr merge --merge --delete-branch` + Plane `Done` | user approval before append | none |
 
 
 The episode log entry ships in the same PR as the implementation;
@@ -480,11 +482,10 @@ user with the remaining findings and pauses for direction.
 opened, Plane `In Review`, phase-state `complete`. The merge happens
 in `/log-episode`. When the user is ready to merge, they run
 `/log-episode` (no argument); the skill appends the episode entry on
-the feature branch, pushes, performs `gh pr merge --squash
---delete-branch`, transitions Plane to `Done`, and leaves the user
-back on `main`. If the user defers, they may invoke
-`/log-episode <pr-url>` in a later session (standalone,
-emergency-only fallback).
+the feature branch, pushes, performs `gh pr merge --merge --delete-branch`,
+transitions Plane to `Done`, and leaves the user back on `main`. If
+the user defers, they may invoke `/log-episode <pr-url>` in a later
+session (standalone, emergency-only fallback).
 
 ### 6.2 Other skills
 
