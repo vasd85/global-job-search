@@ -32,15 +32,13 @@ Set via `mcp__plane__update_project_features`:
 | `work_item_types`      | `false`        | Paid feature; built-in Epic type remains usable via generic Work Item endpoints (see note below) |
 | `workflows`            | unchanged      | Not used (skills handle transitions) |
 
-**Epic type id (post-2026-05-26 Cloud release).** Plane converted Epic
-from a separate entity into a built-in Work Item Type. `/tasks` writes
-Epic via generic Work Item endpoints with `type_id` set to the Epic
-type's UUID — `work_item_types: false` does **not** block this path
-(it only gates `*_epic` endpoints, `list_work_item_types`, and custom
-type creation). Capture the Epic type UUID once during bootstrap and
-record it in § 4 (and `universal.md § 1`): retrieve any existing Epic
-Work Item via `mcp__plane__retrieve_work_item_by_identifier` (or read
-the `type_id` of the seed Epic created manually) and copy the
+**Epic type id.** `/tasks` writes Epic via generic Work Item endpoints
+with `type_id` set to the Epic type's UUID — `work_item_types: false`
+does **not** block this path (it only gates `*_epic` endpoints,
+`list_work_item_types`, and custom type creation). Capture the Epic
+type UUID once during bootstrap and record it in § 4 (and
+`universal.md § 1`): retrieve any existing Epic Work Item via
+`mcp__plane__retrieve_work_item_by_identifier` and copy its
 `type_id`. The UUID is stable per project.
 
 

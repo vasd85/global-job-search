@@ -68,10 +68,8 @@ migration later.
 - **Cycle** — time-boxed iteration with start and end dates. Sprints.
 - **Module** — feature-based group with no time box. "Auth", "Billing".
 - **Epic** — a **built-in Work Item Type** with parent/child semantics.
-  As of the 2026-05-26 Cloud release, Epic is no longer a separate
-  first-class entity — it is one of the Work Item Types alongside Bug,
-  Story, Spike, etc. Children attach via the `parent` field on a Work
-  Item, pointing at the Epic-typed Work Item's UUID.
+  Children attach via the `parent` field on a Work Item, pointing at
+  the Epic-typed Work Item's UUID.
 
 Cycles and Modules are orthogonal — one work item, both at once is fine.
 An Epic-typed Work Item is vertical (parent of other Work Items);
@@ -173,23 +171,14 @@ for this integration. Do not search further; flag the gap to the user.
   reflects `main` and may drift from Cloud.
 - Plane has its own query language (**PQL**) for advanced filtering.
   Basic list-and-filter is enough for most agent reads.
-- **Epic → Work Item Type migration (Cloud: 2026-05-26).** Epic is now
-  a built-in Work Item Type. Epic-specific MCP tools
-  (`mcp__plane__create_epic`, `update_epic`, `list_epics`,
-  `retrieve_epic`, `delete_epic`) and
-  `mcp__plane__list_work_item_types` return **HTTP 402 Payment
-  Required** on projects whose `work_item_types` feature flag is
-  `false` — check `mcp__plane__get_project_features` (note: the
-  separate `epics` flag stays `true` but does **not** unlock the
-  Epic-specific endpoints; those are gated by `work_item_types`).
-  Workaround: use the generic Work Item MCP tools with the Epic
-  type's UUID — `mcp__plane__create_work_item` accepts `type_id`,
-  `mcp__plane__list_work_items` accepts a `type_ids` filter, and
-  `mcp__plane__update_work_item` writes state and any other field on
-  an existing Epic. The Epic type UUID is per-project; resolve it
-  once by reading `type_id` from any existing Epic Work Item (e.g.
-  via `mcp__plane__retrieve_work_item_by_identifier`) and cache it
-  as a workspace fact.
+- **Epic is a Work Item Type, gated by `work_item_types`.** When
+  `mcp__plane__get_project_features` reports `work_item_types: false`,
+  the Epic-specific MCP tools (`mcp__plane__*_epic`) and
+  `mcp__plane__list_work_item_types` return **HTTP 402**. Use generic
+  Work Item endpoints instead — `mcp__plane__create_work_item` /
+  `update_work_item` / `list_work_items` accept `type_id` / `type_ids`
+  for the Epic type's UUID. Resolve the UUID once from any existing
+  Epic Work Item's `type_id` and cache it as a workspace fact.
 
 ## Pointers
 

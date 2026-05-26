@@ -94,11 +94,8 @@ filtered by `type_ids = [<epic-type-id>]`. Found →
 `mcp__plane__create_work_item` with the same fields plus
 `type_id = <epic-type-id>`. Cache the Epic id.
 
-The Epic-specific MCP tools (`*_epic`) and
-`mcp__plane__list_work_item_types` return HTTP 402 on projects
-without paid `work_item_types` feature (see `bootstrap.md § 1`).
-Generic Work Item endpoints with `type_id` are the supported path.
-See `plane-integration` skill — Known gotchas — for details.
+Why generic endpoints instead of `*_epic`: `plane-integration` skill,
+Known gotchas.
 
 #### 3.4 Reconcile Work Items
 

@@ -144,14 +144,6 @@ to the Epic Work Item Type — see `universal.md § 1`):
 | `labels`          | `feature:<slug>` only                                |
 | state             | project default (`Backlog`)                          |
 
-**API path.** Since the 2026-05-26 Plane Cloud release, Epic is a
-Work Item Type rather than a separate entity. `/tasks` uses generic
-Work Item endpoints (`mcp__plane__create_work_item`,
-`update_work_item`, `list_work_items` with a `type_ids` filter) —
-the Epic-specific MCP tools (`*_epic`) are gated behind the paid
-`work_item_types` feature flag and return HTTP 402 on this
-project. See `plane-integration` skill, Known gotchas.
-
 **Description template (markdown):**
 
 ```markdown

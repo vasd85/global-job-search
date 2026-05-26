@@ -59,12 +59,7 @@ Bug, Story, Spike, ...) and custom workspace-defined types.
 
 **Epic** is a built-in Work Item Type with **parent/child semantics** —
 an Epic-typed work item acts as a hierarchical parent for the work
-items linked to it via the `parent` field. Before the 2026-05-26 Cloud
-release Epic was a separate first-class entity with its own
-`/epics/` endpoints and a dedicated UI surface; the data model,
-back-links, and `@`-mentions are unchanged, only the surface and the
-API path moved into the generic Work Item endpoints. Existing Epic
-records keep their UUIDs.
+items linked to it via the `parent` field.
 
 Custom Properties are where domain-specific metadata lives — do not
 stuff it into the description.
@@ -86,12 +81,8 @@ What each is NOT for:
 
 Switching after the fact is painful — pick correctly the first time.
 
-**Epic used to live here as a third option** for hierarchical
-parent/child grouping. As of the 2026-05-26 Cloud release, Epic is a
-built-in **Work Item Type** — see Work tier → "Issue Types and custom
-Properties" above. The parent/child semantics are unchanged; only the
-modelling moved (Epic is a Work Item with `type_id` set, not a separate
-entity).
+**Epic** is a Work Item Type, not a grouping entity — see "Issue Types
+and custom Properties" above.
 
 - Cycles: `docs.plane.so/core-concepts/cycles`
 - Modules: `docs.plane.so/core-concepts/modules`
