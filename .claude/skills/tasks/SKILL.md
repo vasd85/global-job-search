@@ -85,11 +85,17 @@ name → id map.
 
 #### 3.3 Reconcile Epic
 
-Look up by `external_source = gjs-tasks-skill` AND
-`external_id = $EPIC.external_id` via `mcp__plane__list_epics`. Found
-→ `mcp__plane__update_epic` with `$EPIC.name`, `$EPIC.description_html`,
-`$EPIC.labels`. Not found → `mcp__plane__create_epic` with the same
-fields. Cache the Epic id.
+Resolve the Epic Work Item Type id from `universal.md § 1` (workspace
+facts). Look up by `external_source = gjs-tasks-skill` AND
+`external_id = $EPIC.external_id` via `mcp__plane__list_work_items`
+filtered by `type_ids = [<epic-type-id>]`. Found →
+`mcp__plane__update_work_item` with `$EPIC.name`,
+`$EPIC.description_html`, `$EPIC.labels`. Not found →
+`mcp__plane__create_work_item` with the same fields plus
+`type_id = <epic-type-id>`. Cache the Epic id.
+
+Why generic endpoints instead of `*_epic`: `plane-integration` skill,
+Known gotchas.
 
 #### 3.4 Reconcile Work Items
 

@@ -42,37 +42,47 @@ Built-in attributes:
 - **Comments** — threaded discussion.
 - **Attachments** — file uploads.
 
-What it's NOT for: hierarchical parent grouping (use Epic), feature
-grouping (use Module), or time-box grouping (use Cycle).
+What it's NOT for: feature grouping (use Module) or time-box grouping
+(use Cycle). For hierarchical parent grouping, create a Work Item of
+type **Epic** (see Issue Types below) and point children's `parent`
+field at the Epic's UUID.
 
 - Doc: `docs.plane.so/core-concepts/issues/overview`,
   `.../issues/properties`, `.../issues/states`, `.../issues/labels`,
   `.../issues/estimates`, `.../issues/time-tracking`
 
 ### Issue Types and custom Properties
-Define custom work-item types (Bug, Story, Spike) with typed custom
-fields (text, number, date, dropdown). **This is where domain-specific
-metadata lives** — do not stuff it into the description.
+
+Plane work items have a **type**, plus optional **custom Properties**
+(text, number, date, dropdown). Types include built-ins (**Epic**,
+Bug, Story, Spike, ...) and custom workspace-defined types.
+
+**Epic** is a built-in Work Item Type with **parent/child semantics** —
+an Epic-typed work item acts as a hierarchical parent for the work
+items linked to it via the `parent` field.
+
+Custom Properties are where domain-specific metadata lives — do not
+stuff it into the description.
 
 - Doc: `docs.plane.so/core-concepts/issues/issue-types`
 
-## Grouping tier — the easy-to-confuse trio
+## Grouping tier — the easy-to-confuse pair
 
-| Entity | Time box? | Hierarchy? | Use for |
-|---|---|---|---|
-| **Cycle** | Yes (start + end dates) | No (membership) | Sprints, iterations |
-| **Module** | No | No (membership) | Feature areas: Auth, Billing |
-| **Epic** | No | Yes (parent → children) | Large body of work split into child items |
+| Entity | Time box? | Use for |
+|---|---|---|
+| **Cycle** | Yes (start + end dates) | Sprints, iterations |
+| **Module** | No | Feature areas: Auth, Billing |
 
 A single work item can be in **a Cycle and a Module simultaneously**.
-An Epic contains other work items (parent/child).
 
 What each is NOT for:
 - A Cycle is not a feature group. Don't put "Auth" in a Cycle.
 - A Module is not a sprint. Modules don't end.
-- An Epic is not a tag. Don't make an Epic for "Frontend".
 
 Switching after the fact is painful — pick correctly the first time.
+
+**Epic** is a Work Item Type, not a grouping entity — see "Issue Types
+and custom Properties" above.
 
 - Cycles: `docs.plane.so/core-concepts/cycles`
 - Modules: `docs.plane.so/core-concepts/modules`
