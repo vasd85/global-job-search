@@ -24,13 +24,24 @@ Set via `mcp__plane__update_project_features`:
 
 | Flag                   | Required value | Reason                               |
 | ---------------------- | -------------: | ------------------------------------ |
-| `epics`                | `true`         | Enables Epic creation                |
+| `epics`                | `true`         | Enables Epic Work Item Type usage    |
 | `modules`              | unchanged      | Not used but feature stays available |
 | `cycles`               | unchanged      | Not used but feature stays available |
 | `pages`                | unchanged      | Not used                             |
 | `intakes`              | `false`        | Not used                             |
-| `work_item_types`      | unchanged      | Workspace-level disabled             |
+| `work_item_types`      | `false`        | Paid feature; built-in Epic type remains usable via generic Work Item endpoints (see note below) |
 | `workflows`            | unchanged      | Not used (skills handle transitions) |
+
+**Epic type id (post-2026-05-26 Cloud release).** Plane converted Epic
+from a separate entity into a built-in Work Item Type. `/tasks` writes
+Epic via generic Work Item endpoints with `type_id` set to the Epic
+type's UUID — `work_item_types: false` does **not** block this path
+(it only gates `*_epic` endpoints, `list_work_item_types`, and custom
+type creation). Capture the Epic type UUID once during bootstrap and
+record it in § 4 (and `universal.md § 1`): retrieve any existing Epic
+Work Item via `mcp__plane__retrieve_work_item_by_identifier` (or read
+the `type_id` of the seed Epic created manually) and copy the
+`type_id`. The UUID is stable per project.
 
 
 ## 2. Required states
@@ -70,6 +81,7 @@ skills consult, not this one):
 | Project name             | `gjs`                                          |
 | Project identifier (key) | `GJS` (used in WI codes like `GJS-12`)         |
 | Project id (UUID)        | `04e5eb31-ae3d-485e-a87e-bb2b857b5267`         |
+| Epic Work Item Type id   | `abc545dd-baf1-47dc-9bac-5ee0e547b16e`         |
 | GitHub repo (for links)  | `https://github.com/vasd85/global-job-search`  |
 | `external_source` value  | `gjs-tasks-skill`                              |
 

@@ -31,9 +31,9 @@ prescribe how a particular project organizes its Plane workspace.
 A workspace contains projects. Each project has its own members, states,
 labels, and feature toggles. Inside a project, the second-tier concepts
 are **Pages** (docs), **Work Items** (a.k.a. issues — the task primitive),
-**Cycles** (sprints), **Modules** (feature groups), **Epics** (hierarchical
-parents), **Initiatives** (cross-project), and **Milestones** (dated
-checkpoints).
+**Cycles** (sprints), **Modules** (feature groups), **Epics** (a built-in
+Work Item Type with parent/child semantics — see Disambiguation),
+**Initiatives** (cross-project), and **Milestones** (dated checkpoints).
 
 Terminology: **"Issue" and "Work Item" are the same thing.** URL paths
 (`/issues/`, `issue-comment`) use the older term; the UI uses "Work Item".
@@ -45,7 +45,7 @@ Treat them as synonyms when reading docs or building API URLs.
 |---|---|
 | Publish a PRD or design doc | **Page** (project Page; nestable; supports `@`-mentions to work items; supports "convert selected text to work item") |
 | Capture a unit of work | **Work Item** |
-| Group child work items under a hierarchical parent | **Epic** |
+| Group child work items under a hierarchical parent | Work Item of type **Epic** |
 | Group work items by feature (no time box) | **Module** |
 | Time-box a batch of work items (sprint) | **Cycle** |
 | Span work across multiple projects strategically | **Initiative** |
@@ -67,12 +67,16 @@ migration later.
 
 - **Cycle** — time-boxed iteration with start and end dates. Sprints.
 - **Module** — feature-based group with no time box. "Auth", "Billing".
-- **Epic** — large work item containing child work items. Hierarchical
-  parent, not a grouping construct.
+- **Epic** — a **built-in Work Item Type** with parent/child semantics.
+  As of the 2026-05-26 Cloud release, Epic is no longer a separate
+  first-class entity — it is one of the Work Item Types alongside Bug,
+  Story, Spike, etc. Children attach via the `parent` field on a Work
+  Item, pointing at the Epic-typed Work Item's UUID.
 
 Cycles and Modules are orthogonal — one work item, both at once is fine.
-Epics are vertical (parent/child); Cycles and Modules are horizontal
-(membership).
+An Epic-typed Work Item is vertical (parent of other Work Items);
+Cycles and Modules are horizontal (membership groupings of any Work
+Item, regardless of its type).
 
 ### Pages vs Wiki vs work-item Pages
 
@@ -95,9 +99,11 @@ only describes the destination.
   **Page** in the relevant project. Consider nesting under a parent
   page (a "PRDs" or "Specs" hub) when several siblings will accumulate.
 - **Decomposing a doc into executable work**:
-  - Create an **Epic** that references the source Page via `@`-mention,
-    so the back-link is bidirectional.
-  - Add child **Work Items** under the Epic.
+  - Create a **Work Item of type Epic** (set `type_id` to the Epic
+    type's UUID) that references the source Page via `@`-mention, so
+    the back-link is bidirectional.
+  - Add child **Work Items** with `parent` set to the Epic Work Item's
+    UUID.
   - Tag with a **Module** if the work belongs to a feature area that
     outlives any single iteration.
   - Add to a **Cycle** if the work is time-boxed (sprint).
@@ -167,6 +173,23 @@ for this integration. Do not search further; flag the gap to the user.
   reflects `main` and may drift from Cloud.
 - Plane has its own query language (**PQL**) for advanced filtering.
   Basic list-and-filter is enough for most agent reads.
+- **Epic → Work Item Type migration (Cloud: 2026-05-26).** Epic is now
+  a built-in Work Item Type. Epic-specific MCP tools
+  (`mcp__plane__create_epic`, `update_epic`, `list_epics`,
+  `retrieve_epic`, `delete_epic`) and
+  `mcp__plane__list_work_item_types` return **HTTP 402 Payment
+  Required** on projects whose `work_item_types` feature flag is
+  `false` — check `mcp__plane__get_project_features` (note: the
+  separate `epics` flag stays `true` but does **not** unlock the
+  Epic-specific endpoints; those are gated by `work_item_types`).
+  Workaround: use the generic Work Item MCP tools with the Epic
+  type's UUID — `mcp__plane__create_work_item` accepts `type_id`,
+  `mcp__plane__list_work_items` accepts a `type_ids` filter, and
+  `mcp__plane__update_work_item` writes state and any other field on
+  an existing Epic. The Epic type UUID is per-project; resolve it
+  once by reading `type_id` from any existing Epic Work Item (e.g.
+  via `mcp__plane__retrieve_work_item_by_identifier`) and cache it
+  as a workspace fact.
 
 ## Pointers
 

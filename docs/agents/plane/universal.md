@@ -32,6 +32,7 @@ once at startup and cached for the run.
 | Project name              | `gjs`                                          |
 | Project identifier (key)  | `GJS` (used in WI codes like `GJS-12`)         |
 | Project id (UUID)         | `04e5eb31-ae3d-485e-a87e-bb2b857b5267`         |
+| Epic Work Item Type id    | `abc545dd-baf1-47dc-9bac-5ee0e547b16e`         |
 | GitHub repo (for links)   | `https://github.com/vasd85/global-job-search`  |
 | `external_source` value   | `gjs-tasks-skill`                              |
 
@@ -40,11 +41,12 @@ file must be updated in the same PR that changes Plane state.
 
 ## 2. Entity scope (summary)
 
-The project uses Work Items, Epics, work-item relations of type
+The project uses Work Items (including the built-in **Epic** Work Item
+Type, post-2026-05-26 Cloud release), work-item relations of type
 `blocked_by`, comments, labels, and Plane-managed states. Cycles,
-Modules, Pages, Issue Types, Views, Initiatives, Milestones, Intake,
-Time Tracking, and Workflows are **not used by convention** — see
-`tasks.md` § 1 for the full table and rationale, and § 8 below for
+Modules, Pages, **custom** Issue Types, Views, Initiatives, Milestones,
+Intake, Time Tracking, and Workflows are **not used by convention** —
+see `tasks.md` § 1 for the full table and rationale, and § 8 below for
 items that may not be reintroduced opportunistically.
 
 Workspace setup (feature flags, required states, demo cleanup) is a

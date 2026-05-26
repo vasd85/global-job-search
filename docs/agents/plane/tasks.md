@@ -21,7 +21,8 @@ The project uses a deliberate subset of Plane's entity model.
 **Used:**
 
 - **Work Items** — atomic tasks; one per chunk in plan DAG; one per PR
-- **Epics** — one per feature; container of Work Items
+- **Epic Work Item Type** — one Epic-typed Work Item per feature; acts
+  as hierarchical container of chunk Work Items via the `parent` field
 - **Labels** — taxonomy for filtering (§ 6)
 - **Work Item relations** of type `blocked_by` — encode plan DAG
 - **Work Item comments** — state-transition audit trail and error reports
@@ -39,9 +40,12 @@ write or read these):
 - **Pages** — `architecture.md § 3` is explicit: Plane does not store
   documents. PRDs, designs, plans, ADRs all live in git under `docs/`.
   Skills never publish to Pages.
-- **Issue Types and custom Properties** — workspace feature
-  `work_item_types` is disabled; revisit only if typed work items
-  become useful (would need to enable at workspace level first).
+- **Custom Issue Types and Properties** — workspace feature
+  `work_item_types` is disabled. The built-in **Epic** Work Item Type
+  remains usable via generic Work Item endpoints (see § 4.1); custom
+  types beyond Epic (Bug, Story, Spike, custom Properties) would
+  require enabling `work_item_types` at workspace level first.
+  Revisit when that need arises.
 - **Views** — ad-hoc filtering via MCP `list_work_items` filters
   suffices; no need to materialise saved Views.
 - **Initiatives** — disabled at workspace level; cross-project scope
@@ -126,17 +130,27 @@ Plane shows the parent Epic in its UI. Example:
 
 ### 4.1 Epic
 
-Required fields when creating an Epic:
+Required fields when creating an Epic (a Work Item with `type_id` set
+to the Epic Work Item Type — see `universal.md § 1`):
 
 | Field             | Value                                                |
 |-------------------|------------------------------------------------------|
 | `name`            | per § 3                                              |
 | `description_html`| from template below (rendered from markdown)         |
+| `type_id`         | Epic Work Item Type id (`universal.md § 1`)          |
 | `external_id`     | `gjs:epic:<feature-slug>`                            |
 | `external_source` | `gjs-tasks-skill`                                    |
 | `parent`          | none (Epics have no parent)                          |
 | `labels`          | `feature:<slug>` only                                |
 | state             | project default (`Backlog`)                          |
+
+**API path.** Since the 2026-05-26 Plane Cloud release, Epic is a
+Work Item Type rather than a separate entity. `/tasks` uses generic
+Work Item endpoints (`mcp__plane__create_work_item`,
+`update_work_item`, `list_work_items` with a `type_ids` filter) —
+the Epic-specific MCP tools (`*_epic`) are gated behind the paid
+`work_item_types` feature flag and return HTTP 402 on this
+project. See `plane-integration` skill, Known gotchas.
 
 **Description template (markdown):**
 
