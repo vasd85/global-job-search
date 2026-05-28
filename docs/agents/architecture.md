@@ -301,7 +301,7 @@ produce a different number of PRs. Conflating them led to design
 errors in earlier drafts of this document — keep them separate.
 
 
-| Aspect             | Across Work Items (new)                           | Within one Work Item (reused)                      |
+| Aspect             | Across Work Items                                 | Within one Work Item                               |
 | ------------------ | ------------------------------------------------- | -------------------------------------------------- |
 | Use case           | many WIs in flight simultaneously                 | a single WI's chunks parallelised internally       |
 | Mechanism          | concurrent top-level Claude Code sessions         | `Agent({ isolation: "worktree" })` subagents       |
@@ -309,17 +309,10 @@ errors in earlier drafts of this document — keep them separate.
 | Worktree owner     | user (created before launching `claude` in it)    | Agent tool (created automatically by `isolation`)  |
 | Lifecycle owner    | user (manual launch and cleanup)                  | orchestrator skill (worktree disposable on return) |
 | Branches and PRs   | N branches → N PRs → N merges                     | 1 branch, 1 PR, 1 merge (subagent branches merge locally first) |
-| Provenance         | new in this architecture; no prior precedent here | inherited from the legacy implement skill's Phase 3 pattern (skill removed in GJS-13) |
 
 
-The within-WI mechanism is inherited from the legacy implement
-skill's Phase 3 "parallel chunks" pattern (skill removed in GJS-13)
-and is carried forward as-is for any subagent parallelism a future
-skill needs. It does *not* produce multiple PRs — subagent branches merge
-into a single feature branch before the PR is opened. The across-WI
-mechanism is genuinely new for this project; it is not "proven by"
-the within-WI pattern, only conceptually adjacent.
-
+The within-WI mechanism does *not* produce multiple PRs — subagent
+branches merge into a single feature branch before the PR is opened.
 In practice each Work Item is meant to be atomic
 (`docs/agents/plane/tasks.md § 2`), so within-WI subagent parallelism
 is an available tool but not the expected default — most parallelism
@@ -358,7 +351,7 @@ synchronisation primitives, locks, or cross-session coordination.
 remove .claude/worktrees/<wi-code>` and branch deletion) is a manual
 post-merge step. `/log-episode` may surface a reminder; the cleanup
 policy under multiple concurrent sessions is the open question
-specifically about parallel worktrees — see § 13.
+specifically about parallel worktrees — see § 12.
 
 **Episode log timing.** `/log-episode` runs as the finale of the
 same `/implement-task` session — invoked after the user confirms the
@@ -381,26 +374,24 @@ data to surface patterns. See § 10 (Promotion gate).
 
 ## 5. Skills
 
-Target skill inventory. Status column shows current state.
+Current skill inventory.
 
 
-| Skill                 | Status           | Replaces                                  | Notes                                                                |
-| --------------------- | ---------------- | ----------------------------------------- | -------------------------------------------------------------------- |
-| `/research`           | TO BUILD         | (extracted from legacy product-research)  | Discovery + external research; isolated context                      |
-| `/prd`                | TO BUILD         | (extracted from legacy product-research)  | Reads research, writes PRD; reviewer required                        |
-| `/design`             | TO BUILD         | (extracted from `/code-architect`)        | Conditional; reads PRD, writes design + ADRs                         |
-| `/plan`               | TO BUILD         | (planning phase of legacy implement skill) | Reads PRD + design, writes plan with DAG                            |
-| `/tasks`              | TO BUILD         | (new)                                     | Plan → Plane Epic + Work Items + relations                           |
-| `/implement-task`     | TO BUILD         | (implementation phases of legacy implement skill) | One Work Item → branch + PR                                  |
-| `/log-episode`        | TO BUILD         | (new)                                     | Standalone episode log writer (also finale of `/implement-task`)     |
-| `/promote-pattern`    | TO BUILD (later) | (new)                                     | Surfaces patterns from episode log; drafts promotion PR              |
-| product-research      | REMOVED          | →`/research` + `/prd`                     | Removed in GJS-13 after new pipeline shipped end-to-end              |
-| implement             | REMOVED          | →`/plan` + `/implement-task` (manual chain) | Removed in GJS-13 after new pipeline shipped end-to-end             |
-| `/plane-integration`  | KEEP             | —                                         | Reference map, used by `/tasks`                                      |
-| `/pre-pr`             | KEEP             | —                                         | Lightweight quality gate for ad-hoc commits                          |
-| `/code-architect`     | KEEP             | —                                         | Standalone architectural planning (also wrapped by `/design`)        |
-| `/review`             | KEEP             | —                                         | Standalone code review                                               |
-| `/analyze-skill-logs` | KEEP             | —                                         | Forensic drill-down into skill-logs; not part of pipeline (see §9.6) |
+| Skill                 | Status           | Notes                                                                |
+| --------------------- | ---------------- | -------------------------------------------------------------------- |
+| `/research`           | EXISTING         | Discovery + external research; isolated context                      |
+| `/prd`                | EXISTING         | Reads research, writes PRD; reviewer required                        |
+| `/design`             | EXISTING         | Conditional; reads PRD, writes design + ADRs                         |
+| `/plan`               | EXISTING         | Reads PRD + design, writes plan with DAG                             |
+| `/tasks`              | EXISTING         | Plan → Plane Epic + Work Items + relations                           |
+| `/implement-task`     | EXISTING         | One Work Item → branch + PR                                          |
+| `/log-episode`        | EXISTING         | Episode log writer (finale of `/implement-task` + standalone)        |
+| `/promote-pattern`    | TO BUILD (later) | Surfaces patterns from episode log; drafts promotion PR              |
+| `/plane-integration`  | EXISTING         | Reference map, used by `/tasks`                                      |
+| `/pre-pr`             | EXISTING         | Lightweight quality gate for ad-hoc commits                          |
+| `/code-architect`     | EXISTING         | Standalone architectural planning (also wrapped by `/design`)        |
+| `/review`             | EXISTING         | Standalone code review                                               |
+| `/analyze-skill-logs` | EXISTING         | Forensic drill-down into skill-logs; not part of pipeline (see §9.6) |
 
 
 ### Skill contracts
@@ -498,8 +489,7 @@ See section 8 for the evaluator-optimizer template.
 ## 7. Subagents
 
 The system uses subagents for **context isolation**, never for division
-of labour. Existing subagents are reused unchanged; two new reviewers
-are added.
+of labour.
 
 
 | Subagent                 | Status   | Purpose                                       | Spawned by                                      |
@@ -511,9 +501,9 @@ are added.
 | `code-reviewer`          | EXISTING | Read-only code review                         | `/implement-task` step 4, `/review`             |
 | `artifact-writer`        | EXISTING | Claude Code artefact creation (skills/hooks)  | `agent-architect` skill                         |
 | `artifact-reviewer`      | EXISTING | Read-only audit of Claude Code artefacts      | `agent-architect` skill                         |
-| `prd-reviewer`           | TO BUILD | Read-only review of PRD against research note | `/prd`                                          |
-| `plan-reviewer`          | TO BUILD | Read-only review of plan against PRD + design | `/plan`                                         |
-| `design-reviewer`        | OPTIONAL | Read-only review of design against PRD        | `/design` (when implemented)                    |
+| `prd-reviewer`           | EXISTING | Read-only review of PRD against research note | `/prd`                                          |
+| `plan-reviewer`          | EXISTING | Read-only review of plan against PRD + design | `/plan`                                         |
+| `design-reviewer`        | OPTIONAL | Read-only review of design against PRD        | `/design` (when added)                          |
 | `research-reviewer`      | OPTIONAL | Read-only review of research note             | `/research` (when complexity demands)           |
 
 
@@ -623,74 +613,17 @@ populates `completed_at` from `gh pr view --json mergedAt`.
 
 ### 9.1 Schema
 
-```json
-{
-  "schema_version": 1,
-  "episode_id": "2026-04-28-fix-greenhouse-rate-limit-GJS-42",
-  "feature_slug": "fix-greenhouse-rate-limit",
-  "task_id": "GJS-42",
-  "task_type": "fix",
-  "status": "merged",
-  "started_at": "2026-04-28T10:15:00Z",
-  "completed_at": "2026-04-28T11:42:00Z",
+The canonical schema is **`docs/episodes/schema.json`** (JSON Schema
+2020-12), generated from the zod source at
+`packages/ats-core/src/episode-schema.ts`. The generation flow and
+single-source rationale are documented in
+[ADR-0003](../adr/0003-zod-as-runtime-validation-library.md). Any
+shape change happens by editing the zod source, regenerating
+`schema.json`, and committing both — never by editing this section.
 
-  "branch": "fix/greenhouse-backoff-GJS-42",
-  "pr_url": "https://github.com/vasd85/global-job-search/pull/123",
-  "plane_work_item_id": "GJS-42",
-  "plane_epic_id": "GJS-40",
-  "prd_link": "docs/product/fix-greenhouse-rate-limit.md",
-  "design_link": null,
-  "plan_link": "docs/plans/fix-greenhouse-rate-limit.md",
-  "session_ids": ["1124e18f-3963-43d3-93ce-424420a57222"],
-
-  "phases_run": ["research", "prd", "plan", "tasks", "implement", "review"],
-  "parallel_with": ["GJS-43"],
-
-  "reviews": {
-    "prd":  { "cycles": 1, "verdict": "approved" },
-    "plan": { "cycles": 2, "verdict": "approved", "critical_findings_addressed": 3 },
-    "code": { "cycles": 1, "verdict": "approved" }
-  },
-
-  "duration_min_total": 87,
-  "duration_min_by_phase": {
-    "research": 12,
-    "prd": 18,
-    "plan": 22,
-    "implement": 30,
-    "review": 5
-  },
-  "files_touched_count": 4,
-  "test_count_added": 6,
-
-  "decisions": [
-    {
-      "what": "exponential backoff with 5 max retries, jitter 100-500ms",
-      "why": "3 retries miss 4xx storms in production; jitter prevents thundering herd",
-      "rejected": ["circuit breaker — overkill for this scope", "fixed delay — uneven load"],
-      "confidence": "verified"
-    }
-  ],
-  "blockers": [
-    {
-      "what": "Greenhouse 429 responses lack standard Retry-After header",
-      "resolution": "extracted from response body via vendor wrapper",
-      "duration_min": 25,
-      "tag": "external-api"
-    }
-  ],
-  "dead_ends": [
-    {
-      "tried": "react-query default retry config",
-      "why_failed": "doesn't expose Retry-After header to caller code"
-    }
-  ],
-  "learnings": [
-    "Greenhouse 429s lack standard headers — extractor needs vendor-specific wrapper"
-  ],
-  "tags": ["extractor", "greenhouse", "rate-limit"]
-}
-```
+This document covers the *meaning* of the schema: field categories
+(§ 9.2), tag vocabularies (§ 9.3), use cases (§ 9.4), evolution
+roadmap (§ 9.5), and the relationship to skill-logs (§ 9.6).
 
 ### 9.2 Field categories
 
@@ -721,7 +654,7 @@ justified at solo-project scale; `/log-episode` instead prompts
 the user during draft approval ("any sibling WIs running in
 parallel? e.g. `GJS-43, GJS-44`"). User memory degrades fast over
 days, so the prompt fires near merge time, not when the standalone
-mode runs against an old PR. See § 13 open question for the
+mode runs against an old PR. See § 12 open question for the
 auto-extraction roadmap if scale changes.
 
 The agent (in `/log-episode`) drafts these from scratchpads and PR
@@ -876,36 +809,7 @@ This makes Tier 1 changes auditable, prevents memory poisoning
 (precedent → directive without intent), and keeps the canon free of
 provisional rules.
 
-## 11. Migration roadmap
-
-The new architecture was built incrementally. Each step shipped a
-working state and closed one observable gap. The two legacy monolithic
-skills (the prior product-research and implement orchestrators) kept
-working until their replacements were stable; both were removed in
-GJS-13 after the new pipeline shipped end-to-end. The detailed
-historical step-by-step lives in `docs/plans/agent-system.md`; the
-table below summarises it.
-
-
-| #   | Step                                                                                                               | Effort | Closes gap                              |
-| --- | ------------------------------------------------------------------------------------------------------------------ | ------ | --------------------------------------- |
-| 1   | Create `docs/designs/`, `docs/plans/`, `docs/adr/`, `docs/episodes/`; commit ADR template and episode JSONL schema | 30 min | Locations exist                         |
-| 2   | Build `/research` (research phase extracted from legacy product-research skill)                                    | 2-3 h  | Research isolated                       |
-| 3   | Build `/prd` + `prd-reviewer` subagent (PRD phase extracted from legacy product-research skill)                    | 3-4 h  | PRD phase + required reviewer           |
-| 4   | Build `/design` wrapping `code-architect` (conditional skip logic)                                                 | 3-4 h  | Technical design phase                  |
-| 5   | Build `/plan` + `plan-reviewer` subagent (planning phase extracted from legacy implement skill; emits DAG)         | 3-4 h  | Plan phase with dependencies + reviewer |
-| 6   | Build `/tasks` (plan DAG → Plane Epic + Work Items + relations)                                                    | 3-4 h  | Plane wiring automated                  |
-| 7   | Build `/implement-task` (atomic implementation phases extracted from legacy implement skill)                       | 4-6 h  | Atomic implementation skill             |
-| 8   | Build `/log-episode` + `/implement-task` finale integration                                                        | 3-4 h  | Episode log foundation (Stage 0)        |
-| 9   | Remove the legacy product-research and implement monolithic skills                                                 | 1 h    | Single canonical pipeline               |
-| 10  | (later) Stage 2 of episode log: grep in `/plan` and `/prd`                                                         | 1-2 h  | Episode log earns its keep              |
-| 11  | (later) Stage 3 of episode log: aggregation + `/promote-pattern` skill                                             | 4-6 h  | Promotion gate operational              |
-
-
-Steps 10-11 are deferred until enough episodes accumulate (~15-20 for
-step 10, ~30-50 for step 11).
-
-## 12. Out of scope
+## 11. Out of scope
 
 Decisions that are **not** part of this architecture and will not be
 introduced opportunistically. Reopening any of these requires
@@ -926,7 +830,7 @@ the episode count we will see.
 - **Test-reviewer as separate subagent.** Test review is part of the
 combined code-review at step 4 of `/implement-task`.
 
-## 13. Open questions
+## 12. Open questions
 
 Items that are not yet decided. Each will be resolved when a step
 that depends on it begins.
