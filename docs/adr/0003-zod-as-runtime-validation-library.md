@@ -18,7 +18,7 @@ Pattern in those files: schema definition + `z.infer<typeof X>`-derived
 TypeScript types in the same file, schema as the single source of truth
 for both shape and types.
 
-In GJS-14 (Step 1 of `docs/plans/agent-system.md`) we initially
+In GJS-14 (Step 1 of `docs/plans/2026-04-29-agent-system.md`) we initially
 introduced `ajv` + `ajv-formats` as the validator for
 `docs/episodes/schema.json`, motivated by the architecture and plan
 literally naming "ajv (or equivalent jsonschema check)" as the

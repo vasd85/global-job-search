@@ -883,7 +883,7 @@ working state and closed one observable gap. The two legacy monolithic
 skills (the prior product-research and implement orchestrators) kept
 working until their replacements were stable; both were removed in
 GJS-13 after the new pipeline shipped end-to-end. The detailed
-historical step-by-step lives in `docs/plans/agent-system.md`; the
+historical step-by-step lives in `docs/plans/2026-04-29-agent-system.md`; the
 table below summarises it.
 
 

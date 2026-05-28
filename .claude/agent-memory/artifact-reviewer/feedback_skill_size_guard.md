@@ -6,7 +6,7 @@ type: feedback
 
 The generic skills authoring guide caps SKILL.md at 500 lines, but the
 agent-system pipeline imposes a tighter 200-line cap per
-`docs/plans/agent-system.md § 6` ("Skill bloat" risk). All planning-pipeline
+`docs/plans/2026-04-29-agent-system.md § 6` ("Skill bloat" risk). All planning-pipeline
 skills inherit this stricter bound.
 
 **Why:** the cross-cutting risks section locks the cap at 200 to keep each

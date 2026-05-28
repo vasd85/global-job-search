@@ -39,7 +39,7 @@ same PR.
 
 New ADRs land via the same PR review flow as code (Tier 1 per
 `docs/agents/architecture.md § 2`). The `/design` skill — when built
-per Step 4 of `docs/plans/agent-system.md` — drafts ADRs as a side
+per Step 4 of `docs/plans/2026-04-29-agent-system.md` — drafts ADRs as a side
 effect when a design contains decisions with broad scope, writing
 them to `docs/adr/<NNNN>-<slug>.md` on the planning branch.
 

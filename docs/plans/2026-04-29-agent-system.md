@@ -94,7 +94,7 @@ the schemas they require.
 **Outputs:**
 - `docs/product/.gitkeep` — placeholder (PRDs go here via `/prd`)
 - `docs/designs/.gitkeep`
-- `docs/plans/agent-system.md` (this file)
+- `docs/plans/2026-04-29-agent-system.md` (this file)
 - `docs/adr/0000-template.md` — ADR template
 - `docs/adr/0001-record-architecture-decisions.md` — first ADR
   declaring that we use ADRs (Michael Nygard format)
@@ -296,7 +296,7 @@ planning PR.
 **Effort:** 3-4 h.
 
 **Validation:** dry-run `/tasks` against this very plan
-(`docs/plans/agent-system.md`) — it should reconcile against the
+(`docs/plans/2026-04-29-agent-system.md`) — it should reconcile against the
 existing Epic GJS-8 and WIs GJS-9..GJS-18 by `external_id` and
 produce zero new entities. A second dry-run against a small fixture
 plan verifies the create path.

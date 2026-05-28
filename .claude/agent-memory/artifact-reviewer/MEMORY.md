@@ -1,1 +1,1 @@
-- [Skill 200-line guard](feedback_skill_size_guard.md) — agent-system pipeline skills must stay under 200 lines per docs/plans/agent-system.md § 6
+- [Skill 200-line guard](feedback_skill_size_guard.md) — agent-system pipeline skills must stay under 200 lines per docs/plans/2026-04-29-agent-system.md § 6
