@@ -6,7 +6,7 @@ Superseded by [ADR-0003](./0003-zod-as-runtime-validation-library.md)
 
 ## Context
 
-GJS-14 (Step 1 of `docs/plans/agent-system.md`) introduced the episode
+GJS-14 (Step 1 of `docs/plans/2026-04-29-agent-system.md`) introduced the episode
 log JSON Schema at `docs/episodes/schema.json`. The plan's "Validation"
 gate required runtime validation that the schema accepts the canonical
 example at `docs/agents/architecture.md § 9.1`.

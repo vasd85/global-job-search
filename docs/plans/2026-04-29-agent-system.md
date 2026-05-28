@@ -94,12 +94,13 @@ the schemas they require.
 **Outputs:**
 - `docs/product/.gitkeep` — placeholder (PRDs go here via `/prd`)
 - `docs/designs/.gitkeep`
-- `docs/plans/agent-system.md` (this file)
+- `docs/plans/2026-04-29-agent-system.md` (this file)
 - `docs/adr/0000-template.md` — ADR template
 - `docs/adr/0001-record-architecture-decisions.md` — first ADR
   declaring that we use ADRs (Michael Nygard format)
 - `docs/episodes/schema.json` — JSON Schema describing one episode log
-  entry, sourced from architecture.md §9.1, **including
+  entry (canonical contract; later regenerated from the zod source at
+  `packages/ats-core/src/episode-schema.ts` per ADR-0003), **including
   `schema_version: 1`** (required from day one per § 6 cross-cutting
   risks)
 - `docs/episodes/.gitkeep` — placeholder until first month file
@@ -116,8 +117,9 @@ the schemas they require.
 - All directories exist and are tracked by git via `.gitkeep`
   placeholders
 - ADR template has sections: Context, Decision, Status, Consequences
-- Episode schema validates the GJS-42 example in architecture.md §9.1
-  including `schema_version`
+- Episode schema validates the GJS-42 example fixture (now in
+  `packages/ats-core/src/episode-schema.test.ts`), including
+  `schema_version`
 - `phase-state-schema.md` exists with the listed fields and a worked
   example. Cross-cutting requirement (verified at each later step):
   every new skill's SKILL.md must cite this schema in its phase
@@ -127,8 +129,8 @@ the schemas they require.
 
 **Validation:** `git ls-files docs/` shows all four directories
 tracked; `node -e "require('ajv').default()(require('./docs/episodes/schema.json'))(...)" `
-or equivalent jsonschema check passes against the architecture § 9.1
-example.
+or equivalent jsonschema check passes against the GJS-42 fixture in
+`packages/ats-core/src/episode-schema.test.ts`.
 
 **Risks:** none meaningful.
 
@@ -296,7 +298,7 @@ planning PR.
 **Effort:** 3-4 h.
 
 **Validation:** dry-run `/tasks` against this very plan
-(`docs/plans/agent-system.md`) — it should reconcile against the
+(`docs/plans/2026-04-29-agent-system.md`) — it should reconcile against the
 existing Epic GJS-8 and WIs GJS-9..GJS-18 by `external_id` and
 produce zero new entities. A second dry-run against a small fixture
 plan verifies the create path.
@@ -378,9 +380,9 @@ two distinct PRs opened, both transitioning to `In Review` correctly.
   → `/plan` → `/tasks` sequentially
 - Hands control back to user after `/tasks`, listing Work Item ids
 - Resumes from `phase-state.md` if interrupted mid-chain (this
-  decision **closes architecture § 13's open question** on
-  `/feature` partial-failure behaviour: resume, not restart, not
-  hand-off; record the closure when this step lands)
+  decision closes the prior open question on `/feature`
+  partial-failure behaviour: resume, not restart, not hand-off;
+  record the closure when this step lands)
 - Decides skip-design heuristic; asks user when uncertain
 - After phase 4 (plan), opens a single planning PR and pauses;
   `/tasks` is invoked manually after the user merges the planning
@@ -560,7 +562,7 @@ step 10 deprecates the old skills.
 
 These are decisions intentionally deferred until the relevant step
 starts. They are local to this plan; questions already deferred in
-`docs/agents/architecture.md §13` (worktree cleanup policy, per-phase
+`docs/agents/architecture.md §12` (worktree cleanup policy, per-phase
 token budgets) are not duplicated here — see the architecture for
 those.
 

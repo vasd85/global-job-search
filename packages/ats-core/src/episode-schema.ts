@@ -13,7 +13,7 @@ import { z } from "zod";
  * Schema sourced from `docs/agents/architecture.md § 9.1`.
  * `schema_version` is pinned via `z.literal(1)` — bump it (and the
  * literal) on incompatible shape changes; never break existing grep
- * contracts (per `docs/plans/agent-system.md § 6` cross-cutting
+ * contracts (per `docs/plans/2026-04-29-agent-system.md § 6` cross-cutting
  * risks).
  *
  * Root behaviour: zod's default (`.strip()`) accepts unknown keys

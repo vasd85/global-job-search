@@ -114,9 +114,9 @@ section and state explicitly:
    `failed`, and what its evaluator-loop counts toward `cycles`.
 
 The cross-cutting acceptance check at every later step of
-`docs/plans/agent-system.md` is: open the new SKILL.md, confirm it
-references this schema and that its declared writes match the fields
-above.
+`docs/plans/2026-04-29-agent-system.md` is: open the new SKILL.md,
+confirm it references this schema and that its declared writes match
+the fields above.
 
 ## Per-task variant
 
