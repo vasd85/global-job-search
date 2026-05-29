@@ -4,6 +4,14 @@ Status: **Draft v1** | Date: 2026-05-07 | Owner: vasd85
 PRD: `docs/product/2026-05-06-profile-driven-architecture.md`
 Design: `docs/designs/2026-05-06-profile-driven-architecture.md`
 
+> **Agent workflow (out of date).** The monolithic `/feature` skill was
+> retired **after** this plan was written. Do not invoke `/feature`.
+> For each sub-feature chunk below, run the pipeline steps **one at a
+> time** in order: `/research` → `/prd` → `/design` (when needed) →
+> `/plan` → `/tasks` → `/implement-task` per Work Item. References to
+> `/feature` elsewhere in this document describe the workflow that
+> existed at authoring time.
+
 > **Reader.** This is an **umbrella sub-feature roadmap**, not a
 > per-PR implementation plan. The architectural overhaul is too
 > large to ship as one `/feature` cycle's set of Work Items. Each
