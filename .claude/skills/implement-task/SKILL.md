@@ -64,22 +64,35 @@ non-null string → abort `WI <code> has foreign external_id <value>`.
 `Done` → abort with `WI <code> is blocked by [<codes>] (states:
 [<states>])`.
 
-**Launch-mode + branch.** Detect mode by comparing
-`git rev-parse --show-toplevel` to the repo root path:
+**Launch-mode + branch.** Detect mode from two signals — worktree
+location (`git rev-parse --show-toplevel` vs the repo root) and HEAD
+state (`git symbolic-ref -q HEAD` → attached branch vs detached):
 
-| Mode                  | Pre-launch state                                                              | Step 0 branch action                          |
-|-----------------------|-------------------------------------------------------------------------------|-----------------------------------------------|
-| Sequential (default)  | session in repo root, on `main`, clean tree                                   | `git checkout -b <branch>` from `main`        |
-| Parallel (across-WIs) | session in `.claude/worktrees/<wi-code>`, detached HEAD at `main`'s tip, clean | `git checkout -b <branch>` from current HEAD  |
+| Mode                       | Pre-launch state                                                                                                              | Step 0 branch action                                          |
+|----------------------------|------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------|
+| Sequential (default)       | session in repo root, on `main`, clean tree                                                                                   | `git checkout -b <branch>` from `main`                       |
+| Parallel — manual worktree | session in a worktree, **detached** HEAD at `main`'s tip, clean tree                                                          | `git checkout -b <branch>` from current HEAD                 |
+| Parallel — app worktree    | session in a worktree, on a fresh **auto-created** branch (e.g. `claude/*`) at `main`'s tip with no commits of its own, clean | `git branch -m <branch>` — rename the current branch in place |
 
-Any other state (non-`main` branch, dirty tree, attached HEAD on
-an unrelated branch in a worktree) → abort, surface the state, ask
-the user to clean up. Never force-reset/force-checkout/stash; **never
-invoke `git worktree add`** — the user creates worktrees before
-launching `claude`. Branch name per `implement-task.md § 1`:
+The desktop app's worktree checkbox lands the session on an attached,
+auto-named branch (e.g. `claude/heuristic-robinson-2dbb84`). The
+"app worktree" row renames it **in place** to the canonical `<branch>`
+instead of `git checkout -b`: this preserves the app's
+worktree↔branch association and leaves no orphaned `claude/*` branch.
+Verify `HEAD` equals `main`'s tip before renaming — a branch with its
+own commits is a real working branch, not a fresh worktree, and falls
+through to abort.
+
+Any other state — dirty tree; repo root on a non-`main` branch; or a
+worktree whose branch has its own commits / is not at `main`'s tip →
+abort, surface the state, ask the user to clean up. Never
+force-reset/force-checkout/stash; **never invoke `git worktree add`**
+— the user (or the desktop app's worktree checkbox) creates worktrees
+before launching `claude`. Branch name per `implement-task.md § 1`:
 `<type>/<short-description>-GJS-<sequence-id>` — `<type>` from the
 WI's `type:*` label; `<short-description>` from `<wi-name>` as
-kebab-case ≤ 5 words. Suggest a default, confirm, then create.
+kebab-case ≤ 5 words. Suggest a default, confirm, then create (or
+rename).
 
 **Plane In Progress** per `implement-task.md § 2-3`. Expects
 `Backlog` or `Todo`; already `In Progress` → log warning and continue
