@@ -236,6 +236,35 @@ describe("moveLeaves — target validation", () => {
       ),
     ).toThrow(/is a container/);
   });
+
+  // MV-12 — caller-responsibility contract (finding 2): `moveLeaves` validates
+  // only `toSlug` (known, non-container), NOT `toPath`. A `toPath` that does
+  // not terminate at `toSlug` therefore produces a leaf that LeafSchema
+  // REJECTS, and `moveLeaves` does NOT throw. This is intentional — moveLeaves
+  // is a pure/dumb transform (design §6.2); the persistence boundary
+  // (`migrateLeaves`' post-transform re-parse) is what prevents such a leaf
+  // from ever being written.
+  test("does not validate toPath: returns a schema-invalid leaf without throwing", () => {
+    const tree = mixedIndustryTree();
+    let result: PreferenceTree;
+    expect(() => {
+      result = moveLeaves(
+        tree,
+        { fromSlugs: ["industry"] },
+        // `industry` is a real non-container slug so moveLeaves accepts it,
+        // but ["role"] does not end at "industry" -> LeafSchema rule 2 fails.
+        { toSlug: "industry", toPath: ["role"] },
+      );
+    }).not.toThrow();
+
+    // The produced (moved) leaf carries the mismatched path and is rejected by
+    // LeafSchema — proving moveLeaves emitted an unvalidated, invalid leaf.
+    result!.leaves.forEach((leaf) => {
+      expect(leaf.branchSlug).toBe("industry");
+      expect(leaf.branchPath).toEqual(["role"]);
+      expect(LeafSchema.safeParse(leaf).success).toBe(false);
+    });
+  });
 });
 
 describe("moveLeaves — defensive copying", () => {
