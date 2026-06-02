@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { PreferenceTreeSchema, type PreferenceTree } from "./leaf-schema";
 import { moveLeaves, type MovePredicate, type MoveTarget } from "./move-leaves";
 
@@ -39,17 +40,23 @@ function sql(strings: TemplateStringsArray, ...params: unknown[]): RawSql {
 }
 
 export interface MigrationOptions {
-  /** Schema version this migration writes. Rows already at >= this
-   * version are skipped (idempotency). */
+  /** Target schema version. Rows whose tree is already *ahead* of this
+   * version (`schemaVersion > toSchemaVersion`) are skipped so a
+   * migration never downgrades a row. Idempotency for same-version
+   * composition migrations comes from change-detection, not this field
+   * (see {@link migrateLeaves}). Pinned to `1` — the only schema version
+   * today; bumping `schemaVersion` is out of scope until a v2 exists. */
   toSchemaVersion: 1;
 
   /** Move predicate / target. Pure transformation applied per row. */
   predicate: MovePredicate;
   target: MoveTarget;
 
-  /** When true, parse-transform-parse every row but skip the UPDATE
-   * write. Returns the would-write count. Useful for pre-flight
-   * checks before a composition-change migration. */
+  /** When true, parse-transform-parse every row (including the
+   * post-transform re-parse that throws on an invalid result) but skip
+   * the UPDATE write. Returns the would-write count. This is the
+   * pre-flight check: it asserts every row parses post-transform before
+   * any write is committed. */
   dryRun?: boolean;
 
   /** Row batch size for the cursor pagination. Default 1000 per
@@ -62,7 +69,9 @@ export interface MigrationResult {
   scanned: number;
   /** Rows that were rewritten (or would be, in dry-run). */
   rewritten: number;
-  /** Rows skipped because already at toSchemaVersion. */
+  /** Rows skipped: either already ahead of `toSchemaVersion`, or the
+   * transform was a no-op (the move predicate matched nothing / the row
+   * is already migrated). The no-op case is the idempotency mechanism. */
   skipped: number;
   /** Rows that failed parse-old (logged, not thrown). */
   parseErrors: number;
@@ -76,14 +85,32 @@ const DEFAULT_BATCH_SIZE = 1000;
  * `FOR UPDATE SKIP LOCKED` lock, applies the pure transform, and writes
  * back with an optimistic-lock guard (`WHERE updated_at = $original`).
  *
- * Idempotency contract: keyed off `tree.schemaVersion`. A row whose tree
- * already has `schemaVersion >= opts.toSchemaVersion` is skipped. When a
- * composition-change is structurally invisible at the schemaVersion level,
- * the caller is responsible for an explicit "already migrated?" check
- * inside the move predicate.
+ * Per row this is parse-transform-parse:
+ *   1. Parse the stored tree (a parse failure is counted, never thrown).
+ *   2. Skip rows already *ahead* of `opts.toSchemaVersion`
+ *      (`schemaVersion > toSchemaVersion`) so a migration never
+ *      downgrades a row. Never fires today — there is one schema version.
+ *   3. Apply {@link moveLeaves}.
+ *   4. Re-parse the result with {@link PreferenceTreeSchema}. An invalid
+ *      transform (e.g. a {@link MoveTarget.toPath} that does not
+ *      terminate at `toSlug`, which `moveLeaves` does not validate)
+ *      THROWS and is never written — fail-fast for both real and dry runs.
  *
- * SHIPPED FOR FUTURE USE — not exercised by this PR. `substrate-cutover`
- * (and the first composition-change migration) wire the real DB in.
+ * Idempotency is change-detection: if the transform is a no-op (the move
+ * predicate matched nothing, or every match was already migrated and so
+ * no longer matches) the row is counted as `skipped` and not rewritten.
+ * Re-running the same migration therefore converges. This subsumes the
+ * design's "predicate handles same-version idempotency" note — same-version
+ * composition migrations (e.g. moving `skills/avoid` leaves to
+ * `skills/grow` without bumping the version) are first-class.
+ *
+ * Note: `moveLeaves` preserves `schemaVersion`, so this never bumps it.
+ * Actual schema-version bumping (writing `schemaVersion := toSchemaVersion`)
+ * is out of scope until a v2 schema exists.
+ *
+ * SHIPPED FOR FUTURE USE — not exercised against a real DB in this PR
+ * (`substrate-cutover` and the first composition-change migration wire the
+ * real DB in), but unit-testable via a fake {@link Database}.
  */
 export async function migrateLeaves(
   db: Database,
@@ -121,12 +148,31 @@ export async function migrateLeaves(
       }
 
       const tree: PreferenceTree = parsed.data;
-      if (tree.schemaVersion >= opts.toSchemaVersion) {
+      // Never downgrade: skip rows already ahead of the target version.
+      // With a single schema version today this never fires.
+      if (tree.schemaVersion > opts.toSchemaVersion) {
         result.skipped += 1;
         continue;
       }
 
       const next = moveLeaves(tree, opts.predicate, opts.target);
+
+      // Change-detection idempotency: a no-op move (predicate matched
+      // nothing / already migrated) is not written.
+      if (isDeepStrictEqual(next, tree)) {
+        result.skipped += 1;
+        continue;
+      }
+
+      // Post-transform parse: a transform that produced a schema-invalid
+      // tree (e.g. a bad MoveTarget.toPath) must never reach the DB.
+      const revalidated = PreferenceTreeSchema.safeParse(next);
+      if (!revalidated.success) {
+        throw new Error(
+          `migrateLeaves: transformed tree for row ${row.id} is invalid: ${revalidated.error.issues.map((i) => i.message).join("; ")}`,
+        );
+      }
+
       result.rewritten += 1;
 
       if (opts.dryRun) continue;
