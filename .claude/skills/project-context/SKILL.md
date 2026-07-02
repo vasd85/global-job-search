@@ -61,9 +61,11 @@ This project uses a thinker/doer agent architecture. Pipeline skills
 | developer | Implement code from plans | Doer (full write access) |
 | test-writer | Implement tests from scenarios | Doer (full write access) |
 
-Context is passed between agents via files in `.claude/scratchpads/<task>/`:
-plan.md, dev-progress.md, test-scenarios.md, test-progress.md, review.md,
-phase-state.md.
+Context is passed between agents via files in the scratchpad dir the
+orchestrator supplies — an absolute path under the **primary
+checkout's** `.claude/scratchpads/` (a git worktree's copy is a stale
+snapshot): plan.md, dev-progress.md, test-scenarios.md,
+test-progress.md, code-review.md, phase-state.md.
 
 ## Conventions
 

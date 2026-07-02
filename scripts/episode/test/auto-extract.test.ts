@@ -863,6 +863,36 @@ describe("auto-extract.sh — feature_slug resolution", () => {
       cleanup();
     }
   });
+
+  // Scratchpads live only in the primary checkout; a session running inside
+  // a git worktree must still glob/read them there, not in the worktree's
+  // stale gitignored snapshot.
+  test("resolves scratchpads against the primary checkout when run inside a worktree", () => {
+    const { repo, cleanup } = makeTmpRepo();
+    try {
+      writeFiles(repo, {
+        [`.claude/scratchpads/worktree-slug/tasks/${TASK_ID}/phase-state.md`]:
+          phaseStateMd(STARTED_AT),
+      });
+      const worktree = path.join(repo, "wt");
+      spawnInRepo(repo, ["worktree", "add", "-b", "wt-branch", worktree]);
+      const { status, stdout } = runScript(
+        worktree,
+        [PR_URL, "--epic-code", "GJS-40"],
+        {
+          view: canonicalView(),
+          diffNameOnly: "",
+          diffFull: "",
+        },
+      );
+      expect(status).toBe(0);
+      const out = parseJson(stdout);
+      expect(out.feature_slug).toBe("worktree-slug");
+      expect(out.started_at).toBe(STARTED_AT);
+    } finally {
+      cleanup();
+    }
+  });
 });
 
 describe("auto-extract.sh — doc-link verification at merge SHA", () => {

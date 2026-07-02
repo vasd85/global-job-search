@@ -34,7 +34,7 @@ the existing stack and follow the testing principles.
 ### When test scenarios file is provided (from test-scenario-designer)
 
 The orchestrator will tell you the path to the scenarios file
-(`.claude/scratchpads/<task>/test-scenarios.md`).
+(an absolute `<main-repo>/.claude/scratchpads/...` path).
 
 1. **Read the scenarios file** carefully. Understand what each scenario
    tests and why.
@@ -129,7 +129,8 @@ If `pnpm typecheck` fails on Vitest globals (`describe`, `test`, `expect`,
 
 When invoked by a pipeline skill (e.g. `/implement-task`), write a
 progress summary to the scratchpad path specified in the prompt (e.g.,
-`.claude/scratchpads/<task>/test-progress.md`). Include:
+`<main-repo>/.claude/scratchpads/<feature-slug>/tasks/<wi-code>/test-progress.md`).
+Include:
 
 - Which scenario files were implemented
 - Which scenarios were skipped (and why)
