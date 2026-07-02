@@ -5,13 +5,13 @@ import { lookupTimezoneGroup } from "./timezone-groups";
 import { lookupCity } from "./city-index";
 
 /**
- * The input tier shape -- matches the Zod-inferred LocationPreferenceTier
- * from apps/web/src/lib/chatbot/schemas.ts. Defined here as a structural
- * type to avoid importing from apps/web (ats-core must not depend on apps/web).
+ * The input tier shape consumed by the geo resolver. Defined here as a
+ * standalone structural type — kept inside ats-core so the package stays
+ * free of any `apps/web` dependency. Callers shape their preference data to
+ * match this interface before passing it in.
  *
  * `immigrationFlags` is optional — added in Chunk B of the
- * separate-match-signals refactor. Chatbot schemas may or may not populate
- * it yet (Chunk C). Legacy callers that don't set it get
+ * separate-match-signals refactor. Callers that don't set it get
  * `immigrationFlags: undefined` on the output, which `immigrationMatch`
  * treats as "no constraint — always pass".
  */
