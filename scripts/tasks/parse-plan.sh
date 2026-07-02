@@ -371,28 +371,49 @@ if os.path.isfile(PRD_PATH):
         if line.startswith("# "):
             epic_name = line[2:].strip()
             break
-    # Goal: the H2 named "Goal" (case-insensitive).
+    # Goal: the H2 named "Goal" / "Goals". The /prd template (skills/prd/
+    # assets/prd-template.md) emits a numbered, qualified heading
+    # "## 3. Goals & non-goals" with a "### N.1 Goals" bullet subsection and
+    # a "### N.2 Non-goals" subsection; a hand-written PRD may instead use a
+    # bare "## Goal" paragraph. Tolerate the optional "N." prefix and trailing
+    # qualifier, collect the Goals content (paragraph text or "- G1 — …"
+    # bullets) and stop at the Non-goals subsection or the next H2 so the
+    # non-goals do not bleed into the goal.
     in_goal = False
     acc = []
     for line in prd_lines:
-        if not in_goal and re.match(r"^##\s+[Gg]oal\s*$", line):
+        if not in_goal and re.match(r"^##\s+(?:\d+\.?\s+)?[Gg]oals?\b", line):
             in_goal = True
             continue
-        if in_goal:
-            if re.match(r"^##\s+", line):
-                break
-            if line.strip() == "" and acc:
-                # Blank line after some content closes the paragraph.
-                break
-            if line.strip():
-                acc.append(line.strip())
+        if not in_goal:
+            continue
+        if re.match(r"^##\s+", line):
+            break
+        if re.match(r"^###?\s+(?:[\d.]+\s+)?[Nn]on-?goals?\b", line):
+            # Non-goals subsection — goal content ends here.
+            break
+        if line.startswith("###"):
+            # A subsection heading such as "### 3.1 Goals" — skip the heading
+            # line itself but keep collecting its content.
+            continue
+        stripped = line.strip()
+        if not stripped:
+            continue
+        bullet = re.match(r"^-\s+(.*)$", stripped)
+        acc.append(bullet.group(1).strip() if bullet else stripped)
     epic_goal = " ".join(acc)
-    # Scope: bullets under H3 "In" / "Out" inside H2 "Scope".
+    # Scope: bullets from the scope subsections inside the scope H2. The /prd
+    # template emits "## 7. MVP scope" with subsections "### N.1 In the first
+    # ship", "### N.2 Fast follow", "### N.3 Maybe-never" — it does NOT use
+    # "### In" / "### Out". Map "In the first ship" → In and "Maybe-never" →
+    # Out (the explicitly-excluded bucket); "Fast follow" is deferred-but-
+    # planned and belongs in neither. A hand-written PRD may still use the
+    # bare "## Scope" / "### In" / "### Out" shape, so keep matching those too.
     in_scope = False
     in_in = False
     in_out = False
     for line in prd_lines:
-        if re.match(r"^##\s+[Ss]cope\s*$", line):
+        if re.match(r"^##\s+(?:\d+\.?\s+)?(?:MVP\s+)?[Ss]cope\b", line):
             in_scope = True
             in_in = in_out = False
             continue
@@ -402,13 +423,15 @@ if os.path.isfile(PRD_PATH):
             continue
         if not in_scope:
             continue
-        if re.match(r"^###?\s+[Ii]n\s*$", line):
+        if re.match(r"^###?\s+(?:[\d.]+\s+)?[Ii]n\b", line):
             in_in, in_out = True, False
             continue
-        if re.match(r"^###?\s+[Oo]ut\s*$", line):
+        if re.match(r"^###?\s+(?:[\d.]+\s+)?(?:[Oo]ut\b|[Mm]aybe-never\b)", line):
             in_in, in_out = False, True
             continue
         if re.match(r"^###?\s+", line):
+            # Any other subsection (e.g. "### N.2 Fast follow") — neither In
+            # nor Out.
             in_in = in_out = False
             continue
         m = re.match(r"^\s*-\s+(.+?)\s*$", line)

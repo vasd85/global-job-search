@@ -248,6 +248,99 @@ function synthHappyPrd(opts: {
   return lines.join("\n");
 }
 
+/**
+ * Emit the NUMBERED `/prd`-template PRD shape (skills/prd/assets/
+ * prd-template.md): `## 3. Goals & non-goals` with `### 3.1 Goals` /
+ * `### 3.2 Non-goals`, and `## 7. MVP scope` with `### 7.1 In the first
+ * ship` / `### 7.2 Fast follow (after validation)` / `### 7.3 Maybe-never`.
+ * This is the GJS-31 coverage target — the bare-heading `synthHappyPrd`
+ * builder above covers the old hand-written shape.
+ *
+ * The fixture intentionally surrounds the Goal/Scope sections with
+ * adversarial sibling H2s so each call exercises section termination and
+ * no-bleed in one go:
+ *   - `## 0. Inputs & pointers` (a digit-prefixed sibling whose title starts
+ *     with the word "Inputs") guards the In-bucket false-positive.
+ *   - optional `## 4. Success metrics` between Goal and Scope guards the
+ *     goal terminator against an adjacent numbered H2.
+ *   - trailing `## 8. Alternatives considered` exercises the scope "next H2"
+ *     termination branch.
+ *
+ * CRITICAL: every Goal/Scope bullet MUST be a single, short, unwrapped line.
+ * The parser collects text per markdown source line and does NOT re-join a
+ * hard-wrapped bullet (a pre-existing, out-of-scope quirk). Keeping bullets
+ * on one line each keeps expected strings exact.
+ */
+function synthNumberedPrd(opts: {
+  title: string;
+  goals: string[];
+  nonGoals: string[];
+  inFirstShip: string[];
+  fastFollow: string[];
+  maybeNever: string[];
+  includeSuccessMetrics?: boolean;
+}): string {
+  const lines: string[] = [];
+  lines.push(`# ${opts.title}`);
+  lines.push("");
+  // Benign digit-prefixed "Inputs" sibling — must NOT be read as scope.
+  lines.push("## 0. Inputs & pointers");
+  lines.push("");
+  lines.push("- INPUT-X pointer that must not leak.");
+  lines.push("");
+  lines.push("## 3. Goals & non-goals");
+  lines.push("");
+  lines.push("### 3.1 Goals");
+  lines.push("");
+  for (const g of opts.goals) {
+    lines.push(`- ${g}`);
+  }
+  lines.push("");
+  lines.push("### 3.2 Non-goals");
+  lines.push("");
+  for (const ng of opts.nonGoals) {
+    lines.push(`- ${ng}`);
+  }
+  lines.push("");
+  if (opts.includeSuccessMetrics) {
+    // Adversarial sibling H2 between Goal and Scope: a numbered section whose
+    // title starts with a digit + word, plus a bold line and a table.
+    lines.push("## 4. Success metrics");
+    lines.push("");
+    lines.push("**Kill criteria:** METRIC-SENTINEL if it stalls.");
+    lines.push("");
+    lines.push("| leading | lagging |");
+    lines.push("| --- | --- |");
+    lines.push("| a | b |");
+    lines.push("");
+  }
+  lines.push("## 7. MVP scope");
+  lines.push("");
+  lines.push("### 7.1 In the first ship");
+  lines.push("");
+  for (const i of opts.inFirstShip) {
+    lines.push(`- ${i}`);
+  }
+  lines.push("");
+  lines.push("### 7.2 Fast follow (after validation)");
+  lines.push("");
+  for (const f of opts.fastFollow) {
+    lines.push(`- ${f}`);
+  }
+  lines.push("");
+  lines.push("### 7.3 Maybe-never");
+  lines.push("");
+  for (const m of opts.maybeNever) {
+    lines.push(`- ${m}`);
+  }
+  lines.push("");
+  // Trailing sibling H2 so the scope "next H2" termination branch is hit.
+  lines.push("## 8. Alternatives considered");
+  lines.push("");
+  lines.push("- ALT-SENTINEL alternative that must not leak into scope.");
+  return lines.join("\n");
+}
+
 /** Minimal canonical happy-path chunk shape used by many tests. */
 function minimalChunk(
   id: string,
@@ -292,6 +385,23 @@ const S11_EXPECTED_CHUNK_HTML =
   '<h2>Goal</h2><p>chunky goal</p>' +
   '<h2>Acceptance criteria</h2><ul><li>[ ] first ac</li><li>[ ] second ac</li></ul>' +
   '<h2>Files (expected)</h2><ul><li>src/a.ts</li><li>src/b.ts</li></ul>';
+
+// N3 (GJS-31): byte-exact epic description_html for the NUMBERED PRD shape.
+// Mirror of S10 but driven through the `## 3. Goals` / `## 7. MVP scope`
+// path the fix introduced. Slug = "numbered-byte-exact"; no design file.
+// Note the leading `G1 — ` is the bullet *content* and is preserved verbatim
+// — only the markdown `- ` list marker is stripped (see N1).
+const N3_EXPECTED_EPIC_HTML =
+  '<h2>Source documents</h2>' +
+  '<ul>' +
+  '<li>PRD: <a href="https://github.com/vasd85/global-job-search/blob/main/docs/product/numbered-byte-exact.md">docs/product/numbered-byte-exact.md</a></li>' +
+  '<li>Plan: <a href="https://github.com/vasd85/global-job-search/blob/main/docs/plans/numbered-byte-exact.md">docs/plans/numbered-byte-exact.md</a></li>' +
+  '<li>Feature slug: <code>numbered-byte-exact</code></li>' +
+  '</ul>' +
+  '<h2>Goal</h2><p>G1 — goal text</p>' +
+  '<h2>Scope</h2>' +
+  '<p><strong>In:</strong></p><ul><li>ship</li></ul>' +
+  '<p><strong>Out:</strong></p><ul><li>gold-plating</li></ul>';
 
 // -------- test scaffolding (per-test cleanup) ------------------------------
 
@@ -1222,4 +1332,831 @@ Second paragraph line.
       );
     },
   );
+});
+
+// =========================================================================
+// GJS-31: numbered PRD headings (Goal/Scope from the /prd template shape)
+// =========================================================================
+
+describe("parse-plan.sh — numbered PRD headings (GJS-31)", () => {
+  // N1: flagship — numbered Goal + numbered Scope fully extracted.
+  test("N1 extracts Goal and Scope from the numbered /prd template shape", () => {
+    repo = makeTmpRepo();
+    const slug = "numbered-feature";
+    const plan = synthHappyPlan({
+      chunks: [minimalChunk("only", "Only chunk", slug)],
+    });
+    const prd = synthNumberedPrd({
+      title: "Numbered Feature Title",
+      goals: ["G1 — First committed outcome.", "G2 — Second committed outcome."],
+      nonGoals: ["NG1 — must not leak.", "NG2 — neither this."],
+      inFirstShip: ["IN-A first ship item.", "IN-B second ship item."],
+      fastFollow: ["FF-A deferred item."],
+      maybeNever: ["OUT-A rejected idea."],
+      includeSuccessMetrics: true,
+    });
+    writeFiles(repo, {
+      [`docs/plans/${slug}.md`]: plan,
+      [`docs/product/${slug}.md`]: prd,
+    });
+    const { status, stdout, stderr } = runScript(repo, [slug]);
+    expect(status).toBe(0);
+    expect(stderr).toBe("");
+    const html = parseJson(stdout).epic.description_html;
+    // Goal: both bullets, `- ` markers stripped, em-dash preserved, no bleed.
+    expect(html).toContain(
+      "<h2>Goal</h2><p>G1 — First committed outcome. G2 — Second committed outcome.</p>",
+    );
+    // Scope: In = first ship, Out = maybe-never; Fast follow excluded.
+    expect(html).toContain(
+      "<p><strong>In:</strong></p><ul><li>IN-A first ship item.</li>" +
+        "<li>IN-B second ship item.</li></ul>" +
+        "<p><strong>Out:</strong></p><ul><li>OUT-A rejected idea.</li></ul>",
+    );
+  });
+
+  // N2: explicit negative — neither the goal placeholder nor the (none) scope
+  // fallback appears (the precise regression the bug produced).
+  test("N2 does not fall back to the goal placeholder or (none) scope for the numbered shape", () => {
+    repo = makeTmpRepo();
+    const slug = "numbered-no-fallback";
+    const plan = synthHappyPlan({
+      chunks: [minimalChunk("only", "Only chunk", slug)],
+    });
+    const prd = synthNumberedPrd({
+      title: "Numbered Feature Title",
+      goals: ["G1 — First committed outcome.", "G2 — Second committed outcome."],
+      nonGoals: ["NG1 — must not leak.", "NG2 — neither this."],
+      inFirstShip: ["IN-A first ship item.", "IN-B second ship item."],
+      fastFollow: ["FF-A deferred item."],
+      maybeNever: ["OUT-A rejected idea."],
+      includeSuccessMetrics: true,
+    });
+    writeFiles(repo, {
+      [`docs/plans/${slug}.md`]: plan,
+      [`docs/product/${slug}.md`]: prd,
+    });
+    const { status, stdout } = runScript(repo, [slug]);
+    expect(status).toBe(0);
+    const html = parseJson(stdout).epic.description_html;
+    expect(html).not.toContain("(PRD goal not available — see plan)");
+    expect(html).not.toContain("<ul><li><em>(none)</em></li></ul>");
+  });
+
+  // N3: byte-exact epic description_html for the numbered shape (mirror of S10).
+  test("N3 produces byte-exact epic description_html for the numbered shape", () => {
+    repo = makeTmpRepo();
+    const slug = "numbered-byte-exact";
+    const plan = synthHappyPlan({
+      chunks: [minimalChunk("only", "Only chunk", slug)],
+    });
+    // A minimal numbered PRD: one goal, one in, one fast-follow, one maybe-never.
+    const prd = synthNumberedPrd({
+      title: "Numbered Byte Exact",
+      goals: ["G1 — goal text"],
+      nonGoals: ["NG1 — excluded"],
+      inFirstShip: ["ship"],
+      fastFollow: ["defer"],
+      maybeNever: ["gold-plating"],
+    });
+    writeFiles(repo, {
+      [`docs/plans/${slug}.md`]: plan,
+      [`docs/product/${slug}.md`]: prd,
+    });
+    const { status, stdout, stderr } = runScript(repo, [slug]);
+    expect(status).toBe(0);
+    expect(stderr).toBe("");
+    expect(parseJson(stdout).epic.description_html).toBe(
+      N3_EXPECTED_EPIC_HTML,
+    );
+  });
+
+  // N4: numbered Goal H2 with a direct paragraph and no `### N.1` sub-heading.
+  test("N4 collects a direct paragraph under a numbered Goal H2 with no subsection", () => {
+    repo = makeTmpRepo();
+    const slug = "numbered-direct-para";
+    const plan = synthHappyPlan({
+      chunks: [minimalChunk("only", "Only chunk", slug)],
+    });
+    const prd = [
+      "# N4 Direct Paragraph",
+      "",
+      "## 3. Goals",
+      "",
+      "Direct paragraph goal with no subsection.",
+      "",
+      "## 7. MVP scope",
+      "",
+      "### 7.1 In the first ship",
+      "",
+      "- in-x",
+      "",
+      "### 7.3 Maybe-never",
+      "",
+      "- out-y",
+    ].join("\n");
+    writeFiles(repo, {
+      [`docs/plans/${slug}.md`]: plan,
+      [`docs/product/${slug}.md`]: prd,
+    });
+    const { status, stdout, stderr } = runScript(repo, [slug]);
+    expect(status).toBe(0);
+    expect(stderr).toBe("");
+    const html = parseJson(stdout).epic.description_html;
+    expect(html).toContain(
+      "<h2>Goal</h2><p>Direct paragraph goal with no subsection.</p>",
+    );
+  });
+
+  // N5: the `& non-goals` qualifier ON the H2 line must not trip the non-goals
+  // terminator on the heading itself, yet must still fire on `### 3.2 Non-goals`.
+  test("N5 consumes the `& non-goals` H2 qualifier without bleeding non-goals into the goal", () => {
+    repo = makeTmpRepo();
+    const slug = "numbered-qualifier";
+    const plan = synthHappyPlan({
+      chunks: [minimalChunk("only", "Only chunk", slug)],
+    });
+    const prd = synthNumberedPrd({
+      title: "N5 Qualifier On H2",
+      goals: ["G1 — captured."],
+      nonGoals: ["NG1 — excluded."],
+      inFirstShip: ["in5"],
+      fastFollow: [],
+      maybeNever: ["out5"],
+    });
+    writeFiles(repo, {
+      [`docs/plans/${slug}.md`]: plan,
+      [`docs/product/${slug}.md`]: prd,
+    });
+    const { status, stdout, stderr } = runScript(repo, [slug]);
+    expect(status).toBe(0);
+    expect(stderr).toBe("");
+    const html = parseJson(stdout).epic.description_html;
+    expect(html).toContain("<h2>Goal</h2><p>G1 — captured.</p>");
+    expect(html).not.toContain("NG1");
+  });
+
+  // N6: numbered Scope without the "MVP" word still maps the buckets.
+  test("N6 maps buckets for a numbered `## 7. Scope` that omits the MVP word", () => {
+    repo = makeTmpRepo();
+    const slug = "numbered-no-mvp";
+    const plan = synthHappyPlan({
+      chunks: [minimalChunk("only", "Only chunk", slug)],
+    });
+    const prd = [
+      "# N6 No MVP word",
+      "",
+      "## 3. Goals",
+      "",
+      "g paragraph.",
+      "",
+      "## 7. Scope",
+      "",
+      "### 7.1 In the first ship",
+      "",
+      "- in-x",
+      "",
+      "### 7.3 Maybe-never",
+      "",
+      "- out-y",
+    ].join("\n");
+    writeFiles(repo, {
+      [`docs/plans/${slug}.md`]: plan,
+      [`docs/product/${slug}.md`]: prd,
+    });
+    const { status, stdout, stderr } = runScript(repo, [slug]);
+    expect(status).toBe(0);
+    expect(stderr).toBe("");
+    const html = parseJson(stdout).epic.description_html;
+    expect(html).toContain(
+      "<p><strong>In:</strong></p><ul><li>in-x</li></ul>",
+    );
+    expect(html).toContain(
+      "<p><strong>Out:</strong></p><ul><li>out-y</li></ul>",
+    );
+  });
+
+  // N7: two-digit / no-dot numeric prefixes (`## 12 Goals`, `## 12. MVP scope`).
+  test("N7 tolerates multi-digit and dot-less numeric heading prefixes", () => {
+    repo = makeTmpRepo();
+    const slug = "numbered-two-digit";
+    const plan = synthHappyPlan({
+      chunks: [minimalChunk("only", "Only chunk", slug)],
+    });
+    const prd = [
+      "# N7 Two Digit",
+      "",
+      "## 12 Goals", // no dot, two digits
+      "",
+      "### 12.1 Goals",
+      "",
+      "- g-twelve",
+      "",
+      "## 12. MVP scope",
+      "",
+      "### 12.1 In the first ship",
+      "",
+      "- in-twelve",
+      "",
+      "### 12.3 Maybe-never",
+      "",
+      "- out-twelve",
+    ].join("\n");
+    writeFiles(repo, {
+      [`docs/plans/${slug}.md`]: plan,
+      [`docs/product/${slug}.md`]: prd,
+    });
+    const { status, stdout, stderr } = runScript(repo, [slug]);
+    expect(status).toBe(0);
+    expect(stderr).toBe("");
+    const html = parseJson(stdout).epic.description_html;
+    expect(html).toContain("<h2>Goal</h2><p>g-twelve</p>");
+    expect(html).toContain(
+      "<p><strong>In:</strong></p><ul><li>in-twelve</li></ul>",
+    );
+    expect(html).toContain(
+      "<p><strong>Out:</strong></p><ul><li>out-twelve</li></ul>",
+    );
+  });
+});
+
+// =========================================================================
+// GJS-31: backward-compatibility — bare `## Goal` / `## Scope` still work
+// =========================================================================
+
+describe("parse-plan.sh — bare heading backward-compat (GJS-31)", () => {
+  // R1: explicit named guard that the relaxed matchers did not narrow the old
+  // hand-written shape. (S1/S8/S9/S10 already drive synthHappyPrd; R1 names
+  // the contract so a future regex tweak that breaks it fails loudly here.)
+  test("R1 still extracts bare `## Goal` paragraph and bare `### In` / `### Out`", () => {
+    repo = makeTmpRepo();
+    const slug = "bare-shape";
+    const plan = synthHappyPlan({
+      chunks: [minimalChunk("only", "Only chunk", slug)],
+    });
+    const prd = synthHappyPrd({
+      title: "Old Shape",
+      goal: "A single paragraph elevator pitch.",
+      inBullets: ["Ship the core."],
+      outBullets: ["No gold plating."],
+    });
+    writeFiles(repo, {
+      [`docs/plans/${slug}.md`]: plan,
+      [`docs/product/${slug}.md`]: prd,
+    });
+    const { status, stdout, stderr } = runScript(repo, [slug]);
+    expect(status).toBe(0);
+    expect(stderr).toBe("");
+    const html = parseJson(stdout).epic.description_html;
+    expect(html).toContain(
+      "<h2>Goal</h2><p>A single paragraph elevator pitch.</p>",
+    );
+    expect(html).toContain(
+      "<p><strong>In:</strong></p><ul><li>Ship the core.</li></ul>",
+    );
+    expect(html).toContain(
+      "<p><strong>Out:</strong></p><ul><li>No gold plating.</li></ul>",
+    );
+  });
+
+  // R2: bare `## Goals` (plural) — the added `s?` must accept the plural form.
+  test("R2 extracts a bare `## Goals` (plural) heading", () => {
+    repo = makeTmpRepo();
+    const slug = "bare-plural";
+    const plan = synthHappyPlan({
+      chunks: [minimalChunk("only", "Only chunk", slug)],
+    });
+    const prd = [
+      "# R2 Plural Goals",
+      "",
+      "## Goals",
+      "",
+      "A plural-heading paragraph.",
+      "",
+      "## Scope",
+      "",
+      "### In",
+      "",
+      "- ship core",
+      "",
+      "### Out",
+      "",
+      "- no gold plating",
+    ].join("\n");
+    writeFiles(repo, {
+      [`docs/plans/${slug}.md`]: plan,
+      [`docs/product/${slug}.md`]: prd,
+    });
+    const { status, stdout, stderr } = runScript(repo, [slug]);
+    expect(status).toBe(0);
+    expect(stderr).toBe("");
+    const html = parseJson(stdout).epic.description_html;
+    expect(html).toContain("<h2>Goal</h2><p>A plural-heading paragraph.</p>");
+  });
+});
+
+// =========================================================================
+// GJS-31: section termination / no-bleed (the heart of AC#4)
+// =========================================================================
+
+describe("parse-plan.sh — section termination / no-bleed (GJS-31)", () => {
+  // B1: non-goals must NOT bleed into the goal — the single most important
+  // no-bleed guarantee. The `### 3.2 Non-goals` terminator stops the goal acc.
+  test("B1 stops the goal accumulator at `### 3.2 Non-goals` (no bleed)", () => {
+    repo = makeTmpRepo();
+    const slug = "no-bleed-goal";
+    const plan = synthHappyPlan({
+      chunks: [minimalChunk("only", "Only chunk", slug)],
+    });
+    const prd = synthNumberedPrd({
+      title: "B1 No Bleed",
+      goals: ["G1 — kept."],
+      nonGoals: ["NG-SENTINEL must not appear."],
+      inFirstShip: ["in1"],
+      fastFollow: [],
+      maybeNever: ["out1"],
+    });
+    writeFiles(repo, {
+      [`docs/plans/${slug}.md`]: plan,
+      [`docs/product/${slug}.md`]: prd,
+    });
+    const { status, stdout, stderr } = runScript(repo, [slug]);
+    expect(status).toBe(0);
+    expect(stderr).toBe("");
+    const html = parseJson(stdout).epic.description_html;
+    expect(html).toContain("<h2>Goal</h2><p>G1 — kept.</p>");
+    expect(html).not.toContain("NG-SENTINEL");
+  });
+
+  // B2: `### 7.2 Fast follow` bullets appear in NEITHER In NOR Out.
+  // TODO(GJS-31): whether Fast-follow should be excluded from both buckets vs.
+  // folded into Out (it is "deferred-but-planned") is a product judgement.
+  // This test enshrines the CURRENT decision (Fast-follow → neither). If a
+  // reviewer decides Fast-follow belongs in Out, B2/B6 must be updated
+  // deliberately — they are the guard that makes that change explicit.
+  test("B2 routes Fast-follow bullets to neither In nor Out", () => {
+    repo = makeTmpRepo();
+    const slug = "fast-follow-neither";
+    const plan = synthHappyPlan({
+      chunks: [minimalChunk("only", "Only chunk", slug)],
+    });
+    const prd = synthNumberedPrd({
+      title: "B2 Fast Follow",
+      goals: ["g."],
+      nonGoals: [],
+      inFirstShip: ["IN-A first ship."],
+      fastFollow: ["FF-SENTINEL deferred."],
+      maybeNever: ["OUT-A rejected."],
+    });
+    writeFiles(repo, {
+      [`docs/plans/${slug}.md`]: plan,
+      [`docs/product/${slug}.md`]: prd,
+    });
+    const { status, stdout, stderr } = runScript(repo, [slug]);
+    expect(status).toBe(0);
+    expect(stderr).toBe("");
+    const html = parseJson(stdout).epic.description_html;
+    expect(html).toContain(
+      "<p><strong>In:</strong></p><ul><li>IN-A first ship.</li></ul>",
+    );
+    expect(html).toContain(
+      "<p><strong>Out:</strong></p><ul><li>OUT-A rejected.</li></ul>",
+    );
+    expect(html).not.toContain("FF-SENTINEL");
+  });
+
+  // B3: a real sibling `## 4. Success metrics` between Goal and Scope must
+  // terminate the goal and never be mistaken for Goal/Scope content.
+  test("B3 terminates the goal at a sibling `## 4. Success metrics` H2 without capturing it", () => {
+    repo = makeTmpRepo();
+    const slug = "sibling-metrics";
+    const plan = synthHappyPlan({
+      chunks: [minimalChunk("only", "Only chunk", slug)],
+    });
+    const prd = synthNumberedPrd({
+      title: "B3 Sibling Metrics",
+      goals: ["G1 — kept."],
+      nonGoals: ["NG1 — excluded."],
+      inFirstShip: ["in3"],
+      fastFollow: [],
+      maybeNever: ["out3"],
+      includeSuccessMetrics: true,
+    });
+    writeFiles(repo, {
+      [`docs/plans/${slug}.md`]: plan,
+      [`docs/product/${slug}.md`]: prd,
+    });
+    const { status, stdout, stderr } = runScript(repo, [slug]);
+    expect(status).toBe(0);
+    expect(stderr).toBe("");
+    const html = parseJson(stdout).epic.description_html;
+    expect(html).toContain("<h2>Goal</h2><p>G1 — kept.</p>");
+    // Metrics content (bold kill-criteria + table tokens) never leaks.
+    expect(html).not.toContain("METRIC-SENTINEL");
+    expect(html).not.toContain("leading");
+    expect(html).not.toContain("lagging");
+    // Scope still extracts after the sibling H2.
+    expect(html).toContain(
+      "<p><strong>In:</strong></p><ul><li>in3</li></ul>",
+    );
+    expect(html).toContain(
+      "<p><strong>Out:</strong></p><ul><li>out3</li></ul>",
+    );
+  });
+
+  // B4: adversarial H2 look-alikes (`## 4. Success metrics`, `## Goalkeeper
+  // assignments`, `## Scoped rollout plan`) must NOT match — placeholder fires.
+  test("B4 rejects look-alike H2s (Goalkeeper / Scoped / Success metrics) and falls back", () => {
+    repo = makeTmpRepo();
+    const slug = "adversarial-h2";
+    const plan = synthHappyPlan({
+      chunks: [minimalChunk("only", "Only chunk", slug)],
+    });
+    const prd = [
+      "# B4 Adversarial Lookalikes",
+      "",
+      "## 4. Success metrics",
+      "",
+      "- METRIC-SENTINEL metric.",
+      "",
+      "## Goalkeeper assignments",
+      "",
+      "- GK-SENTINEL assignment.",
+      "",
+      "## Scoped rollout plan",
+      "",
+      "- SCOPED-SENTINEL rollout.",
+    ].join("\n");
+    writeFiles(repo, {
+      [`docs/plans/${slug}.md`]: plan,
+      [`docs/product/${slug}.md`]: prd,
+    });
+    const { status, stdout, stderr } = runScript(repo, [slug]);
+    expect(status).toBe(0);
+    expect(stderr).toBe("");
+    const html = parseJson(stdout).epic.description_html;
+    expect(html).toContain(
+      "<h2>Goal</h2><p><em>(PRD goal not available — see plan)</em></p>",
+    );
+    // Both In and Out fall back to (none).
+    const placeholder = "<ul><li><em>(none)</em></li></ul>";
+    expect(html.split(placeholder).length - 1).toBe(2);
+    expect(html).not.toContain("METRIC-SENTINEL");
+    expect(html).not.toContain("GK-SENTINEL");
+    expect(html).not.toContain("SCOPED-SENTINEL");
+  });
+
+  // B5: adversarial H3 look-alikes (`### Inputs`, `### Outline`) are NOT routed
+  // to In/Out — they hit the generic "any other subsection → neither" reset.
+  test("B5 does not route `### Inputs` / `### Outline` H3s into In or Out", () => {
+    repo = makeTmpRepo();
+    const slug = "adversarial-h3";
+    const plan = synthHappyPlan({
+      chunks: [minimalChunk("only", "Only chunk", slug)],
+    });
+    const prd = [
+      "# B5 H3 Lookalikes",
+      "",
+      "## 3. Goals",
+      "",
+      "g.",
+      "",
+      "## 7. MVP scope",
+      "",
+      "### 7.1 In the first ship",
+      "",
+      "- REAL-IN item.",
+      "",
+      "### Inputs needed",
+      "",
+      "- INPUTS-SENTINEL bad.",
+      "",
+      "### Outline of approach",
+      "",
+      "- OUTLINE-SENTINEL bad.",
+      "",
+      "### 7.3 Maybe-never",
+      "",
+      "- REAL-OUT item.",
+    ].join("\n");
+    writeFiles(repo, {
+      [`docs/plans/${slug}.md`]: plan,
+      [`docs/product/${slug}.md`]: prd,
+    });
+    const { status, stdout, stderr } = runScript(repo, [slug]);
+    expect(status).toBe(0);
+    expect(stderr).toBe("");
+    const html = parseJson(stdout).epic.description_html;
+    expect(html).toContain(
+      "<p><strong>In:</strong></p><ul><li>REAL-IN item.</li></ul>",
+    );
+    expect(html).toContain(
+      "<p><strong>Out:</strong></p><ul><li>REAL-OUT item.</li></ul>",
+    );
+    expect(html).not.toContain("INPUTS-SENTINEL");
+    expect(html).not.toContain("OUTLINE-SENTINEL");
+  });
+
+  // B6: Fast-follow between In and Maybe-never closes the In bucket (ordering).
+  // TODO(GJS-31): same reviewer-revisitable decision as B2 — Fast-follow is
+  // intentionally dropped rather than appended to the still-open In bucket.
+  test("B6 closes the In bucket at a Fast-follow heading rather than appending to In", () => {
+    repo = makeTmpRepo();
+    const slug = "fast-follow-ordering";
+    const plan = synthHappyPlan({
+      chunks: [minimalChunk("only", "Only chunk", slug)],
+    });
+    const prd = synthNumberedPrd({
+      title: "B6 Fast Follow Ordering",
+      goals: ["g."],
+      nonGoals: [],
+      inFirstShip: ["IN-A first ship."],
+      fastFollow: ["FF-SENTINEL deferred."],
+      maybeNever: ["OUT-A rejected."],
+    });
+    writeFiles(repo, {
+      [`docs/plans/${slug}.md`]: plan,
+      [`docs/product/${slug}.md`]: prd,
+    });
+    const { status, stdout, stderr } = runScript(repo, [slug]);
+    expect(status).toBe(0);
+    expect(stderr).toBe("");
+    const html = parseJson(stdout).epic.description_html;
+    // In holds only IN-A — FF is not appended to the still-open In bucket.
+    expect(html).toContain(
+      "<p><strong>In:</strong></p><ul><li>IN-A first ship.</li></ul>",
+    );
+    expect(html).toContain(
+      "<p><strong>Out:</strong></p><ul><li>OUT-A rejected.</li></ul>",
+    );
+    expect(html).not.toContain("FF-SENTINEL");
+  });
+
+  // B7: scope terminates at the next H2 (`## 8. Alternatives considered`).
+  // synthNumberedPrd always appends that trailing sibling with ALT-SENTINEL.
+  test("B7 terminates the scope at the next H2 (`## 8. Alternatives considered`)", () => {
+    repo = makeTmpRepo();
+    const slug = "scope-terminates";
+    const plan = synthHappyPlan({
+      chunks: [minimalChunk("only", "Only chunk", slug)],
+    });
+    const prd = synthNumberedPrd({
+      title: "B7 Scope Terminates",
+      goals: ["g."],
+      nonGoals: [],
+      inFirstShip: ["in7"],
+      fastFollow: [],
+      maybeNever: ["out7"],
+    });
+    writeFiles(repo, {
+      [`docs/plans/${slug}.md`]: plan,
+      [`docs/product/${slug}.md`]: prd,
+    });
+    const { status, stdout, stderr } = runScript(repo, [slug]);
+    expect(status).toBe(0);
+    expect(stderr).toBe("");
+    const html = parseJson(stdout).epic.description_html;
+    expect(html).not.toContain("ALT-SENTINEL");
+  });
+});
+
+// =========================================================================
+// GJS-31: empty / missing-section soft-degradation (don't regress)
+// =========================================================================
+
+describe("parse-plan.sh — degradation fallbacks (GJS-31)", () => {
+  // D1: PRD present, Goal section entirely absent → placeholder retained,
+  // scope still populated.
+  test("D1 keeps the goal placeholder when the Goal section is absent but Scope is present", () => {
+    repo = makeTmpRepo();
+    const slug = "no-goal-section";
+    const plan = synthHappyPlan({
+      chunks: [minimalChunk("only", "Only chunk", slug)],
+    });
+    const prd = [
+      "# D1 No Goal Section",
+      "",
+      "## 7. MVP scope",
+      "",
+      "### 7.1 In the first ship",
+      "",
+      "- in-d1",
+      "",
+      "### 7.3 Maybe-never",
+      "",
+      "- out-d1",
+    ].join("\n");
+    writeFiles(repo, {
+      [`docs/plans/${slug}.md`]: plan,
+      [`docs/product/${slug}.md`]: prd,
+    });
+    const { status, stdout, stderr } = runScript(repo, [slug]);
+    expect(status).toBe(0);
+    expect(stderr).toBe("");
+    const html = parseJson(stdout).epic.description_html;
+    expect(html).toContain(
+      "<h2>Goal</h2><p><em>(PRD goal not available — see plan)</em></p>",
+    );
+    expect(html).toContain(
+      "<p><strong>In:</strong></p><ul><li>in-d1</li></ul>",
+    );
+    expect(html).toContain(
+      "<p><strong>Out:</strong></p><ul><li>out-d1</li></ul>",
+    );
+  });
+
+  // D2: PRD present, Scope section entirely absent → both buckets (none),
+  // goal still populated.
+  test("D2 renders both scope buckets as (none) when the Scope section is absent", () => {
+    repo = makeTmpRepo();
+    const slug = "no-scope-section";
+    const plan = synthHappyPlan({
+      chunks: [minimalChunk("only", "Only chunk", slug)],
+    });
+    const prd = [
+      "# D2 No Scope Section",
+      "",
+      "## 3. Goals & non-goals",
+      "",
+      "### 3.1 Goals",
+      "",
+      "- g-d2",
+    ].join("\n");
+    writeFiles(repo, {
+      [`docs/plans/${slug}.md`]: plan,
+      [`docs/product/${slug}.md`]: prd,
+    });
+    const { status, stdout, stderr } = runScript(repo, [slug]);
+    expect(status).toBe(0);
+    expect(stderr).toBe("");
+    const html = parseJson(stdout).epic.description_html;
+    expect(html).toContain("<h2>Goal</h2><p>g-d2</p>");
+    const placeholder = "<ul><li><em>(none)</em></li></ul>";
+    expect(html.split(placeholder).length - 1).toBe(2);
+  });
+
+  // D3: numbered scope with only In + Fast-follow (no Maybe-never) → Out (none),
+  // Fast-follow never promoted to Out.
+  test("D3 degrades Out to (none) when only In and Fast-follow are present", () => {
+    repo = makeTmpRepo();
+    const slug = "scope-no-out";
+    const plan = synthHappyPlan({
+      chunks: [minimalChunk("only", "Only chunk", slug)],
+    });
+    const prd = [
+      "# D3 Fast Follow Only",
+      "",
+      "## 3. Goals",
+      "",
+      "g.",
+      "",
+      "## 7. MVP scope",
+      "",
+      "### 7.1 In the first ship",
+      "",
+      "- in-item",
+      "",
+      "### 7.2 Fast follow (after validation)",
+      "",
+      "- ff-only",
+    ].join("\n");
+    writeFiles(repo, {
+      [`docs/plans/${slug}.md`]: plan,
+      [`docs/product/${slug}.md`]: prd,
+    });
+    const { status, stdout, stderr } = runScript(repo, [slug]);
+    expect(status).toBe(0);
+    expect(stderr).toBe("");
+    const html = parseJson(stdout).epic.description_html;
+    expect(html).toContain(
+      "<p><strong>In:</strong></p><ul><li>in-item</li></ul>",
+    );
+    expect(html).toContain(
+      "<p><strong>Out:</strong></p><ul><li><em>(none)</em></li></ul>",
+    );
+    expect(html).not.toContain("ff-only");
+  });
+
+  // D4: Goals heading present but EMPTY (heading immediately followed by
+  // Non-goals) → placeholder, non-goal still excluded.
+  test("D4 collapses an empty Goals subsection to the placeholder without leaking non-goals", () => {
+    repo = makeTmpRepo();
+    const slug = "empty-goals";
+    const plan = synthHappyPlan({
+      chunks: [minimalChunk("only", "Only chunk", slug)],
+    });
+    const prd = [
+      "# D4 Empty Goals",
+      "",
+      "## 3. Goals & non-goals",
+      "",
+      "### 3.1 Goals",
+      "",
+      "### 3.2 Non-goals",
+      "",
+      "- NG-D4 should not appear",
+      "",
+      "## 7. MVP scope",
+      "",
+      "### 7.1 In the first ship",
+      "",
+      "- in-d4",
+      "",
+      "### 7.3 Maybe-never",
+      "",
+      "- out-d4",
+    ].join("\n");
+    writeFiles(repo, {
+      [`docs/plans/${slug}.md`]: plan,
+      [`docs/product/${slug}.md`]: prd,
+    });
+    const { status, stdout, stderr } = runScript(repo, [slug]);
+    expect(status).toBe(0);
+    expect(stderr).toBe("");
+    const html = parseJson(stdout).epic.description_html;
+    expect(html).toContain(
+      "<h2>Goal</h2><p><em>(PRD goal not available — see plan)</em></p>",
+    );
+    expect(html).not.toContain("NG-D4");
+  });
+});
+
+// =========================================================================
+// GJS-31: JSON integrity / process contract for the numbered path
+// =========================================================================
+
+describe("parse-plan.sh — numbered-PRD JSON integrity (GJS-31)", () => {
+  // J1: numbered-PRD run produces valid JSON, exit 0, empty stderr.
+  test("J1 emits valid JSON with exit 0 and empty stderr for the numbered shape", () => {
+    repo = makeTmpRepo();
+    const slug = "numbered-json";
+    const plan = synthHappyPlan({
+      chunks: [minimalChunk("only", "Only chunk", slug)],
+    });
+    const prd = synthNumberedPrd({
+      title: "J1 JSON Integrity",
+      goals: ["G1 — First committed outcome.", "G2 — Second committed outcome."],
+      nonGoals: ["NG1 — must not leak."],
+      inFirstShip: ["IN-A first ship item.", "IN-B second ship item."],
+      fastFollow: ["FF-A deferred item."],
+      maybeNever: ["OUT-A rejected idea."],
+      includeSuccessMetrics: true,
+    });
+    writeFiles(repo, {
+      [`docs/plans/${slug}.md`]: plan,
+      [`docs/product/${slug}.md`]: prd,
+    });
+    const { status, stdout, stderr } = runScript(repo, [slug]);
+    expect(status).toBe(0);
+    expect(stderr).toBe("");
+    const out = parseJson(stdout); // throws if not valid JSON
+    expect(typeof out.epic).toBe("object");
+    expect(Array.isArray(out.chunks)).toBe(true);
+    expect(out.epic.description_html).toContain(
+      "G1 — First committed outcome. G2 — Second committed outcome.",
+    );
+    expect(out.epic.description_html).toContain("OUT-A rejected idea.");
+  });
+
+  // J2: em-dash / non-ASCII and `&`/`<`/`>` in a numbered Goal bullet survive
+  // and escape correctly (extends S13 to the numbered-Goal path).
+  test("J2 escapes <, >, & in a numbered Goal bullet but preserves the em-dash and quotes", () => {
+    repo = makeTmpRepo();
+    const slug = "numbered-escaping";
+    const plan = synthHappyPlan({
+      chunks: [minimalChunk("only", "Only chunk", slug)],
+    });
+    const prd = [
+      "# J2 Escaping",
+      "",
+      "## 3. Goals",
+      "",
+      "### 3.1 Goals",
+      "",
+      '- G1 — wire <preferenceTree> & deriveL2Inputs(tree) "now".',
+      "",
+      "## 7. MVP scope",
+      "",
+      "### 7.1 In the first ship",
+      "",
+      "- ship it",
+      "",
+      "### 7.3 Maybe-never",
+      "",
+      "- never",
+    ].join("\n");
+    writeFiles(repo, {
+      [`docs/plans/${slug}.md`]: plan,
+      [`docs/product/${slug}.md`]: prd,
+    });
+    const { status, stdout, stderr } = runScript(repo, [slug]);
+    expect(status).toBe(0);
+    expect(stderr).toBe("");
+    const html = parseJson(stdout).epic.description_html;
+    // <, >, & escaped; " NOT escaped (html.escape(quote=False)); em-dash kept.
+    expect(html).toContain(
+      '<h2>Goal</h2><p>G1 — wire &lt;preferenceTree&gt; &amp; deriveL2Inputs(tree) "now".</p>',
+    );
+    expect(html).not.toContain("<preferenceTree>");
+  });
 });
