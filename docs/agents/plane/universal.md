@@ -112,7 +112,10 @@ Plane MCP calls can fail (network, rate-limit `429`, auth, server
 `5xx`, missing entity). Skills handle failures deterministically.
 
 **Logging.** On any Plane MCP error, append a JSON object to
-`.claude/scratchpads/<feature-slug>/plane-failures.jsonl`:
+`<main-repo>/.claude/scratchpads/<feature-slug>/plane-failures.jsonl`,
+where `<main-repo>` is the primary checkout (first record of
+`git worktree list --porcelain`) — scratchpads are gitignored, so a
+worktree's own copy dies with the worktree:
 
 ```json
 {

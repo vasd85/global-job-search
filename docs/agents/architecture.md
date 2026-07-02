@@ -107,7 +107,11 @@ the `/tasks` skill and implementer. Specific to the current iteration.
 
 The episode log is the **only Tier 2 artefact that is canonical and
 append-only**. Everything in `.claude/scratchpads/` is ephemeral and
-gitignored.
+gitignored, and lives **only in the primary checkout**: a git
+worktree's copy is a stale creation-time snapshot. Sessions running
+inside `.claude/worktrees/*` resolve `<main-repo>` (first record of
+`git worktree list --porcelain`) and read/write scratchpads there —
+see § 8.3.
 
 ### Tier 3 — external references (read-only, on-demand)
 
@@ -409,7 +413,8 @@ sequential planning skills (`/research`, `/prd`, `/design`,
 `/plan`, `/tasks`); per-task
 (`.claude/scratchpads/<feature-slug>/tasks/<wi-code>/phase-state.md`)
 for `/implement-task` and `/log-episode`, since multiple parallel
-sessions would race on a shared file.
+sessions would race on a shared file. Both paths resolve against
+the primary checkout (see § 8.3 Location).
 - **Context budget**: the skill's SKILL.md declares which tiers it reads
 (T1 / T2 / T3) and its expected token budget. This is documentation,
 not enforcement.
@@ -567,6 +572,18 @@ at two levels: feature-level for the planning phases (one writer at
 a time), and per-task under `tasks/<wi-code>/` for `/implement-task`
 sessions, since multiple parallel sessions would race on a single
 file.
+
+**Location.** The tree below exists in the primary checkout only —
+`.claude/scratchpads/` is gitignored, so a worktree's copy is a
+stale snapshot that dies at worktree cleanup. Worktree sessions
+(`/implement-task`, `/log-episode` finale) resolve `<main-repo>` via
+`git worktree list --porcelain` (first record is the primary
+checkout) and use absolute `<main-repo>/.claude/scratchpads/...`
+paths, both in their own reads/writes and in every subagent prompt;
+`scripts/episode/auto-extract.sh` applies the same resolution to its
+scratchpad reads. Skill-logs (`.claude/logs/`) are the deliberate
+exception: they belong to the session that wrote them and stay in
+that session's checkout.
 
 ```
 .claude/scratchpads/<feature-slug>/
