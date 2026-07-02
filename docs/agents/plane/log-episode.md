@@ -60,10 +60,15 @@ Prefix rule lives in `universal.md` § 5.
   `completed_at` field — in finale mode, `completed_at` is set to
   `now()` (pre-merge timestamp; see `architecture.md § 9`); in
   standalone mode it comes from `gh pr view <pr-url> --json mergedAt`.
-- **Merge commit SHA**: `mergeCommit.oid` is read via
-  `gh pr view <pr-url> --json mergeCommit` **after** `gh pr merge`
-  returns successfully (finale), or as-today directly from the
-  already-merged PR (standalone).
+- **Merge state + commit SHA**: `gh pr view <pr-url> --json
+  state,mergeCommit` runs right after `gh pr merge` (finale) and is
+  the **authoritative merge check** — `state == "MERGED"` gates the
+  rest of the finale, because the `gh pr merge --delete-branch` exit
+  code is polluted by benign local-cleanup failures when the session
+  runs in a linked worktree (it cannot check out `main` while the
+  primary checkout holds it). `mergeCommit.oid` is `<sha>`.
+  Standalone reads the same fields directly from the already-merged
+  PR.
 - **Work Item comments**: only those with skill-prefix (filtered by
   text-prefix match), used for cross-checking timing in the episode
   log auto-extracted fields
@@ -81,7 +86,7 @@ notification policy lives in `universal.md` § 7.
 | Operation                       | On failure                                                                                                        |
 |---------------------------------|-------------------------------------------------------------------------------------------------------------------|
 | Read Work Item / comments       | Continue with partial data; missing fields filled with `null` in the episode entry; warning surfaced              |
-| `gh pr merge` (finale)          | Episode commit remains on the feature branch; PR stays open; Plane stays `In Review`; **no forced Done**; user resolves the conflict / failing check / branch protection and may re-invoke `/log-episode` (idempotent — existing JSONL entry detected by `pr_url` and re-append skipped) |
+| `gh pr merge` (finale)          | Failure = `gh pr view --json state` reporting anything but `MERGED`; the bare exit code is untrusted (in a linked worktree local cleanup fails benignly after a successful merge). Episode commit remains on the feature branch; PR stays open; Plane stays `In Review`; **no forced Done**; user resolves the conflict / failing check / branch protection and may re-invoke `/log-episode` (idempotent — existing JSONL entry detected by `pr_url` and re-append skipped) |
 | State update to `Done`          | Episode log entry **still written** (git is canonical); drift logged; user notified                               |
 | Comment posting                 | Continue (comment is convenience)                                                                                 |
 

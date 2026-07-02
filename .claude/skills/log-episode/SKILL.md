@@ -51,7 +51,9 @@ without scratchpad, schema-nullable fields fall back to `null` / `[]` / `{}`;
 
 **Output:** one JSON line appended to `docs/episodes/<YYYY-MM>.jsonl`;
 in finale, also commit + push + `gh pr merge --merge --delete-branch`
-+ return to `main`; WI `Done` per `log-episode.md § 2`;
++ post-merge cleanup (primary checkout returns to `main`; a linked
+worktree detaches at the merge commit and leaves `main` alone);
+WI `Done` per `log-episode.md § 2`;
 `plane-failures.jsonl` appended on MCP failure per `universal.md § 7`.
 
 ## The flow
@@ -136,6 +138,11 @@ episode entry. **Idempotency:** before step (b), grep the JSONL for
 run — skip (b)-(e), resume at (f). Safely re-runnable after a
 transient merge failure.
 
+**Layout.** Resolve once, mirroring `/implement-task` step 0:
+**primary** when `git rev-parse --show-toplevel` equals `<main-repo>`
+(step 1), else **worktree**. Steps (f)-(g) and (j)-(k) branch on it;
+everything else is layout-independent.
+
 (a) **Validate** per step 4 (revalidate after edits if re-entered).
 (b) **Append.** Resolve `<YYYY-MM>` from `completed_at`. Create file
 if absent. Append validated object as one JSON line (newline at end).
@@ -150,13 +157,33 @@ EOF
 ```
 
 (e) `git push`.
-(f) `gh pr merge <pr-url> --merge --delete-branch`.
-(g) `gh pr view <pr-url> --json mergeCommit` — extract `mergeCommit.oid` as `<sha>`.
+(f) `gh pr merge <pr-url> --merge --delete-branch`. The exit code is
+**not** the merge verdict: in **worktree** layout `--delete-branch`'s
+local cleanup tries to check out `main` and fails benignly when the
+primary checkout holds it. Never retry the merge on non-zero exit —
+step (g) is the arbiter.
+(g) `gh pr view <pr-url> --json state,mergeCommit` — authoritative
+merge check. `state == "MERGED"` → extract `mergeCommit.oid` as
+`<sha>` and continue; anything else → the merge really failed; stop
+per the failure table.
 (h) **Plane `Done`.** Resolve id per `universal.md § 4`; apply guard
 per `log-episode.md § 1`; call `mcp__plane__update_work_item(state=<Done id>)`.
 (i) **Comment.** Per `log-episode.md § 2`: `[log-episode] Merged: <pr-url> (commit <sha>)`.
-(j) `git checkout main && git pull --ff-only`.
-(k) `git branch -d <feature-branch>` if local copy still exists.
+(j) **Post-merge cleanup — layout-dependent.** **primary**:
+`git checkout main && git pull --ff-only`. **worktree**: never
+checkout `main` — the unconditional checkout races with the primary
+checkout: benign failure while `main` is held there, but a free
+`main` gets *claimed* by the worktree, left stale in it, and breaks
+the next session's local cleanup. Instead: `git fetch --prune origin`
+(updates `origin/main` with the merge commit; prunes the
+remote-tracking ref of the just-deleted remote branch, which could
+otherwise block (k)), then `git switch --detach <sha>` — run the
+detach even if (f)'s local cleanup already moved HEAD to `main`
+(possible when `main` was free): it releases the claimed ref. Report
+that `main` was intentionally left to the primary checkout.
+(k) `git branch -d <feature-branch>` if the local copy still exists —
+in **worktree** layout HEAD is now detached at `<sha>`, whose
+ancestry contains the branch tip, so `-d` passes its merged check.
 (l) **Phase-state close.** Rewrite per-task `phase-state.md`:
 `status: complete`, `ended_at: <now ISO 8601 UTC>`.
 
@@ -187,10 +214,10 @@ rules from `log-episode.md § 4`:
 | Schema validation                    | Loop with user edits until valid; never bypass                                          |
 | JSONL append (step b)                | Hard abort; **no merge**, no Plane writes                                               |
 | Commit / push (steps d-e)            | Hard abort; **no merge**, no Plane writes                                               |
-| `gh pr merge` (step f)               | Episode commit stays on branch; PR open; Plane stays `In Review`; **no forced Done**; user resolves and may re-invoke (idempotent — re-append skipped) |
+| `gh pr merge` (steps f-g)            | Failure = (g) `state != MERGED`, never the bare (f) exit code (worktree local cleanup fails benignly). Episode commit stays on branch; PR open; Plane stays `In Review`; **no forced Done**; user resolves and may re-invoke (idempotent — re-append skipped) |
 | State update to `Done`               | Episode log **still written** (canonical); drift logged + WARN comment                  |
 | Comment posting                      | Continue (comment is convenience)                                                       |
-| Main checkout / `branch -d` (j-k)    | Warn and continue — episode is in git, PR is merged                                     |
+| Post-merge cleanup (j-k)             | Warn and continue — episode is in git, PR is merged                                     |
 
 On state-update failure, post the WARN comment per `log-episode.md § 2`.
 No bootstrap-time validation: misconfigured workspace surfaces via
