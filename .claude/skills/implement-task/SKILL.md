@@ -41,7 +41,9 @@ never write Plane state.
 **Output:** branch `<type>/<short-description>-GJS-<sequence-id>`
 with implementation + test + (optional) fix commits; one open PR;
 WI in `In Review`; `phase-state.md`, `test-scenarios.md`,
-`code-review.md` under `.claude/scratchpads/<feature-slug>/tasks/<wi-code>/`;
+`code-review.md` under
+`<main-repo>/.claude/scratchpads/<feature-slug>/tasks/<wi-code>/`
+(primary checkout — see **Scratchpad root** in step 0);
 `plane-failures.jsonl` appended on MCP failure per `universal.md § 7`.
 
 ## The seven-step flow
@@ -94,6 +96,16 @@ WI's `type:*` label; `<short-description>` from `<wi-name>` as
 kebab-case ≤ 5 words. Suggest a default, confirm, then create (or
 rename).
 
+**Scratchpad root.** Resolve the primary checkout once:
+`<main-repo>` = first record of `git worktree list --porcelain`
+(equals the session cwd in Sequential mode). Every scratchpad path
+in this skill resolves against `<main-repo>`, never against the
+worktree: `.claude/scratchpads/` is gitignored, so a worktree's copy
+is a stale creation-time snapshot that dies with the worktree and is
+invisible to sibling sessions and to post-merge consumers. Pass the
+absolute `<main-repo>/.claude/scratchpads/...` path to every
+subagent that reads or writes an artifact.
+
 **Plane In Progress** per `implement-task.md § 2-3`. Expects
 `Backlog` or `Todo`; already `In Progress` → log warning and continue
 (re-run after crash); `In Review`/`Done`/`Cancelled` → abort with
@@ -107,15 +119,16 @@ Then rewrite the per-task `phase-state.md` frontmatter (see Phase tracking) — 
 ### 1. Code (`developer`)
 
 Spawn `developer` in fresh context with WI name, full description,
-acceptance criteria, and "Files (expected)" if present (planned WIs;
-ad-hoc WIs let `developer` derive scope). All plain text per
+acceptance criteria, "Files (expected)" if present (planned WIs;
+ad-hoc WIs let `developer` derive scope), and the absolute per-task
+scratchpad dir (for `dev-progress.md`). All plain text per
 `universal.md § 6`. Subagent commits on the branch; no Plane access.
 
 ### 2. Test design (`test-scenario-designer`)
 
 Spawn `test-scenario-designer` with the WI fields and the
-implementation diff range. Output:
-`.claude/scratchpads/<feature-slug>/tasks/<wi-code>/test-scenarios.md`.
+implementation diff range. Output (pass the absolute path):
+`<main-repo>/.claude/scratchpads/<feature-slug>/tasks/<wi-code>/test-scenarios.md`.
 Read-only — no commits.
 
 ### 3. Test write (`test-writer`)
@@ -126,8 +139,9 @@ test commits on the current branch.
 ### 4. Review (`code-reviewer`)
 
 Spawn `code-reviewer` with the diff range (current branch vs
-`main`) and the WI's acceptance criteria. Output:
-`.claude/scratchpads/<feature-slug>/tasks/<wi-code>/code-review.md`.
+`main`) and the WI's acceptance criteria. Output (pass the absolute
+path):
+`<main-repo>/.claude/scratchpads/<feature-slug>/tasks/<wi-code>/code-review.md`.
 Read the verdict — first non-empty line under `### Verdict` is
 `approved` or `changes-required`. `approved` → step 6;
 `changes-required` → step 5.
@@ -168,7 +182,7 @@ and leaves you back on `main`. If done for today, run
 ## Phase tracking
 
 Per-task path
-`.claude/scratchpads/<feature-slug>/tasks/<wi-code>/phase-state.md`
+`<main-repo>/.claude/scratchpads/<feature-slug>/tasks/<wi-code>/phase-state.md`
 (per-task, not feature-level, so sibling-WI sessions don't race),
 schema at `docs/agents/phase-state-schema.md`. `phase: implement-task`,
 `next_phase: log-episode`; `started_at` set in step 0, `ended_at`

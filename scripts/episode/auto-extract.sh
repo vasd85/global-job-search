@@ -149,10 +149,24 @@ if [[ -z "$epic_code" ]]; then
   die "--epic-code required (e.g. --epic-code GJS-8)"
 fi
 
-# Anchor at repo root so all relative paths (scratchpads, episode log, docs)
+# Anchor at repo root so relative paths (episode log, docs, .claude/logs)
 # resolve regardless of caller cwd.
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
+
+# Scratchpads are gitignored and live only in the primary checkout — a git
+# worktree's .claude/scratchpads/ is a stale creation-time snapshot. Anchor
+# all scratchpad reads at the primary checkout (first record of
+# `git worktree list --porcelain`); in a non-worktree session this equals
+# $repo_root. Skill-logs (.claude/logs) stay relative to $repo_root: they are
+# written by the session itself, so in a worktree run they live in the
+# worktree.
+# Read the full output, then take line 1 via expansion — `| head -n 1` would
+# die of SIGPIPE under pipefail once the worktree list outgrows the pipe
+# buffer.
+main_repo="$(git worktree list --porcelain)"
+main_repo="${main_repo%%$'\n'*}"
+main_repo="${main_repo#worktree }"
 
 # ---------- gh pr view: single call, reuse parsed JSON ----------------------
 
@@ -204,10 +218,11 @@ feature_slug=""
 if [[ -n "$feature_slug_arg" ]]; then
   feature_slug="$feature_slug_arg"
 else
-  # Glob .claude/scratchpads/*/tasks/<task_id>/phase-state.md and take parent-of-tasks dir.
-  for ps in .claude/scratchpads/*/tasks/"$task_id"/phase-state.md; do
+  # Glob <main_repo>/.claude/scratchpads/*/tasks/<task_id>/phase-state.md and
+  # take parent-of-tasks dir.
+  for ps in "$main_repo"/.claude/scratchpads/*/tasks/"$task_id"/phase-state.md; do
     if [[ -f "$ps" ]]; then
-      # ps = .claude/scratchpads/<slug>/tasks/<task_id>/phase-state.md
+      # ps = <main_repo>/.claude/scratchpads/<slug>/tasks/<task_id>/phase-state.md
       # parent-of-tasks dir is the <slug>.
       parent_dir="${ps%/tasks/*}"
       feature_slug="${parent_dir##*/}"
@@ -269,7 +284,7 @@ fi
 started_at_json="null"
 phase_state_path=""
 if [[ -n "$feature_slug" ]]; then
-  phase_state_path=".claude/scratchpads/${feature_slug}/tasks/${task_id}/phase-state.md"
+  phase_state_path="${main_repo}/.claude/scratchpads/${feature_slug}/tasks/${task_id}/phase-state.md"
   if [[ -f "$phase_state_path" ]]; then
     if started_raw="$(yaml_frontmatter_value started_at "$phase_state_path")" \
        && [[ -n "$started_raw" && "$started_raw" != "null" ]]; then
@@ -374,7 +389,7 @@ fi
 
 reviews_json="{}"
 if [[ -n "$feature_slug" ]]; then
-  code_review_path=".claude/scratchpads/${feature_slug}/tasks/${task_id}/code-review.md"
+  code_review_path="${main_repo}/.claude/scratchpads/${feature_slug}/tasks/${task_id}/code-review.md"
   if [[ -f "$code_review_path" ]]; then
     # Verdict = first non-empty, non-heading line under "### Verdict".
     # Pre-strip CR before awk: a CRLF-edited code-review.md leaves a `\r`-only

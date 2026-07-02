@@ -70,16 +70,16 @@ and Plane (via the three Plane-writing skills). Both are canonical;
 neither is reduced to "external" or "read-only".
 
 
-| Artefact                           | Store     | Location / access                                   | Lifecycle                                  |
-| ---------------------------------- | --------- | --------------------------------------------------- | ------------------------------------------ |
-| Root constitution                  | git       | `CLAUDE.md`                                         | rare, deliberate updates                   |
-| Project conventions / module rules | git       | `.claude/rules/*.md`                                | per-module, rare updates                   |
-| Product Requirements Documents     | git       | `docs/product/<slug>.md`                            | one per feature, locked after PR           |
-| Technical designs                  | git       | `docs/designs/<slug>.md`                            | one per feature (when needed)              |
-| Implementation plans               | git       | `docs/plans/<slug>.md`                              | one per feature, derived from PRD + design |
-| Architecture Decision Records      | git       | `docs/adr/<NNNN>-<slug>.md`                         | append-only, status moves only             |
-| This architecture document         | git       | `docs/agents/architecture.md`                       | edited as the system evolves               |
-| Plane work items + comments        | Plane     | workspace `gjs` via `mcp__plane__*`                 | created by `/tasks` (planned) or manually (ad-hoc); transitioned by `/implement-task` and `/log-episode` per § 3 |
+| Artefact                           | Store | Location / access                   | Lifecycle                                                                                                        |
+| ---------------------------------- | ----- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Root constitution                  | git   | `CLAUDE.md`                         | rare, deliberate updates                                                                                         |
+| Project conventions / module rules | git   | `.claude/rules/*.md`                | per-module, rare updates                                                                                         |
+| Product Requirements Documents     | git   | `docs/product/<slug>.md`            | one per feature, locked after PR                                                                                 |
+| Technical designs                  | git   | `docs/designs/<slug>.md`            | one per feature (when needed)                                                                                    |
+| Implementation plans               | git   | `docs/plans/<slug>.md`              | one per feature, derived from PRD + design                                                                       |
+| Architecture Decision Records      | git   | `docs/adr/<NNNN>-<slug>.md`         | append-only, status moves only                                                                                   |
+| This architecture document         | git   | `docs/agents/architecture.md`       | edited as the system evolves                                                                                     |
+| Plane work items + comments        | Plane | workspace `gjs` via `mcp__plane__`* | created by `/tasks` (planned) or manually (ad-hoc); transitioned by `/implement-task` and `/log-episode` per § 3 |
 
 
 The three feature-specific document types — PRD, design, plan — answer
@@ -101,13 +101,17 @@ the `/tasks` skill and implementer. Specific to the current iteration.
 | Artefact                           | Location                                               | Lifecycle                     |
 | ---------------------------------- | ------------------------------------------------------ | ----------------------------- |
 | Per-feature working scratchpad     | `.claude/scratchpads/<feature-slug>/`*                 | ephemeral, per session        |
-| Per-task implementation scratchpad | `.claude/scratchpads/<feature-slug>/tasks/<task-id>/*` | ephemeral, per task           |
+| Per-task implementation scratchpad | `.claude/scratchpads/<feature-slug>/tasks/<task-id>/`* | ephemeral, per task           |
 | Episode log (canonical)            | `docs/episodes/<YYYY-MM>.jsonl`                        | append-only, monthly rotation |
 
 
 The episode log is the **only Tier 2 artefact that is canonical and
 append-only**. Everything in `.claude/scratchpads/` is ephemeral and
-gitignored.
+gitignored, and lives **only in the primary checkout**: a git
+worktree's copy is a stale creation-time snapshot. Sessions running
+inside `.claude/worktrees/*` resolve `<main-repo>` (first record of
+`git worktree list --porcelain`) and read/write scratchpads there —
+see § 8.3.
 
 ### Tier 3 — external references (read-only, on-demand)
 
@@ -116,7 +120,7 @@ gitignored.
 | --------------------------------- | ------------------------------------ |
 | Own codebase                      | `Read` / `Glob` / `Grep` tools       |
 | Project database                  | `mcp__postgres__execute_sql` (dbhub) |
-| Browser automation (verification) | `mcp__claude-in-chrome__*`           |
+| Browser automation (verification) | `mcp__claude-in-chrome__`*           |
 | Personal Drive (occasional notes) | `mcp__claude_ai_Google_Drive__*`     |
 | Framework / library docs          | (future) Context7 or equivalent MCP  |
 
@@ -166,15 +170,15 @@ manual on purpose, because automating them would only mask user
 intent.
 
 
-| Trigger                              | Actor                    | Status transition                      | Side effect (comment in Work Item)            |
-| ------------------------------------ | ------------------------ | -------------------------------------- | --------------------------------------------- |
-| Work Item created from plan DAG      | `/tasks`                 | initial state (Plane default: Backlog) | none                                          |
-| `/implement-task <wi-code>` invoked  | `/implement-task` step 0 | → `In Progress`                        | "Implementation started on branch `<branch>`" |
-| `gh pr create` succeeds              | `/implement-task` step 6 | → `In Review`                          | "PR opened: `<pr-url>`"                       |
-| `/log-episode` finale completes append + `gh pr merge` | `/log-episode` | → `Done`                | "Merged: `<pr-url>` (commit `<sha>`)"         |
-| Plan rerun removes chunk             | `/tasks` reconcile       | → `Cancelled`                          | "Chunk removed from plan in `<commit-sha>`"   |
-| Feature cancelled / Work Item killed | user (Plane UI)          | → `Cancelled`                          | manual                                        |
-| Backlog grooming (re-priority, etc.) | user (Plane UI)          | within Plane workflow                  | manual                                        |
+| Trigger                                                | Actor                    | Status transition                      | Side effect (comment in Work Item)            |
+| ------------------------------------------------------ | ------------------------ | -------------------------------------- | --------------------------------------------- |
+| Work Item created from plan DAG                        | `/tasks`                 | initial state (Plane default: Backlog) | none                                          |
+| `/implement-task <wi-code>` invoked                    | `/implement-task` step 0 | → `In Progress`                        | "Implementation started on branch `<branch>`" |
+| `gh pr create` succeeds                                | `/implement-task` step 6 | → `In Review`                          | "PR opened: `<pr-url>`"                       |
+| `/log-episode` finale completes append + `gh pr merge` | `/log-episode`           | → `Done`                               | "Merged: `<pr-url>` (commit `<sha>`)"         |
+| Plan rerun removes chunk                               | `/tasks` reconcile       | → `Cancelled`                          | "Chunk removed from plan in `<commit-sha>`"   |
+| Feature cancelled / Work Item killed                   | user (Plane UI)          | → `Cancelled`                          | manual                                        |
+| Backlog grooming (re-priority, etc.)                   | user (Plane UI)          | within Plane workflow                  | manual                                        |
 
 
 **State name caveat.** Plane allows custom workflow states per project.
@@ -284,10 +288,10 @@ For each Work Item (in dependency-respecting order, possibly in
 parallel):
 
 
-| #   | Phase     | Skill             | Input        | Output                                    | Gate                     | Required reviewer |
-| --- | --------- | ----------------- | ----------- | ----------------------------------------- | ------------------------ | ----------------- |
-| 6   | Implement | `/implement-task` | Work Item id | branch + PR + tests                       | PR-merge + reviewer pass | **code-reviewer** |
-| 7   | Episode   | `/log-episode`    | (none in finale; `<pr-url>` in standalone) | append to `docs/episodes/<YYYY-MM>.jsonl` on feature branch + commit + push + `gh pr merge --merge --delete-branch` + Plane `Done` | user approval before append | none |
+| #   | Phase     | Skill             | Input                                      | Output                                                                                                                             | Gate                        | Required reviewer |
+| --- | --------- | ----------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------- | ----------------- |
+| 6   | Implement | `/implement-task` | Work Item id                               | branch + PR + tests                                                                                                                | PR-merge + reviewer pass    | **code-reviewer** |
+| 7   | Episode   | `/log-episode`    | (none in finale; `<pr-url>` in standalone) | append to `docs/episodes/<YYYY-MM>.jsonl` on feature branch + commit + push + `gh pr merge --merge --delete-branch` + Plane `Done` | user approval before append | none              |
 
 
 The episode log entry ships in the same PR as the implementation;
@@ -301,14 +305,14 @@ produce a different number of PRs. Conflating them led to design
 errors in earlier drafts of this document — keep them separate.
 
 
-| Aspect             | Across Work Items                                 | Within one Work Item                               |
-| ------------------ | ------------------------------------------------- | -------------------------------------------------- |
-| Use case           | many WIs in flight simultaneously                 | a single WI's chunks parallelised internally       |
-| Mechanism          | concurrent top-level Claude Code sessions         | `Agent({ isolation: "worktree" })` subagents       |
-| Top-level sessions | N (one per WI)                                    | 1 (orchestrator)                                   |
-| Worktree owner     | user (created before launching `claude` in it)    | Agent tool (created automatically by `isolation`)  |
-| Lifecycle owner    | user (manual launch and cleanup)                  | orchestrator skill (worktree disposable on return) |
-| Branches and PRs   | N branches → N PRs → N merges                     | 1 branch, 1 PR, 1 merge (subagent branches merge locally first) |
+| Aspect             | Across Work Items                              | Within one Work Item                                            |
+| ------------------ | ---------------------------------------------- | --------------------------------------------------------------- |
+| Use case           | many WIs in flight simultaneously              | a single WI's chunks parallelised internally                    |
+| Mechanism          | concurrent top-level Claude Code sessions      | `Agent({ isolation: "worktree" })` subagents                    |
+| Top-level sessions | N (one per WI)                                 | 1 (orchestrator)                                                |
+| Worktree owner     | user (created before launching `claude` in it) | Agent tool (created automatically by `isolation`)               |
+| Lifecycle owner    | user (manual launch and cleanup)               | orchestrator skill (worktree disposable on return)              |
+| Branches and PRs   | N branches → N PRs → N merges                  | 1 branch, 1 PR, 1 merge (subagent branches merge locally first) |
 
 
 The within-WI mechanism does *not* produce multiple PRs — subagent
@@ -347,8 +351,7 @@ PR-merge time — whichever PR merges second must rebase. This falls
 back to ordinary git merge semantics; skills implement no
 synchronisation primitives, locks, or cross-session coordination.
 
-**Worktree cleanup.** Cleanup after a merged PR (`git worktree
-remove .claude/worktrees/<wi-code>` and branch deletion) is a manual
+**Worktree cleanup.** Cleanup after a merged PR (`git worktree remove .claude/worktrees/<wi-code>` and branch deletion) is a manual
 post-merge step. `/log-episode` may surface a reminder; the cleanup
 policy under multiple concurrent sessions is the open question
 specifically about parallel worktrees — see § 12.
@@ -410,7 +413,8 @@ sequential planning skills (`/research`, `/prd`, `/design`,
 `/plan`, `/tasks`); per-task
 (`.claude/scratchpads/<feature-slug>/tasks/<wi-code>/phase-state.md`)
 for `/implement-task` and `/log-episode`, since multiple parallel
-sessions would race on a shared file.
+sessions would race on a shared file. Both paths resolve against
+the primary checkout (see § 8.3 Location).
 - **Context budget**: the skill's SKILL.md declares which tiers it reads
 (T1 / T2 / T3) and its expected token budget. This is documentation,
 not enforcement.
@@ -423,15 +427,15 @@ not enforcement.
 session, in one worktree (or main directory if not parallel):
 
 
-| #   | Step        | Subagent                 | Output                                                                                       |
-| --- | ----------- | ------------------------ | -------------------------------------------------------------------------------------------- |
+| #   | Step        | Subagent                 | Output                                                                                                                                          |
+| --- | ----------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | 0   | Setup       | (orchestrator)           | Verify WI not blocked; ensure correct working directory and branch (see "Worktree contract"); mark WI `In Progress` in Plane (per §3 lifecycle) |
-| 1   | Code        | `developer`              | Implementation commits on feature branch                                                     |
-| 2   | Test design | `test-scenario-designer` | `tasks/<task-id>/test-scenarios.md`                                                          |
-| 3   | Test write  | `test-writer`            | Test commits on feature branch                                                               |
-| 4   | Review      | `code-reviewer`          | `tasks/<task-id>/code-review.md`                                                             |
-| 5   | Fix cycle   | `developer` (re-spawned) | Fix commits; loop back to step 4 (max 2 cycles)                                              |
-| 6   | PR          | (orchestrator)           | `gh pr create`; pre-pr-checks hook gates; mark WI `In Review` in Plane + comment with PR URL |
+| 1   | Code        | `developer`              | Implementation commits on feature branch                                                                                                        |
+| 2   | Test design | `test-scenario-designer` | `tasks/<task-id>/test-scenarios.md`                                                                                                             |
+| 3   | Test write  | `test-writer`            | Test commits on feature branch                                                                                                                  |
+| 4   | Review      | `code-reviewer`          | `tasks/<task-id>/code-review.md`                                                                                                                |
+| 5   | Fix cycle   | `developer` (re-spawned) | Fix commits; loop back to step 4 (max 2 cycles)                                                                                                 |
+| 6   | PR          | (orchestrator)           | `gh pr create`; pre-pr-checks hook gates; mark WI `In Review` in Plane + comment with PR URL                                                    |
 
 
 **Worktree contract (step 0).** `/implement-task` always runs in an
@@ -441,10 +445,10 @@ detects which by comparing `git rev-parse --show-toplevel` to the
 repo root:
 
 
-| Mode                   | Expected pre-launch state                                                                | Step 0 actions                                |
-| ---------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------- |
-| Sequential (default)   | session in the repo's main checkout, on `main`, clean working tree                       | `git checkout -b <branch>` from `main`        |
-| Parallel (across-WIs)  | session in `.claude/worktrees/<wi-code>`, detached HEAD at `main`'s tip, clean tree      | `git checkout -b <branch>` from current HEAD  |
+| Mode                  | Expected pre-launch state                                                           | Step 0 actions                               |
+| --------------------- | ----------------------------------------------------------------------------------- | -------------------------------------------- |
+| Sequential (default)  | session in the repo's main checkout, on `main`, clean working tree                  | `git checkout -b <branch>` from `main`       |
+| Parallel (across-WIs) | session in `.claude/worktrees/<wi-code>`, detached HEAD at `main`'s tip, clean tree | `git checkout -b <branch>` from current HEAD |
 
 
 Branch name follows `docs/agents/plane/implement-task.md § 1`. The
@@ -534,28 +538,27 @@ Every writer skill that has a required reviewer follows this loop:
 
 1. **Write** the artefact to its known location.
 2. **Spawn reviewer subagent** in fresh context. Pass file paths only,
-   not content. Reviewer reads input(s) + the artefact independently.
+  not content. Reviewer reads input(s) + the artefact independently.
 3. **Reviewer writes verdict** to `<slug>/<phase>-review.md`:
-   - `### Verdict` — the verdict token (`approved` or
-     `changes-required`) is the **first non-empty line** under this
-     heading; an optional 1-2 sentence summary may follow.
-   - `### Findings` (optional block) — `#### Critical` sub-section
-     appears only on `changes-required`; `#### Warning` sub-section
-     appears on either verdict when warnings exist; the whole
-     `### Findings` block is omitted when there are zero Criticals
-     **and** zero Warnings. Each finding: `**[file:line or §X.Y]**
-     — issue — why — fix`.
+  - `### Verdict` — the verdict token (`approved` or
+   `changes-required`) is the **first non-empty line** under this
+   heading; an optional 1-2 sentence summary may follow.
+  - `### Findings` (optional block) — `#### Critical` sub-section
+  appears only on `changes-required`; `#### Warning` sub-section
+  appears on either verdict when warnings exist; the whole
+  `### Findings` block is omitted when there are zero Criticals
+  **and** zero Warnings. Each finding: `**[file:line or §X.Y]** — issue — why — fix`.
 4. **Writer skill reads `### Verdict` first**, then descends into
-   `### Findings` only when needed:
-   - `approved` with no `### Findings` block → phase complete.
-   - `approved` with `### Findings` (Warning-only) → surface each
-     Warning to the user with three choices: fix now, defer to
-     follow-up, or skip with rationale. Then phase complete.
-   - `changes-required` → read the full `### Findings` block; revise
-     the artefact on Critical, re-spawn reviewer. Cycle counter
-     increments.
+  `### Findings` only when needed:
+  - `approved` with no `### Findings` block → phase complete.
+  - `approved` with `### Findings` (Warning-only) → surface each
+  Warning to the user with three choices: fix now, defer to
+  follow-up, or skip with rationale. Then phase complete.
+  - `changes-required` → read the full `### Findings` block; revise
+  the artefact on Critical, re-spawn reviewer. Cycle counter
+  increments.
 5. **Maximum 2 cycles.** After 2 cycles still `changes-required`, the
-   skill pauses and asks the user how to proceed (override, defer,
+  skill pauses and asks the user how to proceed (override, defer,
    abort).
 
 ### 8.3 Review file layout
@@ -569,6 +572,18 @@ at two levels: feature-level for the planning phases (one writer at
 a time), and per-task under `tasks/<wi-code>/` for `/implement-task`
 sessions, since multiple parallel sessions would race on a single
 file.
+
+**Location.** The tree below exists in the primary checkout only —
+`.claude/scratchpads/` is gitignored, so a worktree's copy is a
+stale snapshot that dies at worktree cleanup. Worktree sessions
+(`/implement-task`, `/log-episode` finale) resolve `<main-repo>` via
+`git worktree list --porcelain` (first record is the primary
+checkout) and use absolute `<main-repo>/.claude/scratchpads/...`
+paths, both in their own reads/writes and in every subagent prompt;
+`scripts/episode/auto-extract.sh` applies the same resolution to its
+scratchpad reads. Skill-logs (`.claude/logs/`) are the deliberate
+exception: they belong to the session that wrote them and stay in
+that session's checkout.
 
 ```
 .claude/scratchpads/<feature-slug>/
@@ -605,7 +620,7 @@ It is **not** a memory for retrieval-augmented generation. Reads happen
 explicitly during `/research`, `/prd` and `/plan` via grep, and only
 when the calling skill decides past episodes are relevant.
 
-**`completed_at` semantics.** In finale mode, `completed_at` is the
+`**completed_at` semantics.** In finale mode, `completed_at` is the
 pre-merge timestamp captured a few seconds before `gh pr merge`
 returns — imprecision typically < 10 s, accepted by design. This is
 a documentation-only shift: no schema change. Standalone mode still
@@ -613,7 +628,7 @@ populates `completed_at` from `gh pr view --json mergedAt`.
 
 ### 9.1 Schema
 
-The canonical schema is **`docs/episodes/schema.json`** (JSON Schema
+The canonical schema is `**docs/episodes/schema.json`** (JSON Schema
 2020-12), generated from the zod source at
 `packages/ats-core/src/episode-schema.ts`. The generation flow and
 single-source rationale are documented in
@@ -683,7 +698,7 @@ retrieval failure)
 - `provisional` — works, but not proven optimal
 
 `task_type` (matches the Conventional Commits types in CLAUDE.md
-"Git" section and the `type:*` labels in `plane/tasks.md § 6`; the
+"Git" section and the `type:`* labels in `plane/tasks.md § 6`; the
 three sources must stay in sync):
 
 - `feat` — new functionality
@@ -869,21 +884,21 @@ suggest the same shape):
   1. `/implement-task` step 0 writes a marker file
   `<main-repo>/.claude/sessions/active/<session-id>.json` with
    `{session_id, work_item_id, worktree_path, started_at}`.
-  2. `/implement-task` end-of-task (or `/log-episode` finale)
+  1. `/implement-task` end-of-task (or `/log-episode` finale)
   removes the marker.
-  3. `/log-episode` populates `parallel_with` by listing markers
+  1. `/log-episode` populates `parallel_with` by listing markers
   whose `started_at`-to-now window overlaps this WI's
    `[started_at, completed_at]`, excluding self.
-  4. Resolve `<main-repo>` from inside any worktree via
+  1. Resolve `<main-repo>` from inside any worktree via
   `git worktree list --porcelain` (first record is the primary
    checkout).
-  5. Stale-purge by `started_at` TTL (24 h) on each read — simpler
+  1. Stale-purge by `started_at` TTL (24 h) on each read — simpler
   and more portable than PID liveness checks.
-  6. Use a **directory of marker files** rather than a single shared
+  1. Use a **directory of marker files** rather than a single shared
   JSON file: avoids merge-contention without locks, stale-purge
    becomes `find -mtime +1 -delete`. Same shape as Claude Code
    Agent Teams shared-state.
-  7. Where to mint `<session-id>` is its own sub-question — Claude
+  1. Where to mint `<session-id>` is its own sub-question — Claude
   Code does record session ids under
    `~/.claude/projects/<encoded>/sessions/`, but accessing that from
    inside the running session requires confirming the runtime API.

@@ -5,7 +5,7 @@ description: >-
   access. Use when a plan exists and code needs to be written — features,
   bug fixes, refactoring. Does not write tests.
 tools: Read, Write, Edit, Bash, Grep, Glob, LSP, mcp__postgres__execute_sql
-model: opus
+model: fable
 mcpServers:
   - postgres
 skills:
@@ -53,7 +53,10 @@ Start by reading the plan file to understand the full context.
      than waiting for the hook to fail.
    - Push and open PRs with `gh pr create` — both are auto-approved.
 5. **After all changes**, write a brief progress summary to
-   `.claude/scratchpads/<task>/dev-progress.md` covering:
+   `dev-progress.md` in the scratchpad dir supplied by the
+   orchestrator (an absolute `<main-repo>/.claude/scratchpads/...`
+   path; fall back to `.claude/scratchpads/<task>/` if none given)
+   covering:
    - What was implemented
    - Files created or modified
    - Decisions made during implementation

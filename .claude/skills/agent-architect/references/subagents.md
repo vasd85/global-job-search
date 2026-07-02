@@ -62,8 +62,8 @@ name: code-reviewer                  # Unique identifier
 description: Reviews code for...     # When Claude should delegate
 tools: Read, Glob, Grep              # Allowlist (only these tools)
 disallowedTools: Write, Edit         # Denylist (everything except these)
-model: sonnet                        # sonnet | opus | haiku | inherit | full ID
-effort: max                          # low | medium | high | max (Opus 4.6 only)
+model: sonnet                        # sonnet | opus | haiku | fable | inherit | full ID
+effort: max                          # low | medium | high | xhigh | max (available levels depend on model)
 permissionMode: plan                 # default | acceptEdits | dontAsk | bypassPermissions | plan
 mcpServers:                          # MCP servers for this subagent
   - github                           # String ref: reuse parent session's server
@@ -121,6 +121,7 @@ Claude can spawn. Has no effect inside subagent definitions (subagents cannot ne
 - `haiku` - cheap tasks: search, grep, simple analysis
 - `sonnet` - balanced: code review, data analysis
 - `opus` - complex: security audit, architecture review
+- `fable` - most capable (Claude Fable 5): hardest reasoning, long-horizon agentic work
 - `inherit` (default) - same as main conversation
 
 ## MCP servers
@@ -297,7 +298,7 @@ When creating a new subagent, verify each item:
        from existing subagents
 3. [ ] **Tools**: correctly restricted — allowlist OR denylist (`disallowedTools` applied first)
 4. [ ] **Skills**: explicitly listed if domain knowledge needed (not inherited from parent)
-5. [ ] **Model**: appropriate for task complexity (haiku=cheap, sonnet=balanced, opus=complex)
+5. [ ] **Model**: appropriate for task complexity (haiku=cheap, sonnet=balanced, opus=complex, fable=most capable)
 6. [ ] **Memory**: scope set if persistent learning needed (user=recommended default)
 7. [ ] **No nesting**: prompt doesn't instruct spawning sub-subagents
 8. [ ] **Plugin safety**: if plugin-sourced, no hooks/mcpServers/permissionMode (silently ignored)
