@@ -5,7 +5,7 @@ description: >-
   access. Use when a plan exists and code needs to be written — features,
   bug fixes, refactoring. Does not write tests.
 tools: Read, Write, Edit, Bash, Grep, Glob, LSP, mcp__postgres__execute_sql
-model: opus
+model: fable
 mcpServers:
   - postgres
 skills:

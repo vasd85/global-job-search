@@ -6,7 +6,7 @@ description: >-
   review report to scratchpad. Use before opening a PR for branches that
   modify source code.
 tools: Read, Write, Glob, Grep, Bash, LSP
-model: opus
+model: fable
 effort: max
 memory: project
 skills:

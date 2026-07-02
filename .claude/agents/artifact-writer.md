@@ -5,7 +5,7 @@ description: >-
   subagents, hooks, MCP configs, plugins) following authoring guides.
   Invoked by the agent-architect skill after requirements are clarified.
 tools: Read, Write, Edit, Glob, Grep
-model: opus
+model: fable
 effort: max
 memory: project
 ---

@@ -5,7 +5,7 @@ description: >-
   designed by test-scenario-designer, or writes tests from git diff when
   no scenarios are provided. Uses Vitest and project conventions.
 tools: Read, Write, Edit, Bash, Grep, Glob, LSP
-model: opus
+model: fable
 skills: [project-context, testing-principles]
 hooks:
   Stop:

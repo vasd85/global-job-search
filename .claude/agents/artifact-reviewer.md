@@ -6,7 +6,7 @@ description: >-
   Invoked by the agent-architect skill for review and audit tasks.
   Read-only — does not create or modify files.
 tools: Read, Glob, Grep
-model: opus
+model: fable
 effort: max
 memory: project
 ---
