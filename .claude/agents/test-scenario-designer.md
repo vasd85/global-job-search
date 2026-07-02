@@ -5,7 +5,7 @@ description: >-
   agent — analyzes code for edge cases, negative paths, and e2e flows.
   Use after implementation is complete, before test-writer begins.
 tools: Read, Write, Glob, Grep, Bash
-model: opus
+model: fable
 effort: max
 skills:
   - project-context

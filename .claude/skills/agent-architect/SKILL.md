@@ -351,7 +351,7 @@ because the writer sees only its own artifacts while you see the full ecosystem:
   - Description specifies when Claude should delegate (specific keywords)
   - Tools correctly restricted (allowlist OR denylist; `disallowedTools` applied first)
   - Skills explicitly listed if domain knowledge needed (not inherited from parent)
-  - Model appropriate for task complexity (haiku/sonnet/opus/inherit)
+  - Model appropriate for task complexity (haiku/sonnet/opus/fable/inherit)
   - Prompt doesn't instruct spawning sub-subagents (nesting impossible)
   - If plugin-sourced: no hooks/mcpServers/permissionMode (silently ignored)
 - [ ] **Plugins-specific** (when artifact is a plugin):
