@@ -19,6 +19,10 @@ Per `architecture.md § 5` skill contracts:
   Used by `/implement-task` and `/log-episode`, since multiple parallel
   sessions across Work Items would race on a shared file.
 
+Both paths resolve against the primary checkout (`<main-repo>`,
+first record of `git worktree list --porcelain`), never against a
+worktree — see `architecture.md § 8.3`.
+
 ## Format
 
 The file uses **YAML frontmatter** (between two `---` fences) holding
@@ -121,7 +125,7 @@ the fields above.
 ## Per-task variant
 
 `/implement-task` writes its phase-state file under
-`.claude/scratchpads/<feature-slug>/tasks/<wi-code>/phase-state.md`.
+`<main-repo>/.claude/scratchpads/<feature-slug>/tasks/<wi-code>/phase-state.md`.
 The schema is identical; only the location changes. Two parallel
 `/implement-task` sessions across two Work Items therefore write to
 two distinct files and never share frontmatter — this is what

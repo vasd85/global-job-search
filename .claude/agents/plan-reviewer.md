@@ -6,7 +6,7 @@ description: >-
   scratchpad. Spawned by /plan in a fresh context; evaluator-optimizer
   pattern (writer/reviewer pair).
 tools: Read, Write, Glob, Grep
-model: opus
+model: fable
 effort: max
 hooks:
   PreToolUse:

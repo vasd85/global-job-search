@@ -5,7 +5,7 @@ description: >-
   roadmaps. Use before starting complex implementations that touch
   multiple files, require design choices, or need strategic planning.
 tools: Read, Write, Glob, Grep, Bash, WebSearch, LSP, mcp__postgres__execute_sql
-model: opus
+model: fable
 effort: max
 memory: project
 mcpServers:

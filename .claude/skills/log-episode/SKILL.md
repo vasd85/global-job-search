@@ -36,7 +36,8 @@ current branch. **Standalone** mode — `<pr-url>` for old/external
 PRs already merged elsewhere; the per-task scratchpad may be absent.
 **Emergency-only fallback**; finale is the default flow. Mode =
 argument presence AND scratchpad existence at
-`.claude/scratchpads/<feature-slug>/tasks/<wi-code>/`. In standalone
+`<main-repo>/.claude/scratchpads/<feature-slug>/tasks/<wi-code>/`
+(primary checkout — see step 1). In standalone
 without scratchpad, schema-nullable fields fall back to `null` / `[]` / `{}`;
 `feature_slug` and reasoning trace are user-typed; no phase-state write.
 **Ad-hoc WIs** (`external_id == null`): `feature_slug` and `plane_epic_id` = literal `adhoc`; `*_link` fields = `null`.
@@ -57,13 +58,24 @@ in finale, also commit + push + `gh pr merge --merge --delete-branch`
 
 ### 1. Resolve mode and inputs
 
-Read both contract files in full. Detect mode. Resolve `<pr-url>`
+Read both contract files in full. Resolve `<main-repo>` = first
+record of `git worktree list --porcelain` — a finale session often
+runs inside a worktree whose own gitignored `.claude/scratchpads/`
+is a stale creation-time snapshot; every scratchpad path in this
+skill (mode detection, reads, phase-state writes, failure-log
+appends per `universal.md § 7`) resolves against `<main-repo>`.
+Detect mode. Resolve `<pr-url>`
 from argument (standalone) or `gh pr view --json url` (finale, on
 current feature branch). From the PR derive: `<wi-code>` by parsing
 `headRefName` against `<type>/<short>-GJS-<n>` (fallback: PR title);
 `<feature-slug>` from the per-task scratchpad parent dir; `<plane_epic_id>`
 from the WI's `parent` via `mcp__plane__retrieve_work_item_by_identifier`
 (both default to literal `adhoc` for ad-hoc WIs).
+**Migration** (worktree runs predating the `<main-repo>` contract
+left artifacts split across both trees): once `<wi-code>` and
+`<feature-slug>` are known, copy any file present in the worktree's
+own per-task dir but missing at `<main-repo>` — file-level, **never
+overwrite** an existing `<main-repo>` file — before reading anything.
 In finale, `completed_at = now` (ISO 8601 UTC) — pre-merge timestamp
 captured seconds before `gh pr merge` returns; imprecision (< 10 s)
 accepted by design. Standalone uses `gh pr view --json mergedAt`. In
@@ -91,7 +103,9 @@ to `""`; user supplies in step 3 or validation fails.
 
 ### 3. Draft reasoning trace
 
-Read scratchpad notes: per-task `phase-state.md` Notes,
+Read scratchpad notes from
+`<main-repo>/.claude/scratchpads/<feature-slug>/tasks/<wi-code>/`:
+`phase-state.md` Notes,
 `code-review.md`, any `decisions.md` / `blockers.md` the user kept.
 Draft `decisions`, `blockers`, `dead_ends`, `learnings`, `tags` per
 schema shapes (`decision`: `what`/`why`/`rejected`/`confidence`;
@@ -156,7 +170,8 @@ any drift to `plane-failures.jsonl`.
 
 ## Phase tracking
 
-Finale-only: writes per-task `phase-state.md` (schema:
+Finale-only: writes per-task `phase-state.md` at the `<main-repo>`
+path (schema:
 `docs/agents/phase-state-schema.md`) with `phase: log-episode`,
 `next_phase: null`, `cycles: 0`, `started_at` set in step 1, `ended_at`
 in step 5(l); `status` `in-progress` → `complete` (`failed` on abort).

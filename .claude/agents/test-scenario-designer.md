@@ -5,7 +5,7 @@ description: >-
   agent — analyzes code for edge cases, negative paths, and e2e flows.
   Use after implementation is complete, before test-writer begins.
 tools: Read, Write, Glob, Grep, Bash
-model: opus
+model: fable
 effort: max
 skills:
   - project-context
@@ -55,7 +55,7 @@ You receive:
    scenarios catch common edge cases, Nice-to-have scenarios cover rare
    situations.
 6. **Write the scenario document** to the path specified by the orchestrator
-   (`.claude/scratchpads/<task>/test-scenarios.md`).
+   (an absolute `<main-repo>/.claude/scratchpads/...` path).
 
 **IMPORTANT:** Write ONLY to `.claude/scratchpads/`. Never modify source
 code or test files.
@@ -115,7 +115,8 @@ say so clearly.
 
 ## Output Format
 
-Write to `.claude/scratchpads/<task>/test-scenarios.md`:
+Write to the orchestrator-specified path (e.g.
+`<main-repo>/.claude/scratchpads/<feature-slug>/tasks/<wi-code>/test-scenarios.md`):
 
 ```markdown
 # Test Scenarios: <feature/change name>
